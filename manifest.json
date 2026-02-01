@@ -1,8 +1,9 @@
 {
     "display_name": "角色卡整理 (Character Manager)",
     "js": "index.js",
+    "css": "style.css",
     "author": "Community",
-    "version": "89.2.0",
+    "version": "1.0.0",
     "auto_update": false,
     "loading_order": 100
 }
