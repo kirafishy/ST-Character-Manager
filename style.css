@@ -112,8 +112,12 @@
     margin-top: 5px;
 }
 
-@container card (max-width: 80px) {
+@container card (max-width: 100px) {
     .cm-token-badge {
+        display: none !important;
+    }
+
+    .cm-gallery-badge-card {
         display: none !important;
     }
 }
@@ -499,7 +503,7 @@ body.cm-resizing * {
     user-select: none;
     content-visibility: auto;
     contain-intrinsic-size: 0 200px;
-    contain-intrinsic-size: 0 200px;
+
     contain: layout paint style;
     container-type: inline-size;
     container-name: card;
@@ -585,9 +589,9 @@ body.cm-resizing * {
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: 600;
-    background: rgba(0, 0, 0, 0.65);
+    background: rgba(0, 0, 0, 0.85);
     color: #fff;
-    backdrop-filter: blur(2px);
+    backdrop-filter: none;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
@@ -626,14 +630,14 @@ body.cm-resizing * {
     width: 26px;
     height: 26px;
     border: 1px solid rgba(255, 255, 255, 0.4);
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.6);
     color: #fff;
     border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    backdrop-filter: blur(2px);
+    backdrop-filter: none;
     font-size: 14px;
 }
 
@@ -863,7 +867,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: var(--cm-overlay);
-    z-index: 100003;
+    z-index: 100010;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -990,6 +994,112 @@ body.cm-resizing * {
 
 .cm-tag-editor-footer .cm-btn {
     flex: 1
+}
+
+/* 图片裁剪器 */
+.cm-cropper-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: var(--cm-overlay);
+    z-index: 100005;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box
+}
+
+.cm-cropper-container {
+    background: var(--cm-bg-sec);
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-width: 90vw;
+    max-height: 90vh
+}
+
+.cm-cropper-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--cm-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center
+}
+
+.cm-cropper-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--cm-text)
+}
+
+.cm-cropper-hint {
+    font-size: 12px;
+    color: var(--cm-text-sec)
+}
+
+.cm-cropper-body {
+    padding: 20px;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cm-bg)
+}
+
+.cm-cropper-canvas-wrap {
+    position: relative;
+    display: inline-block
+}
+
+.cm-cropper-canvas {
+    display: block;
+    border-radius: 4px
+}
+
+.cm-cropper-selection {
+    position: absolute;
+    border: 2px dashed #2563eb;
+    background: rgba(37, 99, 235, 0.1);
+    cursor: move;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5)
+}
+
+.cm-cropper-selection::before,
+.cm-cropper-selection::after {
+    content: '';
+    position: absolute;
+    background: #2563eb
+}
+
+.cm-cropper-selection::before {
+    width: 100%;
+    height: 1px;
+    top: 33.33%;
+    left: 0
+}
+
+.cm-cropper-selection::after {
+    width: 1px;
+    height: 100%;
+    left: 33.33%;
+    top: 0
+}
+
+.cm-cropper-footer {
+    padding: 12px 16px;
+    background: var(--cm-bg-ter);
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end
+}
+
+.cm-cropper-footer .cm-btn {
+    min-width: 100px
 }
 
 /* Detail Overlay - 详情页面 */
@@ -1686,5 +1796,352 @@ body.cm-resizing * {
     .cm-sidebar {
         position: static;
         height: auto;
+    }
+}
+
+/* ========== Gallery Styles ========== */
+.cm-gallery-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: var(--cm-overlay);
+    z-index: 100002;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.cm-gallery-container {
+    background: var(--cm-bg-sec);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 900px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+.cm-gallery-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--cm-border);
+    flex-shrink: 0;
+}
+
+.cm-gallery-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--cm-text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cm-gallery-count {
+    color: var(--cm-text-sec);
+    font-weight: normal;
+}
+
+.cm-gallery-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cm-gallery-close {
+    background: transparent;
+    border: none;
+    color: var(--cm-text-sec);
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.cm-gallery-close:hover {
+    background: var(--cm-hover);
+    color: var(--cm-text);
+}
+
+.cm-gallery-batch-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: var(--cm-accent-bg);
+    border-bottom: 1px solid var(--cm-border);
+    font-size: 13px;
+    color: var(--cm-accent-text);
+}
+
+.cm-gallery-batch-btn.active {
+    background: #2563eb;
+    color: #fff;
+}
+
+.cm-gallery-grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+    align-content: start;
+}
+
+.cm-gallery-cell {
+    height: 140px;
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+    background: var(--cm-bg-ter);
+    content-visibility: auto;
+    contain-intrinsic-size: 140px;
+}
+
+.cm-gallery-cell:hover {
+    transform: scale(1.03);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.cm-gallery-cell.selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px #2563eb;
+}
+
+.cm-gallery-cell img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.cm-gallery-checkbox {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 22px;
+    height: 22px;
+    background: rgba(37, 99, 235, 0.9);
+    border: 2px solid #fff;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* ========== Lightbox Styles ========== */
+.cm-gallery-lightbox {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.95);
+    z-index: 100003;
+    display: flex;
+    flex-direction: column;
+}
+
+.cm-lightbox-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    background: rgba(30, 30, 30, 0.9);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    gap: 16px;
+}
+
+.cm-lightbox-counter {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.cm-lightbox-filename {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cm-lightbox-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cm-lightbox-close {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.cm-lightbox-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.cm-lightbox-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    gap: 20px;
+}
+
+.cm-lightbox-nav {
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.cm-lightbox-nav:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
+}
+
+.cm-lightbox-nav:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.cm-lightbox-img-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: calc(100vh - 120px);
+    overflow: hidden;
+}
+
+.cm-lightbox-img-wrap img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Gallery button in detail actions */
+.cm-btn-gallery {
+    position: relative;
+}
+
+.cm-btn-gallery .cm-gallery-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 18px;
+    height: 18px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 10px;
+    font-weight: bold;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+}
+
+.cm-btn-gallery:disabled .cm-gallery-badge {
+    background: #666;
+}
+
+/* 移动端适配 */
+@media (max-width: 600px) {
+    .cm-toolbar-row {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 10px;
+    }
+
+    .cm-search-wrap {
+        order: 10;
+        width: 100%;
+        margin-top: 4px;
+    }
+
+    .cm-tabs {
+        flex: 1;
+        justify-content: space-between;
+    }
+
+    .cm-tab {
+        flex: 1;
+        text-align: center;
+        padding: 6px 4px;
+        font-size: 11px;
+    }
+
+    .cm-grid {
+        gap: 6px;
+    }
+
+    .cm-card {
+        border-radius: 6px;
+    }
+
+    .cm-name {
+        font-size: 11px;
+        margin-bottom: 0;
+    }
+
+    .cm-sidebar {
+        position: static;
+        height: auto;
+    }
+
+    /* 移动端进度条修复 */
+    .cm-progress-overlay {
+        bottom: 10px;
+        right: 10px;
+        left: 10px;
+        width: auto;
+    }
+
+    .cm-progress-box {
+        width: 100%;
+        max-width: none;
     }
 }

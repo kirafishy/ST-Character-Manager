@@ -4,6 +4,7 @@ import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip } from './
 import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
 import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars } from './data.js';
+import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
 
 console.log('=== 角色卡管理器 (v89.2 搜索优化版) 启动 ===');
 
@@ -859,6 +860,14 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
         if (forceFull) updateProgressBar(100, '扫描完成！', '即将刷新列表...');
 
         state.characters = newList;
+
+        // 注入画廊计数缓存
+        state.characters.forEach(c => {
+            if (galleryCountCache[c.name] !== undefined) {
+                c.galleryCount = galleryCountCache[c.name];
+            }
+        });
+
         state.renderedCount = 0; // 重置无限滚动计数
 
         findDuplicates();
@@ -961,6 +970,17 @@ function setupInfiniteScroll(container) {
     state.observer = new IntersectionObserver((entries) => {
         if (entries[0].isIntersecting) {
             appendBatch(container);
+            // 递归检查：如果加载后sentinel仍在视野内（屏幕过大），继续加载
+            setTimeout(() => {
+                const sent = doc.getElementById('cmSentinel');
+                if (sent && state.renderedCount < state.filteredList.length) {
+                    const rect = sent.getBoundingClientRect();
+                    const root = doc.getElementById('cmBody').getBoundingClientRect();
+                    if (rect.top < root.bottom + 500) {
+                        appendBatch(container);
+                    }
+                }
+            }, 100);
         }
     }, { root: doc.getElementById('cmBody'), rootMargin: '300px' });
 
@@ -1099,8 +1119,17 @@ function createCard(char, isDup) {
         else if (tokenCount > 5000) colors = 'color:#fde047;border-color:rgba(234,179,8,0.5);background:rgba(113,63,18,0.8)';
         else colors = 'color:#86efac;border-color:rgba(34,197,94,0.5);background:rgba(20,83,45,0.8)';
 
-        tokenBadge = '<div class="cm-token-badge" style="display:inline-block; border: 1px solid; border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: bold; backdrop-filter: blur(2px); ' + colors + '">' +
+        tokenBadge = '<div class="cm-token-badge" style="display:inline-block; border: 1px solid; border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: bold; ' + colors + '">' +
             '🪙 <span class="text-neon">' + tokenCount + '</span> T' +
+            '</div>';
+    }
+
+    // 画廊数量徽章 (仅当数量>0时显示)
+    const galleryCount = char.galleryCount || 0;
+    let galleryBadge = '';
+    if (galleryCount > 0) {
+        galleryBadge = '<div class="cm-gallery-badge-card" style="display:inline-block; border: 1px solid; border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: bold; color:#a5b4fc;border-color:rgba(129,140,248,0.5);background:rgba(49,46,129,0.85)">' +
+            '🖼️ <span class="text-neon">' + galleryCount + '</span>' +
             '</div>';
     }
 
@@ -1111,8 +1140,10 @@ function createCard(char, isDup) {
         '<div class="cm-card-badges-top-left">' +
         countBadge +
         tokenBadge +
+        galleryBadge +
         '</div>' +
         badgesHtml +
+
         '<div class="cm-card-actions">' +
         '<button class="cm-action-btn cm-fav ' + (char.fav ? 'active' : '') + '" title="收藏">' + ICONS.star + '</button>' +
         '<button class="cm-action-btn cm-backup" title="下载">' + ICONS.download + '</button>' +
@@ -1965,6 +1996,36 @@ function showDetail(char) {
     };
     actions.appendChild(updateBtn);
 
+    // 画廊按钮
+    const galleryBtn = doc.createElement('button');
+    galleryBtn.className = 'cm-btn cm-btn-secondary cm-btn-gallery';
+    galleryBtn.innerHTML = ICONS.gallery + ' 画廊 <span class="cm-gallery-badge">...</span>';
+    galleryBtn.title = '查看角色画廊';
+    galleryBtn.disabled = true;
+    // 异步获取画廊数量
+    (async () => {
+        const items = await getGalleryItems(char.name);
+        const count = items.length;
+        const badge = galleryBtn.querySelector('.cm-gallery-badge');
+        if (badge) badge.textContent = count;
+        galleryBtn.disabled = count === 0;
+        // 缓存到角色对象
+        char.galleryCount = count;
+        char._galleryItems = items;
+    })();
+    galleryBtn.onclick = async function () {
+        let items = char._galleryItems;
+        if (!items) {
+            items = await getGalleryItems(char.name);
+        }
+        if (items.length === 0) {
+            notify('画廊为空', 'warning');
+            return;
+        }
+        showGallery(char, items, notify, showConfirm, replaceCharacterImage);
+    };
+    actions.appendChild(galleryBtn);
+
     const rmBtn = doc.createElement('button');
     rmBtn.className = 'cm-btn cm-btn-danger';
     rmBtn.innerHTML = ICONS.trash + ' 删除';
@@ -2533,6 +2594,7 @@ function createModal() {
         '<h2><span style="margin-right:6px">' + ICONS.folder + '</span> 角色卡管理<span id="cmHeaderStats" class="cm-header-stats"></span></h2>' +
         '<div class="cm-header-actions">' +
         '<button class="cm-header-btn" id="cmThemeBtn" title="切换主题">' + (state.isDarkMode ? ICONS.moon : ICONS.sun) + '</button>' +
+        '<button class="cm-header-btn" id="cmMigrateBtn" title="从旧版本迁移数据" style="display:none;color:#fbbf24">📥</button>' +
         '<button class="cm-header-btn" id="cmImportBtn" title="导入角色/ZIP">' + ICONS.upload + '</button>' +
         '<button class="cm-header-btn" id="cmSyncBtn" title="快速刷新">' + ICONS.refresh + '</button>' +
         '<button class="cm-header-btn" id="cmFullScanBtn" title="强制全量刷新">' + ICONS.search + '</button>' +
@@ -2568,6 +2630,7 @@ function createModal() {
         '<option value="token_asc">🪙 Token (少→多)</option>' +
         '<option value="name_asc">🔤 名称 (A→Z)</option>' +
         '<option value="name_desc">🔤 名称 (Z→A)</option>' +
+        '<option value="gallery_desc">🖼️ 画廊 (多→少)</option>' +
         '</select>' +
         '</div>' +
         '</div>' +
@@ -2702,6 +2765,34 @@ function createModal() {
 
     resizer.addEventListener('mousedown', startResize);
     resizer.addEventListener('touchstart', startResize, { passive: false });
+
+    // 迁移按钮逻辑
+    const migrateBtn = m.querySelector('#cmMigrateBtn');
+    if (migrateBtn) {
+        migrateBtn.onclick = async () => {
+            try {
+                const migSources = checkForMigration();
+                if (migSources.length === 0) return notify('未找到旧版数据', 'info');
+
+                let migTarget = migSources.find(k => k.includes('脚本') || k.includes('角色卡'));
+                if (!migTarget) migTarget = migSources[0];
+
+                const oldSettings = parentWin.SillyTavern.extension_settings[migTarget];
+                const tCount = (oldSettings.tags || []).length;
+
+                const doMigrate = await showConfirm(`在配置 "${migTarget}" 中发现 ${tCount} 个标签。\n\n是否将其合并到当前插件？\n(相同名称的标签会自动合并，不会覆盖现有数据)`);
+                if (doMigrate) {
+                    performMigration(migTarget);
+                }
+            } catch (err) {
+                console.error(err);
+                notify('操作失败: ' + err.message, 'error');
+            }
+        };
+        // 检查是否显示
+        const sources = checkForMigration();
+        if (sources.length > 0) migrateBtn.style.display = 'flex';
+    }
 
     const zoomInput = m.querySelector('.cm-zoom-input');
     zoomInput.oninput = function () { setZoom(this.value); };
@@ -2854,11 +2945,40 @@ function createModal() {
     // 设置初始值
     sortSel.value = state.sortBy + '_' + state.sortOrder;
 
-    sortSel.onchange = function () {
+    sortSel.onchange = async function () {
         const parts = this.value.split('_');
         if (parts.length === 2) {
             state.sortBy = parts[0];
             state.sortOrder = parts[1];
+
+            // 如果选择画廊排序，且还没有加载过画廊数量，需要先批量获取
+            if (state.sortBy === 'gallery') {
+                const needsLoad = state.characters.some(c => c.galleryCount === undefined);
+                if (needsLoad) {
+                    notify('正在加载画廊数量...', 'info');
+                    sortSel.disabled = true;
+
+                    // 批量并发获取画廊数量
+                    const batchSize = 10;
+                    for (let i = 0; i < state.characters.length; i += batchSize) {
+                        const batch = state.characters.slice(i, i + batchSize);
+                        await Promise.all(batch.map(async (char) => {
+                            if (char.galleryCount === undefined) {
+                                try {
+                                    const items = await getGalleryItems(char.name);
+                                    char.galleryCount = items.length;
+                                } catch (e) {
+                                    char.galleryCount = 0;
+                                }
+                            }
+                        }));
+                    }
+
+                    sortSel.disabled = false;
+                    notify('画廊数量加载完成', 'success');
+                }
+            }
+
             renderView();
         }
     };
@@ -2992,6 +3112,85 @@ function createModal() {
     };
 
     doc.body.appendChild(m);
+}
+
+
+
+// 检查是否有可迁移的旧数据
+function checkForMigration() {
+    try {
+        const settings = parentWin.SillyTavern.extension_settings;
+        if (!settings) return [];
+        return Object.keys(settings).filter(k =>
+            k !== 'ST-Character-Manager' &&
+            (k.includes('ST-Character') || k.includes('角色卡') || k.includes('manager')) &&
+            settings[k].tags &&
+            Array.isArray(settings[k].tags) &&
+            settings[k].tags.length > 0
+        );
+    } catch (e) { return []; }
+}
+
+function performMigration(sourceKey) {
+    try {
+        const oldData = parentWin.SillyTavern.extension_settings[sourceKey];
+        if (!oldData) return;
+
+        let addedTags = 0;
+        let taggedChars = 0;
+
+        // 1. 迁移标签定义
+        const oldTags = oldData.tags || [];
+        const idMap = {}; // oldId -> newId
+
+        oldTags.forEach(ot => {
+            let existing = state.tags.find(t => t.name === ot.name);
+            if (!existing) {
+                const newTag = {
+                    id: generateId(),
+                    name: ot.name,
+                    color: ot.color || '#a5b4fc',
+                    pinned: !!ot.pinned
+                };
+                state.tags.push(newTag);
+                existing = newTag;
+                addedTags++;
+            }
+            idMap[ot.id] = existing.id;
+        });
+
+        // 2. 迁移标签映射
+        const oldMap = oldData.tagMap || {};
+        Object.keys(oldMap).forEach(fileName => {
+            const tids = oldMap[fileName] || [];
+            if (tids.length > 0) {
+                if (!state.tagMap[fileName]) state.tagMap[fileName] = [];
+                let changed = false;
+                tids.forEach(oldTid => {
+                    const newTid = idMap[oldTid];
+                    if (newTid && !state.tagMap[fileName].includes(newTid)) {
+                        state.tagMap[fileName].push(newTid);
+                        changed = true;
+                    }
+                });
+                if (changed) taggedChars++;
+            }
+        });
+
+        if (addedTags > 0 || taggedChars > 0) {
+            saveTags();
+            renderTagSidebar();
+            notify(`迁移成功：新增 ${addedTags} 个标签，关联 ${taggedChars} 个角色`, 'success');
+            // 可选：迁移后隐藏按钮？还是留着防止误操作没点到
+            // doc.getElementById('cmMigrateBtn').style.display = 'none';
+        } else {
+            notify('数据已全部存在，无需更新', 'info');
+        }
+
+    } catch (e) {
+        console.error(e);
+        notify('迁移失败: ' + e.message, 'error');
+    }
 }
 
 function openModal() {

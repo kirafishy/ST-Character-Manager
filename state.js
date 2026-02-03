@@ -38,7 +38,7 @@ export const state = {
     // --- Infinite Scroll State ---
     filteredList: [],
     renderedCount: 0,
-    BATCH_SIZE: 50,
+    BATCH_SIZE: 100,
     observer: null
 };
 

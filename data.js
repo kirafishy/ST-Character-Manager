@@ -157,6 +157,9 @@ export function compareChars(a, b) {
         case 'token':
             ret = (a.tokens || 0) - (b.tokens || 0);
             break;
+        case 'gallery':
+            ret = (a.galleryCount || 0) - (b.galleryCount || 0);
+            break;
     }
     return state.sortOrder === 'asc' ? ret : -ret;
 }
