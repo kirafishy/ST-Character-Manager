@@ -660,11 +660,22 @@ function getCharInfo(d) {
     };
 }
 
-async function deleteWorldInfo(wiName) {
+async function deleteWorldInfo(wiName, skipRefresh = false) {
     await authFetch('/api/worldinfo/delete', {
         method: 'POST',
         body: JSON.stringify({ name: wiName })
     });
+
+    if (skipRefresh) return;
+
+    try {
+        if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+            const context = parentWin.SillyTavern.getContext();
+            if (typeof context.updateWorldInfoList === 'function') {
+                await context.updateWorldInfoList();
+            }
+        }
+    } catch (e) { }
 }
 
 async function deleteChar(fn, skipRefresh = false) {
@@ -3105,8 +3116,16 @@ function createModal() {
 
         if (confirmRes.delWi && targetWIs.size > 0) {
             for (const wi of targetWIs) {
-                try { await deleteWorldInfo(wi); } catch (e) { }
+                try { await deleteWorldInfo(wi, true); } catch (e) { }
             }
+            try {
+                if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+                    const context = parentWin.SillyTavern.getContext();
+                    if (typeof context.updateWorldInfoList === 'function') {
+                        await context.updateWorldInfoList();
+                    }
+                }
+            } catch (e) { }
         }
 
         state.selectedCards.clear();
