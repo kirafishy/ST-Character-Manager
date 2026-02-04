@@ -667,7 +667,7 @@ async function deleteWorldInfo(wiName) {
     });
 }
 
-async function deleteChar(fn) {
+async function deleteChar(fn, skipRefresh = false) {
     const r = await authFetch('/api/characters/delete', { method: 'POST', body: JSON.stringify({ avatar_url: fn, delete_chats: false }) });
     if (!r.ok) throw new Error('删除失败');
 
@@ -675,6 +675,20 @@ async function deleteChar(fn) {
     if (parentWin.characters && Array.isArray(parentWin.characters)) {
         const idx = parentWin.characters.findIndex(c => c.avatar === fn);
         if (idx !== -1) parentWin.characters.splice(idx, 1);
+    }
+
+    if (skipRefresh) return;
+
+    // 刷新酒馆原生的角色列表
+    try {
+        if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+            const context = parentWin.SillyTavern.getContext();
+            if (typeof context.getCharacters === 'function') {
+                await context.getCharacters();
+            }
+        }
+    } catch (e) {
+        console.warn('[角色卡管理器] 刷新原生角色列表失败:', e);
     }
 }
 
@@ -3077,7 +3091,7 @@ function createModal() {
         let ok = 0;
         for (const fn of files) {
             try {
-                await deleteChar(fn);
+                await deleteChar(fn, true);
                 state.characters = state.characters.filter(c => c.fileName !== fn);
                 ok++;
             } catch (e) { }
@@ -3097,6 +3111,14 @@ function createModal() {
 
         state.selectedCards.clear();
         findDuplicates(); updateStats(); updateBatchBar(); renderTagSidebar(); renderView();
+
+        // 批量操作完成后统一刷新
+        try {
+            if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+                await parentWin.SillyTavern.getContext().getCharacters();
+            }
+        } catch (e) { }
+
         notify('已删除 ' + ok + ' 个角色', 'success');
     };
 
