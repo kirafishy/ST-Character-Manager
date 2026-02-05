@@ -1980,6 +1980,15 @@ function showDetail(char) {
                     dataBlock.tags.forEach(t => fd.append('tags', t));
                 }
 
+                // 显式处理 character_book，确保使用新卡中的世界书设定
+                if (dataBlock.character_book) {
+                    if (typeof dataBlock.character_book === 'string') {
+                        fd.append('character_book', dataBlock.character_book);
+                    } else if (typeof dataBlock.character_book === 'object') {
+                        fd.append('character_book', JSON.stringify(dataBlock.character_book));
+                    }
+                }
+
                 // 传递包含 source_link 的 extensions
                 fd.append('json_data', JSON.stringify(cardData));
 
