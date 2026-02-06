@@ -247,6 +247,26 @@ async function saveCharacterData(fileName, updateCallback) {
 
         updateCallback(charData);
 
+        // --- 修复：防止收藏操作导致世界书解绑 ---
+        // 如果 API 返回的数据中丢失了 world book 信息（可能为空或 undefined），尝试从酒馆内存缓存中恢复
+        // 只有当 updateCallback 没有明确设置（即非有意删除）时才恢复
+        if (!charData.character_book) {
+            try {
+                const stChars = typeof getSTCharacters === 'function' ? getSTCharacters() : [];
+                const cached = stChars.find(c => c.avatar === fileName);
+                if (cached) {
+                    // V3数据在data里，V2/Internal直接在对象上
+                    const cachedBook = (cached.data && cached.data.character_book) || cached.character_book;
+                    if (cachedBook) {
+                        // 再次确认 cachedBook 不是空字符串
+                        console.log('[CharManager] 检测到 API 数据丢失 character_book，已从缓存恢复:', cachedBook);
+                        charData.character_book = cachedBook;
+                    }
+                }
+            } catch (e) { console.warn('尝试恢复 character_book 失败', e); }
+        }
+        // -------------------------------------
+
         const fd = new FormData();
 
         fd.append('ch_name', charData.name || fileName.replace(/\.png$/i, ''));
@@ -661,21 +681,42 @@ function getCharInfo(d) {
 }
 
 async function deleteWorldInfo(wiName, skipRefresh = false) {
-    await authFetch('/api/worldinfo/delete', {
-        method: 'POST',
-        body: JSON.stringify({ name: wiName })
-    });
-
-    if (skipRefresh) return;
-
     try {
-        if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
-            const context = parentWin.SillyTavern.getContext();
-            if (typeof context.updateWorldInfoList === 'function') {
-                await context.updateWorldInfoList();
-            }
+        let r = await authFetch('/api/worldinfo/delete', {
+            method: 'POST',
+            body: JSON.stringify({ name: wiName })
+        });
+
+        // 兼容性尝试：如果失败且没有后缀，加上 .json 再试一次
+        if (!r.ok && !wiName.toLowerCase().endsWith('.json')) {
+            // console.log('[CharManager] 删除WI失败，尝试追加.json后缀重试...');
+            r = await authFetch('/api/worldinfo/delete', {
+                method: 'POST',
+                body: JSON.stringify({ name: wiName + '.json' })
+            });
         }
-    } catch (e) { }
+
+        if (!r.ok) {
+            console.warn('[CharManager] 删除世界书失败:', wiName, r.status);
+            // 这里返回 false 但不抛出异常，防止阻塞主流程
+            return false;
+        }
+
+        if (skipRefresh) return true;
+
+        try {
+            if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+                const context = parentWin.SillyTavern.getContext();
+                if (typeof context.updateWorldInfoList === 'function') {
+                    await context.updateWorldInfoList();
+                }
+            }
+        } catch (e) { }
+        return true;
+    } catch (err) {
+        console.error('[CharManager] 删除世界书时发生异常:', err);
+        return false;
+    }
 }
 
 async function deleteChar(fn, skipRefresh = false) {
@@ -1845,7 +1886,13 @@ function showDetail(char) {
         '<span>' + ICONS.user + ' ' + escapeHtml(char.creator) + '</span>' +
         '<span>' + ICONS.time + ' ' + dateStr + '</span>' +
         '<span>' + ICONS.box + ' ' + formatSize(char.fileSize) + '</span>' +
+        '<span id="cm-detail-chat-count" title="聊天记录数"></span>' +
         '<span title="估算Token数">🪙 ' + (char.tokens || 0) + '</span>';
+
+    getCharHistoryCount(char).then(count => {
+        const el = meta.querySelector('#cm-detail-chat-count');
+        if (el) el.innerHTML = '💬 ' + count;
+    });
 
     const displayVer = char.version || '(未设定)';
     metaHtml += '<span id="cmVersionSpan" style="cursor:pointer;border-bottom:1px dashed var(--cm-text-sec)" title="点击修改版本号">🔖 v' + escapeHtml(displayVer) + ' <span style="font-size:10px">' + ICONS.pencil + '</span></span>';
@@ -1939,6 +1986,22 @@ function showDetail(char) {
 
                 if (!cardData) throw new Error('无法解析图片数据');
 
+                // --- 尝试删除旧的关联世界书（如果不再被其他角色使用） ---
+                if (char.character_book) {
+                    const oldWI = char.character_book;
+                    // 检查是否还有其他角色正在使用这个世界书
+                    const isUsedByOthers = state.characters.some(c => c.fileName !== char.fileName && c.character_book === oldWI);
+                    if (!isUsedByOthers) {
+                        try {
+                            console.log('[CharManager] 自动清理旧世界书:', oldWI);
+                            await deleteWorldInfo(oldWI, true);
+                        } catch (e) {
+                            console.warn('[CharManager] 清理旧世界书失败:', e);
+                        }
+                    }
+                }
+                // ----------------------------------------------------
+
                 const fd = new FormData();
                 fd.append('avatar_url', char.fileName); // 保持文件名
                 fd.append('avatar', file); // 新图片
@@ -2018,6 +2081,57 @@ function showDetail(char) {
                 showDetail(char);
                 renderView();
 
+                try {
+                    if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+                        const context = parentWin.SillyTavern.getContext();
+
+                        // --- 核心修复：自动导入/覆盖嵌入的世界书 ---
+                        // 如果后端 api/characters/edit 没有自动解包保存世界书，我们需要手动做
+                        // 这能避免用户在界面上点击图标时弹出 "Import" 确认框
+                        if (dataBlock.character_book && typeof dataBlock.character_book === 'object') {
+                            const bookName = dataBlock.character_book.name;
+                            if (bookName && typeof context.saveWorldInfo === 'function' && typeof context.convertCharacterBook === 'function') {
+                                try {
+                                    // 转换数据格式
+                                    const convertedBook = context.convertCharacterBook(dataBlock.character_book);
+                                    // 强制立即保存 (ignore mismatch/overwrite check)
+                                    // 第三个参数 true 代表 immediate save
+                                    await context.saveWorldInfo(bookName, convertedBook, true);
+                                    console.log('[CharManager] 自动导入/覆盖世界书成功:', bookName);
+                                    notify('已自动同步并覆盖世界书: ' + bookName, 'success');
+                                } catch (wiErr) {
+                                    console.error('[CharManager] 自动导入世界书失败:', wiErr);
+                                }
+                            }
+                        }
+                        // ------------------------------------------
+
+                        // 1. 刷新角色列表
+                        if (typeof context.getCharacters === 'function') {
+                            await context.getCharacters();
+                        }
+                        // 2. 刷新世界书列表 (修复新绑定的世界书不显示的问题)
+                        if (typeof context.updateWorldInfoList === 'function') {
+                            await context.updateWorldInfoList();
+                        }
+
+                        // 3. 强制重载当前角色（如果正好是正在对话的角色），修复 "未找到当前打开的角色卡" 错误
+                        const currentId = context.characterId ?? parentWin.this_chid;
+                        const globalChars = context.characters || parentWin.characters;
+
+                        if (currentId !== undefined && globalChars && globalChars[currentId]) {
+                            const activeAvatar = globalChars[currentId].avatar;
+                            if (activeAvatar === char.fileName) {
+                                // 重新定位索引（防止列表排序变化）
+                                const newIndex = globalChars.findIndex(c => c.avatar === char.fileName);
+                                if (newIndex !== -1 && typeof context.selectCharacterById === 'function') {
+                                    await context.selectCharacterById(String(newIndex));
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { console.warn('刷新原生列表失败', e); }
+
             } catch (err) {
                 console.error(err);
                 notify('更新失败: ' + err.message, 'error');
@@ -2096,11 +2210,27 @@ function showDetail(char) {
     const playBtn = doc.createElement('button');
     playBtn.className = 'cm-btn cm-btn-success';
     playBtn.innerHTML = ICONS.rocket + ' 启动';
-    playBtn.onclick = function () {
+    // --- Launch Logic Helper ---
+    const launchChat = (targetChar, chatFile = null) => {
         closeModal();
         ov.remove();
-        const targetFileName = char.fileName;
 
+        const switchChatAfterLoad = async () => {
+            if (!chatFile) return;
+            await new Promise(r => setTimeout(r, 500));
+            try {
+                const ctx = parentWin.SillyTavern.getContext();
+                if (ctx.loadChat) {
+                    await ctx.loadChat(chatFile);
+                    notify('已加载存档: ' + chatFile, 'success');
+                } else if (parentWin.loadChat) {
+                    parentWin.loadChat(chatFile);
+                    notify('已加载存档: ' + chatFile, 'success');
+                }
+            } catch (e) { console.warn('Load chat failed', e); }
+        };
+
+        const targetFileName = targetChar.fileName;
         const stChars = getSTCharacters();
         const chIndex = stChars.findIndex(c => c.avatar === targetFileName);
 
@@ -2119,6 +2249,14 @@ function showDetail(char) {
             if (el) {
                 el.click();
                 found = true;
+                if (chatFile) switchChatAfterLoad();
+                else if (chatFile === '') {
+                    setTimeout(() => {
+                        const ctx = parentWin.SillyTavern.getContext();
+                        if (ctx.saveChat) ctx.saveChat();
+                        if (ctx.startNewChat) ctx.startNewChat();
+                    }, 500);
+                }
                 break;
             }
         }
@@ -2130,12 +2268,95 @@ function showDetail(char) {
             if (context && typeof context.selectCharacterById === 'function') {
                 context.selectCharacterById(String(chIndex));
                 found = true;
+                if (chatFile) switchChatAfterLoad();
+                else if (chatFile === '') setTimeout(() => context.startNewChat && context.startNewChat(), 500);
                 break;
             }
         }
 
         if (found) return;
         notify('启动失败：角色卡未在当前列表显示（请检查搜索过滤）', 'warning');
+    };
+
+    playBtn.onclick = async function () {
+        const history = await getCharChatHistory(char);
+
+        if (history.length > 0) {
+
+            createBaseDialog('启动聊天',
+                '<div id="cmChatList" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:5px;padding-right:4px">正在加载...</div>',
+                [
+                    {
+                        text: '➕ 新建聊天', cls: 'cm-btn-primary', onClick: (dOv, dClose) => {
+                            dClose();
+                            launchChat(char, '');
+                        }
+                    },
+                    { text: '取消', cls: 'cm-btn-secondary', onClick: (dOv, dClose) => dClose() }
+                ],
+                (dOv, dClose) => {
+                    const list = dOv.querySelector('#cmChatList');
+                    list.innerHTML = '';
+
+                    history.sort((a, b) => (b.last_mes || 0) - (a.last_mes || 0));
+
+                    history.forEach(h => {
+                        const item = doc.createElement('div');
+                        item.style.cssText = 'padding:8px 10px;border:1px solid var(--cm-border);border-radius:6px;display:flex;justify-content:space-between;align-items:center;background:var(--cm-bg-sec);cursor:pointer;transition:background 0.2s';
+                        item.onmouseenter = () => item.style.background = 'var(--cm-hover)';
+                        item.onmouseleave = () => item.style.background = 'var(--cm-bg-sec)';
+
+                        const base = char.fileName.replace(/\.[^.]+$/, '');
+                        let chatName = h.file_name.replace(base + ' - ', '').replace(/\.jsonl$/i, '');
+                        if (chatName === h.file_name) chatName = h.file_name;
+
+                        const dateStr = h.last_mes ? new Date(h.last_mes).toLocaleString() : '未知时间';
+
+                        const info = doc.createElement('div');
+                        info.style.cssText = 'flex:1;overflow:hidden';
+                        info.innerHTML = '<div style="font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escapeHtml(chatName) + '">' + escapeHtml(chatName) + '</div><div style="font-size:11px;opacity:0.6;margin-top:2px">' + dateStr + ' (' + formatSize(h.size || 0) + ')</div>';
+
+                        const delBtn = doc.createElement('button');
+                        delBtn.className = 'cm-btn-danger';
+                        delBtn.innerHTML = ICONS.trash;
+                        delBtn.title = '删除此记录';
+                        delBtn.style.cssText = 'padding:4px 8px;margin-left:10px;border-radius:4px;flex-shrink:0';
+
+                        delBtn.onclick = async (e) => {
+                            e.stopPropagation();
+                            if (await showConfirm('确定删除聊天记录 "' + chatName + '" 吗？\n(此操作不可恢复)')) {
+                                try {
+                                    const r = await authFetch('/api/chats/delete', {
+                                        method: 'POST',
+                                        body: JSON.stringify({ chatfile: h.file_name, avatar_url: char.fileName })
+                                    });
+                                    if (r.ok) {
+                                        item.remove();
+                                        notify('已删除', 'success');
+                                        // 检查列表是否为空
+                                        if (list.querySelectorAll('div[style*="padding:8px"]').length === 0) {
+                                            list.innerHTML = '<div style="padding:20px;text-align:center;opacity:0.6">无历史记录</div>';
+                                        }
+                                    } else {
+                                        notify('删除失败', 'error');
+                                    }
+                                } catch (ex) { notify('错误: ' + ex.message, 'error'); }
+                            }
+                        };
+
+                        info.onclick = () => { dClose(); launchChat(char, h.file_name); };
+
+                        item.appendChild(info);
+                        item.appendChild(delBtn);
+                        list.appendChild(item);
+                    });
+
+                    if (history.length === 0) list.innerHTML = '<div style="padding:20px;text-align:center;opacity:0.6">无历史记录</div>';
+                }
+            );
+        } else {
+            launchChat(char, null);
+        }
     };
     actions.appendChild(playBtn);
 
@@ -2524,14 +2745,29 @@ function showBatchTagDialog() {
 
 
 // --- Random Pick Helpers ---
-async function getCharHistoryCount(char) {
+// 获取角色的聊天历史记录列表
+async function getCharChatHistory(char) {
     try {
-        const getHistory = parentWin.getChatHistoryBrief || window.getChatHistoryBrief;
-        if (typeof getHistory !== 'function') return 0;
-        const avatarId = char.fileName.replace(/\.[^/.]+$/, "");
-        const history = await getHistory(avatarId, true);
-        return Array.isArray(history) ? history.length : 0;
-    } catch (e) { return 0; }
+        const response = await authFetch('/api/characters/chats', {
+            method: 'POST',
+            body: JSON.stringify({ avatar_url: char.fileName })
+        });
+        if (!response.ok) return [];
+        const data = await response.json();
+        if (typeof data === 'object' && data.error === true) return [];
+
+        // 返回聊天记录数组，包含 file_name, last_mes, file_size 等信息
+        const chats = Object.values(data);
+        return chats.sort((a, b) => (b.last_mes || 0) - (a.last_mes || 0));
+    } catch (e) {
+        console.warn('[CharManager] getCharChatHistory error:', e);
+        return [];
+    }
+}
+
+async function getCharHistoryCount(char) {
+    const history = await getCharChatHistory(char);
+    return history.length;
 }
 
 async function executeRandomPick() {
