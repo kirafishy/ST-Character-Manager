@@ -2314,7 +2314,7 @@ function showDetail(char) {
 
                         const info = doc.createElement('div');
                         info.style.cssText = 'flex:1;overflow:hidden';
-                        info.innerHTML = '<div style="font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escapeHtml(chatName) + '">' + escapeHtml(chatName) + '</div><div style="font-size:11px;opacity:0.6;margin-top:2px">' + dateStr + ' (' + formatSize(h.size || 0) + ')</div>';
+                        info.innerHTML = '<div style="font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escapeHtml(chatName) + '">' + escapeHtml(chatName) + '</div><div style="font-size:11px;opacity:0.6;margin-top:2px">' + dateStr + ' · ' + (h.chat_items || 0) + '条对话 (' + (h.file_size || '0 KB') + ')</div>';
 
                         const delBtn = doc.createElement('button');
                         delBtn.className = 'cm-btn-danger';
