@@ -180,6 +180,27 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 </div>
             </div>
 
+            <!-- 关于 -->
+            <div class="cm-settings-group cm-about-section">
+                <h4 class="cm-settings-title">📝 关于</h4>
+                <div class="cm-about-credits">
+                    <div class="cm-about-item">
+                        <span class="cm-about-role">原作者</span>
+                        <span class="cm-about-name">别截断我了行吗（lina051644）</span>
+                        <a href="https://discord.com/channels/1291925535324110879/1460890397910892606" target="_blank" class="cm-about-link" title="Discord 频道">🔗 Discord</a>
+                    </div>
+                    <div class="cm-about-item">
+                        <span class="cm-about-role">二改作者</span>
+                        <span class="cm-about-name">南北绿豆（zheokbu）</span>
+                        <small class="cm-about-note">本插件基于其 v89.2 版本修改</small>
+                    </div>
+                    <div class="cm-about-item">
+                        <span class="cm-about-role">三改作者</span>
+                        <span class="cm-about-name">Kirafishy</span>
+                    </div>
+                </div>
+            </div>
+
         </div>
     `;
 

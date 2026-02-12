@@ -1815,6 +1815,260 @@ function showVersionEditor(char) {
     );
 }
 
+// === 角色卡扩展数据 HTML 构建函数 ===
+
+/**
+ * 构建角色专属世界书的 HTML
+ * 从角色卡数据中提取 character_book 并渲染条目列表
+ */
+function buildCharacterBookHTML(charData) {
+    const book = charData.character_book;
+    if (!book) return '';
+
+    let entries = [];
+    if (Array.isArray(book)) {
+        entries = book;
+    } else if (book.entries) {
+        if (Array.isArray(book.entries)) {
+            entries = book.entries;
+        } else if (typeof book.entries === 'object') {
+            entries = Object.values(book.entries);
+        }
+    }
+
+    if (entries.length === 0) return '';
+
+    const bookName = (typeof book === 'object' && book.name) ? book.name : '角色世界书';
+
+    // 统计启用/禁用条目数
+    const enabledCount = entries.filter(e => e.enabled !== false && !e.disable).length;
+    const disabledCount = entries.length - enabledCount;
+
+    // 估算总 Token
+    let totalTokens = 0;
+    entries.forEach(e => {
+        if (e.enabled !== false && !e.disable) {
+            totalTokens += calculateTokens(e.content || '');
+        }
+    });
+
+    let html = '<div class="cm-adv-block">';
+    html += '<div class="cm-adv-block-header cm-adv-toggle">';
+    html += '<span class="cm-adv-toggle-icon">▼</span>';
+    html += '<span class="cm-adv-block-title">🌐 角色专属世界书</span>';
+    html += '<span class="cm-adv-block-badge">' + escapeHtml(bookName) + '</span>';
+    html += '<span class="cm-adv-block-stats">' + enabledCount + ' 启用';
+    if (disabledCount > 0) html += ' / ' + disabledCount + ' 禁用';
+    html += ' · 约 ' + totalTokens + ' T</span>';
+    html += '</div>';
+    html += '<div class="cm-adv-block-body">';
+
+    entries.forEach((entry, idx) => {
+        const isEnabled = entry.enabled !== false && !entry.disable;
+        const keys = entry.keys || entry.key || [];
+        const keyStr = Array.isArray(keys) ? keys.join(', ') : (typeof keys === 'string' ? keys : '');
+        const secondaryKeys = entry.secondary_keys || [];
+        const secKeyStr = Array.isArray(secondaryKeys) ? secondaryKeys.join(', ') : '';
+        const content = entry.content || '';
+        const comment = entry.comment || entry.name || '';
+        const entryTokens = calculateTokens(content);
+
+        // 位置映射
+        const positionMap = { 0: '之前', 1: '之后', 2: '作者注释顶', 3: '作者注释底', 4: 'Depth' };
+        const position = entry.position !== undefined ? (positionMap[entry.position] || '位置 ' + entry.position) : '';
+
+        html += '<div class="cm-wi-entry' + (isEnabled ? '' : ' cm-wi-disabled') + '">';
+        html += '<div class="cm-wi-entry-header">';
+        html += '<span class="cm-wi-toggle-icon">▶</span>';
+        html += '<span class="cm-wi-entry-idx">#' + idx + '</span>';
+        html += '<span class="cm-wi-entry-name" title="' + escapeHtml(comment) + '">' + escapeHtml(comment || '(未命名)') + '</span>';
+        if (!isEnabled) html += '<span class="cm-wi-badge cm-wi-badge-off">禁用</span>';
+        if (entry.constant) html += '<span class="cm-wi-badge cm-wi-badge-const">常驻</span>';
+        if (position) html += '<span class="cm-wi-badge cm-wi-badge-pos">' + escapeHtml(position) + '</span>';
+        html += '<span class="cm-wi-tokens">🪙 ' + entryTokens + '</span>';
+        html += '</div>';
+
+        // 条目详情（默认折叠）
+        html += '<div class="cm-wi-entry-body" style="display:none">';
+        if (keyStr) {
+            html += '<div class="cm-wi-field"><label>主关键词</label><div class="cm-wi-field-val">' + escapeHtml(keyStr) + '</div></div>';
+        }
+        if (secKeyStr) {
+            html += '<div class="cm-wi-field"><label>次关键词</label><div class="cm-wi-field-val">' + escapeHtml(secKeyStr) + '</div></div>';
+        }
+        if (content) {
+            html += '<div class="cm-wi-field"><label>内容</label><pre class="cm-wi-content">' + escapeHtml(content) + '</pre></div>';
+        }
+        if (entry.depth !== undefined && entry.depth !== null) {
+            html += '<div class="cm-wi-field"><label>深度</label><div class="cm-wi-field-val">' + entry.depth + '</div></div>';
+        }
+        html += '</div>'; // cm-wi-entry-body
+        html += '</div>'; // cm-wi-entry
+    });
+
+    html += '</div>'; // cm-adv-block-body
+    html += '</div>'; // cm-adv-block
+    return html;
+}
+
+/**
+ * 构建角色卡内正则脚本的 HTML
+ * 从 extensions.regex_scripts 中提取并渲染
+ */
+function buildRegexScriptsHTML(charData) {
+    const ext = charData.extensions;
+    if (!ext || !Array.isArray(ext.regex_scripts) || ext.regex_scripts.length === 0) return '';
+
+    const scripts = ext.regex_scripts;
+
+    // 位置映射
+    const placementMap = {
+        0: 'MD 显示',
+        1: '用户输入',
+        2: 'AI 输出',
+        3: '斜杠命令',
+        4: '世界书',
+        5: '提示词',
+        6: '用户输入(Raw)',
+        99: '仅运行'
+    };
+
+    let html = '<div class="cm-adv-block">';
+    html += '<div class="cm-adv-block-header cm-adv-toggle">';
+    html += '<span class="cm-adv-toggle-icon">▼</span>';
+    html += '<span class="cm-adv-block-title">🧩 正则脚本 (Regex)</span>';
+    html += '<span class="cm-adv-block-stats">' + scripts.length + ' 个脚本</span>';
+    html += '</div>';
+    html += '<div class="cm-adv-block-body">';
+
+    scripts.forEach((script, idx) => {
+        const isDisabled = script.disabled === true;
+        const name = script.scriptName || '未命名脚本';
+        const findRegex = script.findRegex || '';
+        const replaceStr = script.replaceString || '';
+        const trimStrings = script.trimStrings || [];
+
+        // 解析 placement
+        let placementStr = '';
+        if (Array.isArray(script.placement) && script.placement.length > 0) {
+            placementStr = script.placement.map(p => placementMap[p] || ('位置' + p)).join(', ');
+        }
+
+        html += '<div class="cm-regex-item' + (isDisabled ? ' cm-regex-disabled' : '') + '">';
+        html += '<div class="cm-regex-header cm-collapsible-header">';
+        html += '<span class="cm-collapsible-icon">▶</span>';
+        html += '<span class="cm-regex-idx">#' + (idx + 1) + '</span>';
+        html += '<span class="cm-regex-name">' + escapeHtml(name) + '</span>';
+        if (isDisabled) html += '<span class="cm-wi-badge cm-wi-badge-off">禁用</span>';
+        if (script.markdownOnly) html += '<span class="cm-wi-badge" style="background:rgba(147,51,234,0.2);color:#a78bfa">仅MD</span>';
+        if (script.promptOnly) html += '<span class="cm-wi-badge" style="background:rgba(37,99,235,0.2);color:#93c5fd">仅提示</span>';
+        html += '</div>';
+
+        html += '<div class="cm-regex-body cm-collapsible-body" style="display:none">';
+        html += '<div class="cm-regex-field"><label>查找正则</label><code class="cm-regex-code">' + escapeHtml(findRegex) + '</code></div>';
+        html += '<div class="cm-regex-field"><label>替换为</label><code class="cm-regex-code cm-regex-replace">' + escapeHtml(replaceStr || '(空)') + '</code></div>';
+        if (placementStr) {
+            html += '<div class="cm-regex-field"><label>作用范围</label><span class="cm-regex-val">' + escapeHtml(placementStr) + '</span></div>';
+        }
+        if (trimStrings.length > 0) {
+            html += '<div class="cm-regex-field"><label>裁剪字符串</label><span class="cm-regex-val">' + escapeHtml(trimStrings.join(' | ')) + '</span></div>';
+        }
+        // 深度范围
+        if (script.minDepth !== undefined && script.minDepth !== null) {
+            let depthStr = '最小: ' + script.minDepth;
+            if (script.maxDepth !== undefined && script.maxDepth !== null) depthStr += ', 最大: ' + script.maxDepth;
+            html += '<div class="cm-regex-field"><label>深度</label><span class="cm-regex-val">' + depthStr + '</span></div>';
+        }
+        html += '</div>'; // cm-regex-body
+        html += '</div>'; // cm-regex-item
+    });
+
+    html += '</div>'; // cm-adv-block-body
+    html += '</div>'; // cm-adv-block
+    return html;
+}
+
+/**
+ * 构建酒馆助手脚本 (ST 脚本) 的 HTML
+ * 从 extensions.tavern_helper 中提取并渲染
+ */
+function buildTavernHelperHTML(charData) {
+    const ext = charData.extensions;
+    if (!ext) return '';
+
+    const helper = ext.tavern_helper;
+    if (!helper) return '';
+
+    // 提取脚本列表（兼容新版字典结构和旧版数组结构）
+    let scripts = [];
+    if (!Array.isArray(helper) && typeof helper === 'object') {
+        // 新版字典结构：{ scripts: [], variables: {} }
+        if (Array.isArray(helper.scripts)) {
+            scripts = helper.scripts;
+        }
+    } else if (Array.isArray(helper)) {
+        // 旧版数组结构：查找 ["scripts", Array]
+        const scriptBlock = helper.find(item => Array.isArray(item) && item[0] === 'scripts');
+        if (scriptBlock && Array.isArray(scriptBlock[1])) {
+            scripts = scriptBlock[1];
+        }
+    }
+
+    if (scripts.length === 0) return '';
+
+    let html = '<div class="cm-adv-block">';
+    html += '<div class="cm-adv-block-header cm-adv-toggle">';
+    html += '<span class="cm-adv-toggle-icon">▼</span>';
+    html += '<span class="cm-adv-block-title">📜 酒馆助手脚本 (ST Script)</span>';
+    html += '<span class="cm-adv-block-stats">' + scripts.length + ' 个脚本</span>';
+    html += '</div>';
+    html += '<div class="cm-adv-block-body">';
+
+    scripts.forEach((script, idx) => {
+        const name = script.name || '未命名脚本';
+        const isEnabled = script.enabled !== false;
+        const content = script.content || '';
+        const info = script.info || '';
+        const type = script.type || 'script';
+
+        // 按钮信息
+        let buttonsInfo = '';
+        if (script.button && script.button.buttons && script.button.buttons.length > 0) {
+            buttonsInfo = script.button.buttons.map(b => b.name || '未命名').join(', ');
+        }
+
+        html += '<div class="cm-script-item' + (isEnabled ? '' : ' cm-script-disabled') + '">';
+        html += '<div class="cm-script-header cm-collapsible-header">';
+        html += '<span class="cm-collapsible-icon">▶</span>';
+        html += '<span class="cm-script-idx">#' + (idx + 1) + '</span>';
+        html += '<span class="cm-script-name">' + escapeHtml(name) + '</span>';
+        if (!isEnabled) html += '<span class="cm-wi-badge cm-wi-badge-off">禁用</span>';
+        html += '<span class="cm-wi-badge" style="background:rgba(34,197,94,0.2);color:#86efac">' + escapeHtml(type) + '</span>';
+        html += '</div>';
+
+        html += '<div class="cm-script-body cm-collapsible-body" style="display:none">';
+        if (info) {
+            html += '<div class="cm-script-field"><label>备注</label><div class="cm-script-val">' + escapeHtml(info) + '</div></div>';
+        }
+        if (buttonsInfo) {
+            html += '<div class="cm-script-field"><label>按钮</label><div class="cm-script-val">' + escapeHtml(buttonsInfo) + '</div></div>';
+        }
+        if (content) {
+            html += '<div class="cm-script-field"><label>脚本内容</label><pre class="cm-script-code">' + escapeHtml(content) + '</pre></div>';
+        }
+        // data 字段
+        if (script.data && typeof script.data === 'object' && Object.keys(script.data).length > 0) {
+            html += '<div class="cm-script-field"><label>Data</label><pre class="cm-script-code">' + escapeHtml(JSON.stringify(script.data, null, 2)) + '</pre></div>';
+        }
+        html += '</div>'; // cm-script-body
+        html += '</div>'; // cm-script-item
+    });
+
+    html += '</div>'; // cm-adv-block-body
+    html += '</div>'; // cm-adv-block
+    return html;
+}
+
 function showDetail(char) {
     state.currentDetailChar = char;
     const existing = doc.querySelector('.cm-detail-overlay');
@@ -2560,6 +2814,100 @@ function showDetail(char) {
         altSection.innerHTML = altHtml;
         body.appendChild(altSection);
     }
+
+    // === 角色卡扩展数据区域：世界书 / 正则脚本 / ST 脚本 ===
+    const advancedSection = doc.createElement('div');
+    advancedSection.className = 'cm-section cm-section-advanced';
+    advancedSection.innerHTML = '<h4>📦 角色卡扩展数据 <span id="cmAdvLoading" style="font-size:11px;font-weight:normal;color:var(--cm-text-sec);margin-left:8px">加载中...</span></h4>' +
+        '<div id="cmAdvancedContent" class="cm-advanced-content"><div style="padding:16px;text-align:center;color:var(--cm-text-sec)">正在读取角色卡数据...</div></div>';
+    body.appendChild(advancedSection);
+
+    // 异步加载角色卡完整数据，提取扩展信息
+    (async () => {
+        try {
+            const getRes = await authFetch('/api/characters/get', {
+                method: 'POST',
+                body: JSON.stringify({ avatar_url: char.fileName })
+            });
+            if (!getRes.ok) throw new Error('无法读取角色数据');
+            const fullData = await getRes.json();
+            const charData = fullData.data || fullData;
+
+            const advContent = doc.getElementById('cmAdvancedContent');
+            const advLoading = doc.getElementById('cmAdvLoading');
+            if (!advContent) return;
+            if (advLoading) advLoading.remove();
+
+            let html = '';
+
+            // --- 1. 角色专属世界书 ---
+            html += buildCharacterBookHTML(charData);
+
+            // --- 2. 角色卡内正则脚本 ---
+            html += buildRegexScriptsHTML(charData);
+
+            // --- 3. 角色卡内酒馆助手脚本 (ST 脚本) ---
+            html += buildTavernHelperHTML(charData);
+
+            if (!html) {
+                html = '<div style="padding:16px;text-align:center;color:var(--cm-text-sec);opacity:0.6">该角色卡无扩展数据</div>';
+            }
+
+            advContent.innerHTML = html;
+
+            // 绑定折叠/展开事件
+            advContent.querySelectorAll('.cm-adv-toggle').forEach(btn => {
+                btn.onclick = function () {
+                    const target = this.closest('.cm-adv-block').querySelector('.cm-adv-block-body');
+                    const icon = this.querySelector('.cm-adv-toggle-icon');
+                    if (target.style.display === 'none') {
+                        target.style.display = '';
+                        icon.textContent = '▼';
+                    } else {
+                        target.style.display = 'none';
+                        icon.textContent = '▶';
+                    }
+                };
+            });
+
+            // 绑定世界书条目折叠事件
+            advContent.querySelectorAll('.cm-wi-entry-header').forEach(hdr => {
+                hdr.onclick = function () {
+                    const body = this.nextElementSibling;
+                    const icon = this.querySelector('.cm-wi-toggle-icon');
+                    if (body.style.display === 'none') {
+                        body.style.display = '';
+                        icon.textContent = '▼';
+                    } else {
+                        body.style.display = 'none';
+                        icon.textContent = '▶';
+                    }
+                };
+            });
+
+            // 绑定正则脚本和 ST 脚本条目的折叠事件
+            advContent.querySelectorAll('.cm-collapsible-header').forEach(hdr => {
+                hdr.onclick = function () {
+                    const body = this.nextElementSibling;
+                    const icon = this.querySelector('.cm-collapsible-icon');
+                    if (body && body.style.display === 'none') {
+                        body.style.display = '';
+                        if (icon) icon.textContent = '▼';
+                    } else if (body) {
+                        body.style.display = 'none';
+                        if (icon) icon.textContent = '▶';
+                    }
+                };
+            });
+
+        } catch (e) {
+            const advContent = doc.getElementById('cmAdvancedContent');
+            if (advContent) {
+                advContent.innerHTML = '<div style="padding:16px;text-align:center;color:#ef4444">加载失败: ' + escapeHtml(e.message) + '</div>';
+            }
+        }
+    })();
+
     detail.appendChild(body);
     ov.appendChild(detail);
     doc.body.appendChild(ov);
