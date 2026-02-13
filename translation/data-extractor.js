@@ -10,7 +10,9 @@ export function extractTranslatableData(charData) {
         system: {},
         greetings: {}, // Alternate Greetings
         tags: {},
-        lorebook: {}
+        lorebook: {},
+        regex: {},      // 正则脚本可翻译文本
+        scripts: {}     // 酒馆助手脚本可翻译文本
     };
 
     // 1. 基础信息
@@ -51,13 +53,12 @@ export function extractTranslatableData(charData) {
         });
     }
 
-    // 4. Tags (Array of strings)
+    // 4. Tags — 合并为一条统一翻译（用逗号分隔）
     if (Array.isArray(data.tags)) {
-        data.tags.forEach((tag, index) => {
-            if (typeof tag === 'string' && tag.trim()) {
-                result.tags[`tag_${index}`] = tag;
-            }
-        });
+        const validTags = data.tags.filter(tag => typeof tag === 'string' && tag.trim());
+        if (validTags.length > 0) {
+            result.tags['tags_all'] = validTags.join(', ');
+        }
     }
 
     // 5. 世界书 (Lorebook / Character Book)
@@ -66,26 +67,135 @@ export function extractTranslatableData(charData) {
     let book = data.character_book;
     if (book && typeof book === 'object' && Array.isArray(book.entries)) {
         book.entries.forEach((entry, index) => {
-            // 提取 Key, Content, Comment, Selective (Name 暂时不翻，或者看情况)
-            // 实际上 Key 通常不翻译，因为是触发词。但如果用户想翻也可以。
-            // 这里我们只翻译 Content 和 Comment (备注)，以及显示名(Name) 如果有的话。
-            // 触发词 Keys 一般保留原文以免失效，除非是中文触发。
-            
-            // 为了区分，使用 `entry_{id}_{field}`
             const uid = entry.id || index;
             
+            // 世界书条目标题/备忘名
+            if (entry.name && entry.name.trim()) {
+                result.lorebook[`entry_${uid}_name`] = entry.name;
+            }
+            
+            // 触发词 (keys) — 合并为逗号分隔字符串供翻译
+            if (entry.keys && Array.isArray(entry.keys)) {
+                const validKeys = entry.keys.filter(k => typeof k === 'string' && k.trim());
+                if (validKeys.length > 0) {
+                    result.lorebook[`entry_${uid}_keys`] = validKeys.join(', ');
+                }
+            }
+            
+            // 世界书条目内容
             if (entry.content && entry.content.trim()) {
                 result.lorebook[`entry_${uid}_content`] = entry.content;
             }
+            
+            // 世界书条目备注
             if (entry.comment && entry.comment.trim()) {
                 result.lorebook[`entry_${uid}_comment`] = entry.comment;
             }
-            // 很多时候 entry 还有 keys (secondary_keys), name (memo)
-            // 如果用户需要翻译 keys，风险较大。这里保守起见，暂不自动提取 keys。
+        });
+    }
+
+    // 6. 正则脚本 (extensions.regex_scripts)
+    const ext = data.extensions || {};
+    if (Array.isArray(ext.regex_scripts)) {
+        ext.regex_scripts.forEach((script, index) => {
+            const uid = script.id || index;
+            
+            // 脚本名称 — 可翻译
+            if (script.scriptName && script.scriptName.trim()) {
+                result.regex[`regex_${uid}_scriptName`] = script.scriptName;
+            }
+            
+            // 替换字符串 — 提取其中的自然语言文本
+            // replaceString 中可能包含 HTML/CSS/JS 混合内容
+            // 我们提取整个 replaceString 供翻译，但翻译时需要 AI 仅翻译文本部分
+            if (script.replaceString && script.replaceString.trim()) {
+                // 检查是否包含自然语言文本（而不是纯代码/空替换）
+                const hasText = hasNaturalLanguageText(script.replaceString);
+                if (hasText) {
+                    result.regex[`regex_${uid}_replaceString`] = script.replaceString;
+                }
+            }
+        });
+    }
+
+    // 7. 酒馆助手脚本 (extensions.tavern_helper.scripts)
+    const tavernHelper = ext.tavern_helper;
+    if (tavernHelper && typeof tavernHelper === 'object' && Array.isArray(tavernHelper.scripts)) {
+        tavernHelper.scripts.forEach((script, index) => {
+            const uid = script.id || index;
+            
+            // 脚本名称 — 可翻译
+            if (script.name && script.name.trim()) {
+                result.scripts[`script_${uid}_name`] = script.name;
+            }
+            
+            // 脚本内容 — 整体提取，翻译时需要 AI 识别可翻译部分
+            // content 中包含 JS 代码、.describe() 描述、.prefault() 默认值、HTML 文本等
+            if (script.content && script.content.trim()) {
+                const hasText = hasNaturalLanguageText(script.content);
+                if (hasText) {
+                    result.scripts[`script_${uid}_content`] = script.content;
+                }
+            }
+            
+            // 脚本信息说明 — 可翻译
+            if (script.info && script.info.trim()) {
+                result.scripts[`script_${uid}_info`] = script.info;
+            }
+            
+            // 按钮名称 — 可翻译
+            if (script.button && script.button.enabled && Array.isArray(script.button.buttons)) {
+                script.button.buttons.forEach((btn, btnIdx) => {
+                    if (btn.name && btn.name.trim()) {
+                        result.scripts[`script_${uid}_btn_${btnIdx}_name`] = btn.name;
+                    }
+                });
+            }
         });
     }
 
     return result;
+}
+
+/**
+ * 检查文本是否包含自然语言内容（而非纯代码/正则/空白）
+ * @param {string} text - 待检查文本
+ * @returns {boolean} 是否包含可翻译的自然语言
+ */
+function hasNaturalLanguageText(text) {
+    if (!text || !text.trim()) return false;
+    
+    // 去除 HTML 标签、CSS 样式块、JS 代码块后检查是否还有文本
+    let stripped = text;
+    
+    // 去除 <style>...</style> 块
+    stripped = stripped.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+    // 去除 <script>...</script> 块（但保留 script 标签内的字符串）
+    // 注意：不能简单去除 script，因为酒馆助手的 content 本身就是脚本
+    // 这里只检查是否有中文/日文/韩文字符，或者连续的英文单词
+    
+    // 检查是否包含 CJK 字符
+    if (/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/.test(stripped)) {
+        return true;
+    }
+    
+    // 检查是否包含连续英文单词（至少两个单词相连，排除纯代码标识符）
+    // 匹配类似 "Variable Update", "Click to view" 等自然语言
+    if (/[A-Z][a-z]+\s+[a-z]+/i.test(stripped)) {
+        return true;
+    }
+    
+    // 检查 .describe('...') 中的内容
+    if (/\.describe\s*\(\s*['"`]/.test(stripped)) {
+        return true;
+    }
+    
+    // 检查 data-open/data-close 等属性中的文本
+    if (/data-(?:open|close|title|label|text)\s*=\s*["']/.test(stripped)) {
+        return true;
+    }
+    
+    return false;
 }
 
 /**
@@ -125,27 +235,38 @@ export function applyTranslation(charData, translatedData) {
         });
     }
 
-    // 3. Tags
+    // 3. Tags — 从合并字符串拆分回数组
     if (translatedData.tags && Array.isArray(target.tags)) {
-        Object.keys(translatedData.tags).forEach(key => {
-            const index = parseInt(key.split('_')[1]);
-            if (!isNaN(index) && target.tags[index] !== undefined) {
-                target.tags[index] = translatedData.tags[key];
+        if (translatedData.tags['tags_all'] !== undefined) {
+            // 新格式：合并的逗号分隔字符串
+            const translatedTags = translatedData.tags['tags_all']
+                .split(/[,，]/)
+                .map(t => t.trim())
+                .filter(t => t.length > 0);
+            // 按原始标签数量对齐
+            for (let i = 0; i < target.tags.length && i < translatedTags.length; i++) {
+                target.tags[i] = translatedTags[i];
             }
-        });
+        } else {
+            // 兼容旧格式 tag_0, tag_1...
+            Object.keys(translatedData.tags).forEach(key => {
+                const index = parseInt(key.split('_')[1]);
+                if (!isNaN(index) && target.tags[index] !== undefined) {
+                    target.tags[index] = translatedData.tags[key];
+                }
+            });
+        }
     }
 
     // 4. 世界书
     if (translatedData.lorebook && target.character_book && Array.isArray(target.character_book.entries)) {
         Object.keys(translatedData.lorebook).forEach(key => {
             // key 格式: entry_{uid}_{field}
-            // field: content | comment
+            // field: name | keys | content | comment
             const parts = key.split('_');
-            const field = parts.pop(); // content or comment
-            const uidStr = parts.slice(1).join('_'); // uid might contain underscores? actually we used entry.id or index
+            const field = parts.pop(); // name, keys, content or comment
+            const uidStr = parts.slice(1).join('_');
             
-            // 我们需要找到对应的 entry
-            // 如果 uid 是数字索引
             let entry = null;
             
             // 尝试通过 ID 查找
@@ -153,20 +274,101 @@ export function applyTranslation(charData, translatedData) {
             if (foundById) {
                 entry = foundById;
             } else {
-                // 尝试作为索引
                 const idx = parseInt(uidStr);
                 if (!isNaN(idx) && target.character_book.entries[idx]) {
-                    // 只有当 ID 不存在时才认为是索引
-                    // 但 extract 时优先用了 id。
-                    // 如果 extract 时用了 index，那这里 uidStr 就是 index
                     entry = target.character_book.entries[idx];
                 }
             }
 
             if (entry) {
-                entry[field] = translatedData.lorebook[key];
+                if (field === 'keys') {
+                    // keys 从逗号分隔字符串拆回数组
+                    entry.keys = translatedData.lorebook[key]
+                        .split(/[,，]/)
+                        .map(k => k.trim())
+                        .filter(k => k.length > 0);
+                } else {
+                    entry[field] = translatedData.lorebook[key];
+                }
             }
         });
+    }
+
+    // 5. 正则脚本
+    if (translatedData.regex) {
+        const ext = target.extensions || (target.extensions = {});
+        if (Array.isArray(ext.regex_scripts)) {
+            Object.keys(translatedData.regex).forEach(key => {
+                // key 格式: regex_{uid}_{field}
+                // field: scriptName | replaceString
+                const match = key.match(/^regex_(.+)_(scriptName|replaceString)$/);
+                if (!match) return;
+                
+                const uidStr = match[1];
+                const field = match[2];
+                
+                // 查找对应的正则脚本
+                let script = ext.regex_scripts.find(s => s.id === uidStr);
+                if (!script) {
+                    const idx = parseInt(uidStr);
+                    if (!isNaN(idx) && ext.regex_scripts[idx]) {
+                        script = ext.regex_scripts[idx];
+                    }
+                }
+                
+                if (script && translatedData.regex[key] !== undefined) {
+                    script[field] = translatedData.regex[key];
+                }
+            });
+        }
+    }
+
+    // 6. 酒馆助手脚本
+    if (translatedData.scripts) {
+        const ext = target.extensions || (target.extensions = {});
+        const tavernHelper = ext.tavern_helper;
+        if (tavernHelper && Array.isArray(tavernHelper.scripts)) {
+            Object.keys(translatedData.scripts).forEach(key => {
+                // 按钮名称: script_{uid}_btn_{btnIdx}_name
+                const btnMatch = key.match(/^script_(.+)_btn_(\d+)_name$/);
+                if (btnMatch) {
+                    const uidStr = btnMatch[1];
+                    const btnIdx = parseInt(btnMatch[2]);
+                    
+                    let script = tavernHelper.scripts.find(s => s.id === uidStr);
+                    if (!script) {
+                        const idx = parseInt(uidStr);
+                        if (!isNaN(idx) && tavernHelper.scripts[idx]) {
+                            script = tavernHelper.scripts[idx];
+                        }
+                    }
+                    
+                    if (script && script.button && Array.isArray(script.button.buttons) && script.button.buttons[btnIdx]) {
+                        script.button.buttons[btnIdx].name = translatedData.scripts[key];
+                    }
+                    return;
+                }
+                
+                // 脚本字段: script_{uid}_{field}
+                const fieldMatch = key.match(/^script_(.+)_(name|content|info)$/);
+                if (!fieldMatch) return;
+                
+                const uidStr = fieldMatch[1];
+                const field = fieldMatch[2];
+                
+                let script = tavernHelper.scripts.find(s => s.id === uidStr);
+                if (!script) {
+                    const idx = parseInt(uidStr);
+                    if (!isNaN(idx) && tavernHelper.scripts[idx]) {
+                        script = tavernHelper.scripts[idx];
+                    }
+                }
+                
+                if (script && translatedData.scripts[key] !== undefined) {
+                    script[field] = translatedData.scripts[key];
+                }
+            });
+        }
     }
 
     return newData;

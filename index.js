@@ -3,17 +3,22 @@ import { doc, parentWin, getSTContext, getSTCharacters } from './context.js';
 import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip } from './utils.js';
 import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
+import { getCache, setCache, migrateFromLocalStorage } from './db.js';
 import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars } from './data.js';
 import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
 import { showSettingsDialog } from './settings.js';
 import { initTranslationUI, openTranslationDialog } from './translation/translation-ui.js';
+import { writePngText } from './translation/png-writer.js';
 
-console.log('=== 角色卡管理器 (v89.3 翻译功能版) 启动 ===');
+console.log('=== 角色卡管理器 小鱼改版 v1.0 启动 ===');
 
 const MODAL_ID = 'charManagerModal';
 const STYLE_ID = 'charManagerStylesV97';
 const BUTTON_ID = 'charManagerBtn';
 
+// 导入队列控制
+const importQueue = [];
+let isProcessingQueue = false;
 
 function showAlert(msg) {
     return new Promise(resolve => {
@@ -115,25 +120,466 @@ function setZoom(val) {
     if (rangeInp) rangeInp.value = state.zoomLevel;
 }
 
+// 队列化导入入口
 async function importFiles(files) {
     if (!files || files.length === 0) return;
-    const nativeInput = parentWin.document.getElementById('character_import_file');
-    if (!nativeInput) return notify('未找到酒馆原生导入接口', 'error');
+    return new Promise((resolve, reject) => {
+        importQueue.push({ files, resolve, reject });
+        processImportQueue();
+    });
+}
 
-    const btn = doc.getElementById('cmImportBtn');
-    if (btn) btn.disabled = true;
+// 实际执行导入的逻辑 (原 importFiles)
+async function doActualImport(files, remainingInQueue) {
+    const nativeInput = parentWin.document.getElementById('character_import_file');
+    if (!nativeInput) throw new Error('未找到酒馆原生导入接口');
+
+    // 不再禁用全局按钮，因为支持队列
+    // const btn = doc.getElementById('cmImportBtn');
+    
+    // 如果酒馆列表尚未加载(0)，则使用本地缓存数量作为基准，避免误报“新增全部”
+    const stLen = getSTCharacters().length;
+    const oldLen = stLen === 0 && state.characters.length > 0 ? state.characters.length : stLen;
+
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    nativeInput.files = dt.files;
+    nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // 显示进度条提示等待
+    const queueMsg = remainingInQueue > 0 ? ` (队列剩余: ${remainingInQueue})` : '';
+    showProgressBar(`正在等待导入完成${queueMsg}...`, true);
+
+    // 使用抽取的监控函数 (btn 传 null 因为我们不控制按钮了)
+    await monitorImportProgress(oldLen, null, files.length);
+}
+
+// 队列处理器
+async function processImportQueue() {
+    if (isProcessingQueue) return;
+    isProcessingQueue = true;
 
     try {
-        const oldLen = getSTCharacters().length; // 记录导入前的数量
-        const dt = new DataTransfer();
-        for (const f of files) dt.items.add(f);
-        nativeInput.files = dt.files;
-        nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+        while (importQueue.length > 0) {
+            const task = importQueue[0]; // Peek
+            try {
+                await doActualImport(task.files, importQueue.length - 1);
+                task.resolve(true);
+            } catch (e) {
+                console.error(e);
+                notify('导入失败: ' + e.message, 'error');
+                task.reject(e);
+            } finally {
+                importQueue.shift(); // Remove
+            }
+        }
+    } finally {
+        isProcessingQueue = false;
+        // 确保进度条关闭
+        hideProgressBar();
+    }
+}
 
-        // 立即显示进度条提示等待
-        showProgressBar('正在等待导入完成...', true);
+async function showUrlImportDialog() {
+    let selectedTagIds = [];
 
-        // 批量导入防抖检测逻辑
+    const renderSelectedTags = (container) => {
+        container.innerHTML = '';
+        if (selectedTagIds.length === 0) {
+            const span = doc.createElement('span');
+            span.style.color = 'var(--cm-text-sec)';
+            span.style.fontSize = '12px';
+            span.textContent = '未选择标签';
+            container.appendChild(span);
+        } else {
+            selectedTagIds.forEach(id => {
+                const tag = state.tags.find(t => t.id === id);
+                if (tag) {
+                    const span = doc.createElement('span');
+                    span.className = 'cm-card-tag';
+                    span.style.background = tag.color || '#666';
+                    span.textContent = tag.name;
+                    span.style.cursor = 'pointer';
+                    // 增大显示尺寸以匹配 + 按钮
+                    span.style.fontSize = '14px';
+                    span.style.padding = '6px 12px';
+                    span.style.lineHeight = '1.2';
+                    span.onclick = () => {
+                        selectedTagIds = selectedTagIds.filter(tid => tid !== id);
+                        renderSelectedTags(container);
+                    };
+                    container.appendChild(span);
+                }
+            });
+        }
+        const addBtn = doc.createElement('button');
+        addBtn.className = 'cm-btn cm-btn-sm';
+        addBtn.type = 'button'; // 防止意外提交
+        addBtn.textContent = '+';
+        addBtn.style.marginLeft = '8px';
+        addBtn.onclick = (e) => {
+            e.stopPropagation(); // 防止冒泡关闭弹窗
+            showTagPicker([...selectedTagIds], (newIds) => {
+                selectedTagIds = newIds;
+                renderSelectedTags(container);
+            });
+        };
+        container.appendChild(addBtn);
+    };
+
+    const content = `
+        <div style="display:flex;flex-direction:column;gap:12px;padding:10px">
+            <div class="cm-form-group">
+                <label>图片链接 <span style="color:red">*</span></label>
+                <input type="text" class="cm-input" id="cmUrlImportLink" placeholder="Discord或其他直链 (必填)">
+            </div>
+            <div class="cm-form-group">
+                <label>源链接 (Source)</label>
+                <input type="text" class="cm-input" id="cmUrlImportSource" placeholder="来源地址 (选填)">
+            </div>
+            <div class="cm-form-group">
+                <label>备注 (Note)</label>
+                <textarea class="cm-input" id="cmUrlImportNote" rows="3" placeholder="追加到备注 (选填)"></textarea>
+            </div>
+            <div class="cm-form-group">
+                <label>标签 (Tags)</label>
+                <div id="cmUrlImportTags" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-height:28px"></div>
+            </div>
+        </div>
+    `;
+
+    createBaseDialog('从 URL 导入', content, [
+        { text: '取消', id: 'cmUrlImportCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => close() },
+        {
+            text: '导入', id: 'cmUrlImportOk', cls: 'cm-btn-primary', onClick: async (ov, close) => {
+                const urlInput = ov.querySelector('#cmUrlImportLink');
+                const sourceInput = ov.querySelector('#cmUrlImportSource');
+                const noteInput = ov.querySelector('#cmUrlImportNote');
+                
+                const url = urlInput.value.trim();
+                const source = sourceInput.value.trim();
+                const note = noteInput.value.trim();
+
+                if (!url) {
+                    notify('请输入图片链接', 'warning');
+                    urlInput.focus();
+                    return;
+                }
+
+                close();
+                const btn = doc.getElementById('cmUrlImportBtn');
+                if (btn) btn.disabled = true;
+
+                try {
+                    showProgressBar('正在请求服务器下载...', true);
+
+                    // 1. 下载文件
+                    const response = await authFetch('/api/content/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: url })
+                    });
+
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`服务器下载失败: ${response.status} - ${errText}`);
+                    }
+
+                    // 校验 Content-Type
+                    const type = response.headers.get('Content-Type') || '';
+                    if (!type.startsWith('image/') && !type.includes('json') && !type.includes('octet-stream')) {
+                        throw new Error(`无效的文件类型: ${type}。请提供有效的图片或JSON链接。`);
+                    }
+
+                    const blob = await response.blob();
+                    
+                    // 生成唯一文件名以确保能找到它
+                    let ext = 'png';
+                    if (type) {
+                        if (type.includes('json')) ext = 'json';
+                        else if (type.includes('webp')) ext = 'webp';
+                    }
+                    const uniqueName = `import_${Date.now()}.${ext}`;
+                    const file = new File([blob], uniqueName, { type: blob.type });
+
+                    // 2. 预处理：注入 metadata (Source, Note, Tags)
+                    // 这样导入后就不需要再调用 updateCharacter，且文件本身也包含了信息
+                    let fileToImport = file;
+                    try {
+                        // 尝试解析 PNG
+                        const buf = await blob.arrayBuffer();
+                        const charData = await parsePNG(buf); // 使用 index.js 内置的 parsePNG
+                        
+                        if (charData) {
+                            let dataModified = false;
+                            
+                            // 确定数据节点 (兼容 V2/V3)
+                            // 注意：parsePNG 返回的是解码后的 JSON 对象
+                            // 如果是 V3，通常结构是 { spec: 'chara_card_v3', data: { ... } }
+                            // 如果是 V2，直接是 { name: ... }
+                            let dataBlock = charData;
+                            if (charData.spec === 'chara_card_v3' && charData.data) {
+                                dataBlock = charData.data;
+                            }
+
+                            // 1. 注入 Source
+                            if (source) {
+                                if (!dataBlock.extensions) dataBlock.extensions = {};
+                                // 保留原有 source_url 如果存在? 不，这里是导入新卡，应该应用用户输入的 source
+                                dataBlock.extensions.source_url = source;
+                                dataModified = true;
+                            }
+
+                            // 2. 注入 Note
+                            if (note) {
+                                const oldNote = dataBlock.creator_notes || '';
+                                dataBlock.creator_notes = oldNote ? oldNote + '\n' + note : note;
+                                dataModified = true;
+                            }
+
+                            // 3. 注入 Tags (写入 metadata 以便便携，但 ST-CM 还需要导入后关联)
+                            if (selectedTagIds.length > 0) {
+                                const newTagNames = selectedTagIds
+                                    .map(id => state.tags.find(t => t.id === id)?.name)
+                                    .filter(Boolean);
+                                
+                                if (newTagNames.length > 0) {
+                                    if (!dataBlock.tags) dataBlock.tags = [];
+                                    // 合并并去重
+                                    const existingTags = new Set(dataBlock.tags);
+                                    newTagNames.forEach(t => existingTags.add(t));
+                                    dataBlock.tags = Array.from(existingTags);
+                                    dataModified = true;
+                                }
+                            }
+
+                            if (dataModified) {
+                                // 重新打包 PNG
+                                const jsonStr = JSON.stringify(charData);
+                                // UTF-8 base64 encoding
+                                const base64Str = btoa(unescape(encodeURIComponent(jsonStr)));
+                                const key = (charData.spec === 'chara_card_v3') ? 'ccv3' : 'chara';
+                                
+                                const newBlob = writePngText(buf, key, base64Str);
+                                fileToImport = new File([newBlob], uniqueName, { type: 'image/png' });
+                                console.log('[CharManager] Metadata injected successfully');
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('[CharManager] Failed to inject metadata, falling back to original file', err);
+                    }
+
+                    // 3. 记录当前角色列表，执行导入
+                    // FIX: getSTCharacters() 返回的是原生对象，属性是 avatar 而非 fileName
+                    const oldChars = getSTCharacters().map(c => c.avatar);
+                    await importFiles([fileToImport]);
+
+                    // 4. 查找新导入的角色并应用 ST-CM 标签关联
+                    // (Source 和 Note 已经在 Metadata 里了，不需要再更新)
+                    const currentChars = getSTCharacters();
+                    // 找出旧列表中不存在的新文件
+                    let targetChar = currentChars.find(c => !oldChars.includes(c.avatar));
+
+                    // 如果没找到，尝试通过 uniqueName 查找
+                    if (!targetChar) {
+                        targetChar = currentChars.find(c => c.avatar && c.avatar.includes(uniqueName.split('.')[0]));
+                    }
+
+                    if (targetChar) {
+                        // 仅需处理标签关联 (ST-CM 数据库层面)
+                        if (selectedTagIds.length > 0) {
+                            let tagCount = 0;
+                            for (const tagId of selectedTagIds) {
+                                if (addTagToChar(targetChar.avatar, tagId)) tagCount++;
+                            }
+                            if (tagCount > 0) notify(`已添加 ${tagCount} 个标签`, 'success');
+                            
+                            // 刷新界面以显示标签
+                            renderView();
+                            renderTagSidebar();
+                        }
+                    } else {
+                        if (selectedTagIds.length > 0) {
+                             console.warn('未找到新导入的角色，无法应用标签关联');
+                             notify('未找到新导入的角色，无法应用标签关联', 'warning');
+                        }
+                    }
+
+                } catch (e) {
+                    console.error(e);
+                    notify('导入处理失败: ' + e.message, 'error');
+                } finally {
+                    hideProgressBar();
+                    if (btn) btn.disabled = false;
+                }
+            }
+        }
+    ], (ov) => {
+        // 禁止点击遮罩层关闭
+        ov.onclick = null;
+        
+        const tagsContainer = ov.querySelector('#cmUrlImportTags');
+        renderSelectedTags(tagsContainer);
+    });
+}
+
+function showTagPicker(currentIds, onConfirm) {
+    // 1. Create Overlay (stacked)
+    const overlay = doc.createElement('div');
+    overlay.className = 'cm-tag-editor-overlay';
+    // 强制样式以确保覆盖在最上层 (Avoid conflict with base dialog)
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:2147483647;display:flex;justify-content:center;align-items:center;';
+
+    // 2. Create Dialog Box
+    const dialog = doc.createElement('div');
+    dialog.className = 'cm-tag-editor ' + (state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light');
+    dialog.style.cssText = 'width:400px;max-width:90%;max-height:80vh;display:flex;flex-direction:column;background:var(--cm-bg);border:1px solid var(--cm-border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+
+    // 3. Header
+    const header = doc.createElement('div');
+    header.className = 'cm-tag-editor-header';
+    header.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--cm-border);display:flex;justify-content:space-between;align-items:center';
+    header.innerHTML = '<h3>选择标签</h3><button class="cm-tag-editor-close">' + ICONS.close + '</button>';
+
+    // 4. Body (Matches showTagSelector structure)
+    const body = doc.createElement('div');
+    body.className = 'cm-tag-editor-body';
+    body.style.cssText = 'padding:0;flex:1;overflow:hidden;display:flex;flex-direction:column';
+
+    const wrapper = doc.createElement('div');
+    wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;';
+
+    // Quick Create & Suggestions
+    const quickCreate = doc.createElement('div');
+    quickCreate.className = 'cm-quick-create';
+    quickCreate.style.position = 'relative';
+    quickCreate.innerHTML = '<input type="text" placeholder="新建或搜索标签..." class="cm-input-sm" autocomplete="off"><button class="cm-btn-sm">+</button>';
+
+    const suggestions = doc.createElement('div');
+    suggestions.className = 'cm-tag-suggestions';
+    quickCreate.appendChild(suggestions);
+
+    // List
+    const list = doc.createElement('div');
+    list.className = 'cm-tag-selector-list';
+    list.style.cssText = 'flex:1;overflow-y:auto;';
+
+    wrapper.appendChild(quickCreate);
+    wrapper.appendChild(list);
+    body.appendChild(wrapper);
+
+    // 5. Footer
+    const footer = doc.createElement('div');
+    footer.className = 'cm-tag-editor-footer';
+    footer.style.cssText = 'padding:10px 16px;border-top:1px solid var(--cm-border);text-align:right';
+    
+    const closeBtnFooter = doc.createElement('button');
+    closeBtnFooter.className = 'cm-btn cm-btn-secondary';
+    closeBtnFooter.textContent = '关闭';
+    closeBtnFooter.style.width = '100%';
+    footer.appendChild(closeBtnFooter);
+
+    // Assemble
+    dialog.appendChild(header);
+    dialog.appendChild(body);
+    dialog.appendChild(footer);
+    overlay.appendChild(dialog);
+    doc.body.appendChild(overlay);
+
+    // 6. Logic
+    let localIds = [...currentIds];
+
+    const close = () => overlay.remove();
+    header.querySelector('.cm-tag-editor-close').onclick = close;
+    closeBtnFooter.onclick = close;
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+
+    function renderListItems() {
+        list.innerHTML = '';
+        if (state.tags.length === 0) {
+            const empty = doc.createElement('div');
+            empty.style.cssText = 'padding:20px;color:var(--cm-text-sec);text-align:center';
+            empty.textContent = '暂无标签';
+            list.appendChild(empty);
+        } else {
+            const sortedTags = [...state.tags].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+            sortedTags.forEach(tag => {
+                const isSelected = localIds.includes(tag.id);
+                const item = doc.createElement('div');
+                item.className = 'cm-tag-selector-item' + (isSelected ? ' selected' : '');
+                item.innerHTML =
+                    '<span class="cm-tag-color" style="background:' + (tag.color || '#666') + '"></span>' +
+                    '<span>' + escapeHtml(tag.name) + '</span>' +
+                    (isSelected ? '<span class="cm-tag-check">✓</span>' : '');
+
+                item.onclick = function () {
+                    if (isSelected) {
+                        localIds = localIds.filter(id => id !== tag.id);
+                    } else {
+                        localIds.push(tag.id);
+                    }
+                    renderListItems();
+                    onConfirm(localIds); // Live update
+                };
+                list.appendChild(item);
+            });
+        }
+    }
+
+    renderListItems();
+
+    const quickInput = quickCreate.querySelector('input');
+    const quickBtn = quickCreate.querySelector('button');
+
+    const handleCreate = (forceName) => {
+        const val = (forceName || quickInput.value).trim();
+        if (val) {
+            const existingTag = state.tags.find(t => t.name === val);
+            if (existingTag) {
+                if (!localIds.includes(existingTag.id)) {
+                        localIds.push(existingTag.id);
+                        notify('已添加已有标签: ' + val, 'success');
+                } else {
+                        notify('标签已存在', 'warning');
+                }
+            } else {
+                const newTag = createTag(val, DEFAULT_TAG_COLOR);
+                localIds.push(newTag.id);
+                notify('已创建并添加标签', 'success');
+            }
+            renderListItems();
+            onConfirm(localIds);
+            quickInput.value = '';
+            suggestions.style.display = 'none';
+        }
+    };
+
+    quickInput.oninput = function () {
+        const val = this.value.trim().toLowerCase();
+        if (!val) { suggestions.style.display = 'none'; return; }
+        const matches = state.tags.filter(t => t.name.toLowerCase().includes(val));
+        if (matches.length > 0) {
+            suggestions.innerHTML = '';
+            matches.forEach(t => {
+                const item = doc.createElement('div');
+                item.className = 'cm-tag-suggestion-item';
+                item.innerHTML = '<span class="cm-tag-color" style="background:' + (t.color || '#666') + '"></span><span>' + escapeHtml(t.name) + '</span>';
+                item.onclick = function () { handleCreate(t.name); };
+                suggestions.appendChild(item);
+            });
+            suggestions.style.display = 'block';
+        } else {
+            suggestions.style.display = 'none';
+        }
+    };
+    quickBtn.onclick = () => handleCreate();
+    quickInput.onkeydown = (e) => { if (e.key === 'Enter') handleCreate(); };
+    quickInput.focus();
+}
+
+// 抽取公共的导入进度监控函数，用于文件导入和URL导入
+function monitorImportProgress(oldLen, btn, expectedCount = 0) {
+    return new Promise(resolve => {
         let checkAttempts = 0;
         const maxChecks = 150; // 最多等 30 秒
         let lastLen = oldLen;
@@ -157,10 +603,16 @@ async function importFiles(files) {
                     clearInterval(checkTimer);
 
                     state.renderedCount = 0;
-                    const body = doc.getElementById('cmBody');
-                    if (body) body.innerHTML = '';
+                    // const body = doc.getElementById('cmBody');
+                    // if (body) body.innerHTML = ''; // 移除全量清空，避免闪烁
 
-                    updateProgressBar(80, `导入结束 (新增 ${currentLen - oldLen} 个)，正在同步...`, '');
+                    // 修正显示数量：如果检测到的增量远大于预期导入数量（例如初始化导致 oldLen=0），则使用预期数量
+                    let addedCount = currentLen - oldLen;
+                    if (expectedCount > 0 && addedCount > expectedCount) {
+                        addedCount = expectedCount;
+                    }
+
+                    updateProgressBar(80, `导入结束 (新增 ${addedCount} 个)，正在同步...`, '');
                     // 传入 skipSync=true，因为我们已经确认 parentWin.characters 已更新
                     // 避免调用 parentWin.getCharacters() 可能导致覆盖为旧列表
                     await scan(false, false, true);
@@ -173,7 +625,8 @@ async function importFiles(files) {
                     renderView();
 
                     if (btn) btn.disabled = false;
-                    notify(`成功同步 ${currentLen - oldLen} 个新角色`, 'success');
+                    notify(`导入结束，新增 ${addedCount} 个角色`, 'success');
+                    resolve(true); // 完成
                 }
             } else if (currentLen < oldLen) {
                 // 数量减少（可能是删卡后导入），重置基准
@@ -188,20 +641,17 @@ async function importFiles(files) {
                 // 超时了但如果有新增，还是尝试刷新一下
                 if (currentLen > oldLen) {
                     notify('导入检测超时，尝试刷新已导入的角色', 'warning');
-                    await scan(false, false, true);
-                    state.currentView = 'all';
-                    renderView();
+                    resolve(true);
                 } else {
-                    notify('未检测到新角色导入', 'warning');
+                    notify('导入超时或无变化', 'warning');
+                    hideProgressBar();
+                    resolve(false);
                 }
             }
         }, 200);
-
-    } catch (e) {
-        notify('导入同步失败', 'error');
-        if (btn) btn.disabled = false;
-    }
+    });
 }
+
 function sortTags(tags) {
     return tags.sort((a, b) => {
         const pinnedA = !!a.pinned;
@@ -344,6 +794,206 @@ async function saveCharacterData(fileName, updateCallback) {
         console.error('[CharManager] Save Error:', e);
         throw e;
     }
+}
+
+/**
+ * 通用角色更新函数 (v1.1)
+ * 用于“覆盖更新”或“翻译更新”等场景，统一处理数据合并、世界书清理、UI刷新等逻辑。
+ * @param {string} fileName - 目标文件名
+ * @param {object} newCharData - 新的角色数据 (JSON)
+ * @param {Blob|File} imageBlob - 可选，新的图片 Blob/File。如果传 null，则保持原图。
+ * @param {object} options - 配置项
+ * @param {boolean} options.cleanOldWorldInfo - 是否尝试清理旧的无用世界书 (默认 true)
+ * @param {boolean} options.preserveSourceLink - 是否强制保留原卡的 source_link (默认 true)
+ * @param {boolean} options.refreshUI - 是否刷新 UI (showDetail, renderView) (默认 true)
+ * @param {boolean} options.notifySuccess - 是否显示成功提示 (默认 true)
+ * @param {object} fullCardData - 可选，完整的卡片数据（包含 spec 等），如果 newCharData 只是 data 部分
+ */
+export async function updateCharacter(fileName, newCharData, imageBlob = null, options = {}) {
+    const {
+        cleanOldWorldInfo = true,
+        preserveSourceLink = true,
+        refreshUI = true,
+        notifySuccess = true,
+        fullCardData = null
+    } = options;
+
+    const char = state.characters.find(c => c.fileName === fileName);
+    if (!char) throw new Error('未找到目标角色: ' + fileName);
+
+    // 1. 清理旧世界书逻辑
+    // 如果新数据指定了新的 WB，且旧 WB 不再被使用，则尝试删除旧 WB
+    if (cleanOldWorldInfo && char.character_book && newCharData.character_book) {
+        const oldWI = char.character_book;
+        // 如果新旧 WB 不同（且旧的不为空）
+        // 注意：这里简单比较名称，如果是对象则比较 name
+        let oldWIName = typeof oldWI === 'object' ? oldWI.name : oldWI;
+        let newWIName = typeof newCharData.character_book === 'object' ? newCharData.character_book.name : newCharData.character_book;
+
+        if (oldWIName && oldWIName !== newWIName) {
+            const isUsedByOthers = state.characters.some(c => c.fileName !== fileName && c.character_book === oldWIName);
+            if (!isUsedByOthers) {
+                try {
+                    console.log('[CharManager] 自动清理旧世界书:', oldWIName);
+                    await deleteWorldInfo(oldWIName, true); // skipRefresh=true
+                } catch (e) {
+                    console.warn('[CharManager] 清理旧世界书失败:', e);
+                }
+            }
+        }
+    }
+
+    // 2. 构建 FormData
+    const fd = new FormData();
+    fd.append('ch_name', newCharData.name || char.name);
+    fd.append('avatar_url', fileName);
+    
+    if (imageBlob) {
+        fd.append('avatar', imageBlob);
+    } else {
+        fd.append('avatar', new Blob([''], { type: 'application/octet-stream' }), '');
+    }
+
+    // 3. 保留 Source Link
+    if (preserveSourceLink) {
+        const savedLink = char.source_link || '';
+        if (savedLink) {
+            if (!newCharData.extensions) newCharData.extensions = {};
+            newCharData.extensions.source_url = savedLink;
+            // 删除旧字段以保持整洁（可选）
+            if (newCharData.extensions.source_link) delete newCharData.extensions.source_link;
+        }
+    }
+
+    // 4. 添加字段
+    const fields = [
+        'description', 'first_mes', 'personality', 'scenario',
+        'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
+        'character_version', 'creator', 'talkativeness'
+    ];
+
+    fields.forEach(k => {
+        if (newCharData[k] !== undefined && newCharData[k] !== null) {
+            fd.append(k, newCharData[k]);
+        }
+    });
+
+    if (newCharData.alternate_greetings && Array.isArray(newCharData.alternate_greetings)) {
+        newCharData.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
+    }
+    if (newCharData.tags && Array.isArray(newCharData.tags)) {
+        newCharData.tags.forEach(t => fd.append('tags', t));
+    }
+
+    // 5. 处理 character_book
+    if (newCharData.character_book) {
+        if (typeof newCharData.character_book === 'string') {
+            fd.append('character_book', newCharData.character_book);
+        } else if (typeof newCharData.character_book === 'object') {
+            fd.append('character_book', JSON.stringify(newCharData.character_book));
+        }
+    }
+
+    // 6. 构造完整的 json_data
+    // 如果传入了 fullCardData，则基于它更新 data 部分
+    // 否则构造一个新的结构
+    let finalJsonData;
+    if (fullCardData) {
+        finalJsonData = { ...fullCardData };
+        // 更新 data 部分
+        if (finalJsonData.data && (finalJsonData.spec === 'chara_card_v3' || finalJsonData.data.name)) {
+            finalJsonData.data = newCharData;
+        } else {
+            // V2 结构，fullCardData 本身就是 data
+            // 但为了安全，还是覆盖属性
+            Object.assign(finalJsonData, newCharData);
+        }
+    } else {
+        // 如果没有 fullCardData，假设 newCharData 就是我们要保存的 V2 数据
+        // 或者我们尝试构造一个包含 data 的对象（如果它是 V3 格式的数据块）
+        // 简单起见，这里直接传递 newCharData 作为 json_data
+        // 注意：酒馆后端可能会根据 spec 字段判断
+        finalJsonData = newCharData;
+    }
+    fd.append('json_data', JSON.stringify(finalJsonData));
+
+    // 7. 发送请求
+    const r = await authFetch('/api/characters/edit', {
+        method: 'POST',
+        body: fd
+    });
+
+    if (!r.ok) {
+        throw new Error(await r.text());
+    }
+
+    // 8. 成功后处理
+    if (notifySuccess) notify('✅ 更新成功', 'success');
+
+    // 刷新图片缓存 (如果有换图)
+    if (imageBlob) {
+        char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
+        // 如果有头像元素，尝试更新
+        const avatarEl = doc.querySelector('.cm-detail-avatar');
+        if (avatarEl) avatarEl.src = char.avatarUrl;
+    }
+
+    // 更新内存数据
+    const updatedInfo = getCharInfo(newCharData);
+    // 确保保留字段同步到内存对象
+    if (preserveSourceLink && char.source_link) updatedInfo.source_link = char.source_link;
+    Object.assign(char, updatedInfo);
+
+    // 刷新 UI
+    if (refreshUI) {
+        // 如果当前正在显示详情页，刷新它
+        if (state.currentDetailChar === char) {
+            showDetail(char);
+        }
+        renderView();
+    }
+
+    // 刷新原生上下文
+    try {
+        if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+            const context = parentWin.SillyTavern.getContext();
+
+            // 自动导入/覆盖嵌入的世界书
+            if (newCharData.character_book && typeof newCharData.character_book === 'object') {
+                const bookName = newCharData.character_book.name;
+                if (bookName && typeof context.saveWorldInfo === 'function' && typeof context.convertCharacterBook === 'function') {
+                    try {
+                        const convertedBook = context.convertCharacterBook(newCharData.character_book);
+                        await context.saveWorldInfo(bookName, convertedBook, true);
+                        console.log('[CharManager] 自动导入/覆盖世界书成功:', bookName);
+                    } catch (wiErr) {
+                        console.error('[CharManager] 自动导入世界书失败:', wiErr);
+                    }
+                }
+            }
+
+            // 刷新列表
+            if (typeof context.getCharacters === 'function') await context.getCharacters();
+            if (typeof context.updateWorldInfoList === 'function') await context.updateWorldInfoList();
+
+            // 刷新当前聊天中的角色状态
+            const currentId = context.characterId ?? parentWin.this_chid;
+            const globalChars = context.characters || parentWin.characters;
+            if (currentId !== undefined && globalChars && globalChars[currentId]) {
+                if (globalChars[currentId].avatar === fileName) {
+                    const newIndex = globalChars.findIndex(c => c.avatar === fileName);
+                    if (newIndex !== -1 && typeof context.selectCharacterById === 'function') {
+                        await context.selectCharacterById(String(newIndex));
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[CharManager] 刷新原生上下文失败', e);
+    }
+
+    // 保存缓存
+    saveCache();
 }
 
 async function replaceCharacterImage(char, file) {
@@ -821,10 +1471,15 @@ async function downloadAsZip(files) {
     }
 }
 
-function saveCache() {
+async function saveCache() {
     try {
-        localStorage.setItem('cm_char_cache', JSON.stringify(state.characters));
-    } catch (e) { }
+        // 使用 IndexedDB 保存，彻底解决 LocalStorage 容量限制问题
+        await setCache('characters', state.characters);
+        console.log('[CharManager] Cache saved to IndexedDB. Items:', state.characters.length);
+    } catch (e) {
+        console.error('[CharManager] Failed to save cache:', e);
+        notify('无法保存缓存: ' + e.message, 'error');
+    }
 }
 
 function updateProgressBar(progress, text, subtext = '') {
@@ -873,6 +1528,7 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
     if (icon) icon.classList.add('rotating');
 
     try {
+        console.debug('[CharManager] Scan triggered. forceFull:', forceFull, 'skipSync:', skipSync);
         if (forceFull) showProgressBar('正在准备全量扫描...');
 
         // 强制同步酒馆内存 (skipSync=true 时跳过，防止覆盖本地已更新的列表)
@@ -911,6 +1567,9 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
 
                 if (stC.creator) cached.creator = stC.creator;
 
+                // 同步 creator_notes (修复覆盖翻译后不更新的问题)
+                cached.creatorcomment = stC.creatorcomment || data.creator_notes || cached.creatorcomment || '';
+
                 // 同步 Tag/Fav
                 const isFav = !!stC.fav || (data.extensions && !!data.extensions.fav);
                 cached.fav = isFav;
@@ -936,6 +1595,7 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
         }
 
         if (toFetch.length > 0) {
+            console.debug('[CharManager] New/Modified cards to fetch:', toFetch.length);
             if (showToast && !forceFull) notify(`发现 ${toFetch.length} 张新卡，正在后台同步...`, 'info');
             const chunkSize = 10;
             for (let i = 0; i < toFetch.length; i += chunkSize) {
@@ -980,7 +1640,7 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
             else notify('列表已同步 (无新增)', 'success');
         }
 
-        saveCache();
+        await saveCache();
 
         // 延时关闭进度条
         if (forceFull) setTimeout(hideProgressBar, 800);
@@ -2374,158 +3034,19 @@ function showDetail(char) {
 
                 if (!cardData) throw new Error('无法解析图片数据');
 
-                // --- 尝试删除旧的关联世界书（如果不再被其他角色使用） ---
-                if (char.character_book) {
-                    const oldWI = char.character_book;
-                    // 检查是否还有其他角色正在使用这个世界书
-                    const isUsedByOthers = state.characters.some(c => c.fileName !== char.fileName && c.character_book === oldWI);
-                    if (!isUsedByOthers) {
-                        try {
-                            console.log('[CharManager] 自动清理旧世界书:', oldWI);
-                            await deleteWorldInfo(oldWI, true);
-                        } catch (e) {
-                            console.warn('[CharManager] 清理旧世界书失败:', e);
-                        }
-                    }
-                }
-                // ----------------------------------------------------
-
-                const fd = new FormData();
-                fd.append('avatar_url', char.fileName); // 保持文件名
-                fd.append('avatar', file); // 新图片
-
                 const dataBlock = cardData.data || cardData;
 
-                // --- 无条件保留原有 source_link ---
-                // 不管新卡里有没有，只要内存里有，就覆盖进去
-                const savedLink = char.source_link || '';
-
-                if (savedLink) {
-                    if (!dataBlock.extensions) dataBlock.extensions = {};
-                    // 强制写入，因为这是脚本的自定义字段，新卡里肯定没有
-                    dataBlock.extensions.source_link = savedLink;
-                    // 为了兼容性，也可以顺便写一下 source_url
-                    dataBlock.extensions.source_url = savedLink;
-                }
-                // ------------------------------------
-
-                fd.append('ch_name', dataBlock.name || char.name);
-
-                // 显式传递所有字段
-                const fields = [
-                    'description', 'first_mes', 'personality', 'scenario',
-                    'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
-                    'character_version', 'creator', 'talkativeness'
-                ];
-
-                fields.forEach(k => {
-                    if (dataBlock[k] !== undefined && dataBlock[k] !== null) {
-                        fd.append(k, dataBlock[k]);
-                    }
+                await updateCharacter(char.fileName, dataBlock, file, {
+                    cleanOldWorldInfo: true,
+                    preserveSourceLink: true,
+                    refreshUI: true,
+                    notifySuccess: true,
+                    fullCardData: cardData
                 });
 
-                if (dataBlock.alternate_greetings && Array.isArray(dataBlock.alternate_greetings)) {
-                    dataBlock.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
-                }
-                if (dataBlock.tags && Array.isArray(dataBlock.tags)) {
-                    dataBlock.tags.forEach(t => fd.append('tags', t));
-                }
-
-                // 显式处理 character_book，确保使用新卡中的世界书设定
-                if (dataBlock.character_book) {
-                    if (typeof dataBlock.character_book === 'string') {
-                        fd.append('character_book', dataBlock.character_book);
-                    } else if (typeof dataBlock.character_book === 'object') {
-                        fd.append('character_book', JSON.stringify(dataBlock.character_book));
-                    }
-                }
-
-                // 传递包含 source_link 的 extensions
-                fd.append('json_data', JSON.stringify(cardData));
-
-                notify('正在上传覆盖...', 'info');
-
-                const r = await authFetch('/api/characters/edit', {
-                    method: 'POST',
-                    body: fd
-                });
-
-                if (!r.ok) throw new Error(await r.text());
-
-                notify('✅ 更新成功', 'success');
-
-                // 刷新图片缓存
-                char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
-                avatar.src = char.avatarUrl;
-
-                // 更新内存数据
-                const updatedInfo = getCharInfo(cardData);
-                // 确保内存对象也保留了链接
-                if (savedLink) updatedInfo.source_link = savedLink;
-
-                Object.assign(char, updatedInfo);
-
-                // 刷新UI
-                showDetail(char);
-                renderView();
-
-                try {
-                    if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
-                        const context = parentWin.SillyTavern.getContext();
-
-                        // --- 核心修复：自动导入/覆盖嵌入的世界书 ---
-                        // 如果后端 api/characters/edit 没有自动解包保存世界书，我们需要手动做
-                        // 这能避免用户在界面上点击图标时弹出 "Import" 确认框
-                        if (dataBlock.character_book && typeof dataBlock.character_book === 'object') {
-                            const bookName = dataBlock.character_book.name;
-                            if (bookName && typeof context.saveWorldInfo === 'function' && typeof context.convertCharacterBook === 'function') {
-                                try {
-                                    // 转换数据格式
-                                    const convertedBook = context.convertCharacterBook(dataBlock.character_book);
-                                    // 强制立即保存 (ignore mismatch/overwrite check)
-                                    // 第三个参数 true 代表 immediate save
-                                    await context.saveWorldInfo(bookName, convertedBook, true);
-                                    console.log('[CharManager] 自动导入/覆盖世界书成功:', bookName);
-                                    notify('已自动同步并覆盖世界书: ' + bookName, 'success');
-                                } catch (wiErr) {
-                                    console.error('[CharManager] 自动导入世界书失败:', wiErr);
-                                }
-                            }
-                        }
-                        // ------------------------------------------
-
-                        // 1. 刷新角色列表
-                        if (typeof context.getCharacters === 'function') {
-                            await context.getCharacters();
-                        }
-                        // 2. 刷新世界书列表 (修复新绑定的世界书不显示的问题)
-                        if (typeof context.updateWorldInfoList === 'function') {
-                            await context.updateWorldInfoList();
-                        }
-
-                        // 3. 强制重载当前角色（如果正好是正在对话的角色），修复 "未找到当前打开的角色卡" 错误
-                        const currentId = context.characterId ?? parentWin.this_chid;
-                        const globalChars = context.characters || parentWin.characters;
-
-                        if (currentId !== undefined && globalChars && globalChars[currentId]) {
-                            const activeAvatar = globalChars[currentId].avatar;
-                            if (activeAvatar === char.fileName) {
-                                // 重新定位索引（防止列表排序变化）
-                                const newIndex = globalChars.findIndex(c => c.avatar === char.fileName);
-                                if (newIndex !== -1 && typeof context.selectCharacterById === 'function') {
-                                    await context.selectCharacterById(String(newIndex));
-                                }
-                            }
-                        }
-                    }
-                } catch (e) { console.warn('刷新原生列表失败', e); }
-
-            } catch (err) {
-                console.error(err);
-                notify('更新失败: ' + err.message, 'error');
-            } finally {
-                // 更新后尝试保存缓存，确保新数据被持久化
-                saveCache();
+            } catch (e) {
+                console.error(e);
+                notify('更新失败: ' + e.message, 'error');
             }
         };
         input.click();
@@ -3422,6 +3943,7 @@ function createModal() {
         '<button class="cm-header-btn" id="cmThemeBtn" title="切换主题">' + (state.isDarkMode ? ICONS.moon : ICONS.sun) + '</button>' +
         '<button class="cm-header-btn" id="cmMigrateBtn" title="从旧版本迁移数据" style="display:none;color:#fbbf24">📥</button>' +
         '<button class="cm-header-btn" id="cmImportBtn" title="导入角色/ZIP">' + ICONS.upload + '</button>' +
+        '<button class="cm-header-btn" id="cmUrlImportBtn" title="从 URL 导入">' + ICONS.link + '</button>' +
         '<button class="cm-header-btn" id="cmSyncBtn" title="快速刷新">' + ICONS.refresh + '</button>' +
         '<button class="cm-header-btn" id="cmFullScanBtn" title="强制全量刷新">' + ICONS.search + '</button>' +
         '<button class="cm-close">' + ICONS.close + '</button>' +
@@ -3538,6 +4060,10 @@ function createModal() {
             doc.body.removeChild(inp);
         };
         inp.click();
+    };
+
+    m.querySelector('#cmUrlImportBtn').onclick = function () {
+        showUrlImportDialog();
     };
 
     m.addEventListener('dragover', (e) => {
@@ -4131,7 +4657,7 @@ function createButton() {
     }
 }
 
-function init() {
+async function init() {
     // injectStyles(); // Removed: using style.css
     // Restore dynamic styles
     doc.documentElement.style.setProperty('--cm-card-width', state.zoomLevel + 'px');
@@ -4142,13 +4668,30 @@ function init() {
     window.openCharManager = openModal;
     
     // 初始化翻译模块
-    initTranslationUI({ createBaseDialog, notify, showConfirm });
+    initTranslationUI({ createBaseDialog, notify, showConfirm, scan, importFiles, updateCharacter });
     
+    // 异步加载缓存数据
+    try {
+        let chars = await getCache('characters');
+        // 如果 IndexedDB 为空，尝试从 LocalStorage 迁移旧数据
+        if (!chars || !Array.isArray(chars) || chars.length === 0) {
+            const migrated = await migrateFromLocalStorage('cm_char_cache');
+            if (migrated) chars = migrated;
+        }
+
+        if (chars && Array.isArray(chars)) {
+            state.characters = chars;
+            log('已加载缓存角色: ' + chars.length);
+        }
+    } catch (e) {
+        console.error('[CharManager] Failed to load cache on init:', e);
+    }
+
     if (state.settings.autoScan) {
         setTimeout(() => scan(), 1000);
     }
     
-    log('v89.3 翻译功能版已加载');
+    log('角色卡管理器 小鱼改版 v1.0 已加载 (IndexedDB Enabled)');
 }
 
 setTimeout(init, 500);

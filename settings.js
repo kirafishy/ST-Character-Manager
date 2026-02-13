@@ -1,5 +1,6 @@
 import { state, saveSettings, defaultSettings } from './state.js';
 import { ICONS } from './constants.js';
+import { escapeHtml } from './utils.js';
 
 export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm }) {
     const settings = state.settings;
@@ -113,50 +114,118 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 </div>
 
                  <div class="cm-setting-item">
-                    <div class="cm-setting-label">
-                        <span>角色卡翻译</span>
-                        <small>启用实验性的翻译功能</small>
-                    </div>
-                    <label class="cm-switch">
-                        <input type="checkbox" id="cmSetTrans" ${settings.translationEnabled ? 'checked' : ''}>
-                        <span class="cm-slider"></span>
-                    </label>
-                </div>
-
-                <!-- 翻译详细设置 (仅在启用时显示) -->
-                <div id="cmTransSettings" style="display:${settings.translationEnabled ? 'block' : 'none'};padding:10px;background:var(--cm-bg-ter);border-radius:8px;margin-top:10px">
-                    <div class="cm-setting-item">
-                        <div class="cm-setting-label">
-                            <span>API 协议</span>
-                            <small>选择翻译使用的 API 类型</small>
-                        </div>
-                        <select id="cmSetTransApi" class="cm-select-input">
-                            <option value="openai" ${settings.translationApi === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
-                            <option value="tavern" ${settings.translationApi === 'tavern' ? 'selected' : ''}>酒馆原生 (实验性)</option>
-                        </select>
-                    </div>
-
-                    <div id="cmSetOpenaiConfig" style="display:${settings.translationApi === 'openai' ? 'block' : 'none'}">
-                        <div style="margin-bottom:8px">
-                            <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)">API Base URL</label>
-                            <input type="text" id="cmSetOpenaiUrl" class="cm-input" value="${settings.openaiBaseUrl || ''}" placeholder="https://api.openai.com/v1" style="width:100%;box-sizing:border-box">
-                        </div>
-                        <div style="margin-bottom:8px">
-                            <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)">API Key</label>
-                            <input type="password" id="cmSetOpenaiKey" class="cm-input" value="${settings.openaiApiKey || ''}" placeholder="sk-..." style="width:100%;box-sizing:border-box">
-                        </div>
-                        <div style="margin-bottom:8px">
-                            <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)">模型</label>
-                            <div style="display:flex;gap:6px;align-items:center">
-                                <select id="cmSetOpenaiModel" class="cm-select-input" style="flex:1;min-width:0">
-                                    ${settings.openaiModel ? '<option value="' + settings.openaiModel + '" selected>' + settings.openaiModel + '</option>' : '<option value="">请先连接获取模型列表</option>'}
-                                </select>
-                                <button id="cmSetFetchModels" class="cm-btn cm-btn-primary" style="flex-shrink:0;font-size:12px;padding:6px 12px;white-space:nowrap">🔗 连接</button>
-                            </div>
-                            <div id="cmSetModelStatus" style="font-size:11px;margin-top:4px;color:var(--cm-text-sec)"></div>
-                        </div>
-                    </div>
-                </div>
+                     <div class="cm-setting-label">
+                         <span>角色卡翻译</span>
+                         <small>启用实验性的翻译功能</small>
+                     </div>
+                     <label class="cm-switch">
+                         <input type="checkbox" id="cmSetTrans" ${settings.translationEnabled ? 'checked' : ''}>
+                         <span class="cm-slider"></span>
+                     </label>
+                 </div>
+ 
+                 <!-- 翻译详细设置 (仅在启用时显示) -->
+                 <div id="cmTransSettings" style="display:${settings.translationEnabled ? 'block' : 'none'};padding:10px;background:var(--cm-bg-ter);border-radius:8px;margin-top:10px">
+                     
+                     <!-- 语言设置 -->
+                     <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
+                         <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--cm-text)" data-tl-key="langSettings">🌐 ${settings.translationUILanguage === 'en' ? 'Language Settings' : '语言设置'}</div>
+                         <div style="display:flex;gap:10px;align-items:flex-start">
+                             <div style="flex:0 0 auto;min-width:140px;max-width:180px">
+                                 <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="sourceLang">${settings.translationUILanguage === 'en' ? 'Source Language' : '源语言'}</label>
+                                 <select id="cmSetSourceLang" class="cm-select-input" style="width:100%;height:30px;box-sizing:border-box">
+                                     <option value="auto" ${settings.sourceLanguage === 'auto' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? 'Auto Detect' : '自动检测 (Auto)'}</option>
+                                     <option value="en" ${settings.sourceLanguage === 'en' ? 'selected' : ''}>English</option>
+                                     <option value="ja" ${settings.sourceLanguage === 'ja' ? 'selected' : ''}>日本語</option>
+                                     <option value="ko" ${settings.sourceLanguage === 'ko' ? 'selected' : ''}>한국어</option>
+                                     <option value="zh-CN" ${settings.sourceLanguage === 'zh-CN' ? 'selected' : ''}>简体中文</option>
+                                     <option value="zh-TW" ${settings.sourceLanguage === 'zh-TW' ? 'selected' : ''}>繁體中文</option>
+                                 </select>
+                             </div>
+                             <div style="flex:0 0 auto;min-width:140px;max-width:180px">
+                                 <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="targetLang">${settings.translationUILanguage === 'en' ? 'Target Language' : '目标语言'}</label>
+                                 <select id="cmSetTargetLang" class="cm-select-input" style="width:100%;height:30px;box-sizing:border-box">
+                                     <option value="zh-CN" ${settings.targetLanguage === 'zh-CN' ? 'selected' : ''}>简体中文</option>
+                                     <option value="zh-TW" ${settings.targetLanguage === 'zh-TW' ? 'selected' : ''}>繁體中文</option>
+                                     <option value="en" ${settings.targetLanguage === 'en' ? 'selected' : ''}>English</option>
+                                     <option value="ja" ${settings.targetLanguage === 'ja' ? 'selected' : ''}>日本語</option>
+                                     <option value="ko" ${settings.targetLanguage === 'ko' ? 'selected' : ''}>한국어</option>
+                                     <option value="custom" ${settings.targetLanguage === 'custom' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? '✏️ Custom...' : '✏️ 自定义...'}</option>
+                                 </select>
+                             </div>
+                             <div id="cmCustomTargetLangWrap" style="display:${settings.targetLanguage === 'custom' ? 'flex' : 'none'};align-items:flex-end;flex:0 0 auto;min-width:140px;max-width:200px">
+                                 <div style="width:100%">
+                                     <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)">${settings.translationUILanguage === 'en' ? 'Custom Language' : '自定义语言'}</label>
+                                     <input type="text" id="cmSetCustomTargetLang" class="cm-input" value="${escapeHtml(settings.customTargetLanguage || '')}"
+                                         placeholder="${settings.translationUILanguage === 'en' ? 'e.g. Thai' : '如：泰语'}"
+                                         style="width:100%;box-sizing:border-box;font-size:12px;height:30px">
+                                 </div>
+                             </div>
+                         </div>
+                     </div>
+ 
+                     <!-- 界面语言 -->
+                     <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
+                         <div class="cm-setting-item" style="margin:0">
+                             <div class="cm-setting-label">
+                                 <span style="font-size:12px" data-tl-key="uiLang">${settings.translationUILanguage === 'en' ? 'UI Language' : '翻译界面语言'}</span>
+                                 <small data-tl-key="uiLangDesc">${settings.translationUILanguage === 'en' ? 'Only affects the translation module UI' : '仅影响翻译模块的界面显示'}</small>
+                             </div>
+                             <select id="cmSetTransUILang" class="cm-select-input" style="max-width:120px">
+                                 <option value="zh-CN" ${settings.translationUILanguage === 'zh-CN' ? 'selected' : ''}>中文</option>
+                                 <option value="en" ${settings.translationUILanguage === 'en' ? 'selected' : ''}>English</option>
+                             </select>
+                         </div>
+                     </div>
+ 
+                     <!-- API 设置 -->
+                     <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
+                         <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                             <div class="cm-setting-label">
+                                 <span style="font-size:12px" data-tl-key="apiProtocol">${settings.translationUILanguage === 'en' ? 'API Protocol' : 'API 协议'}</span>
+                                 <small data-tl-key="apiProtocolDesc">${settings.translationUILanguage === 'en' ? 'Select the API type for translation' : '选择翻译使用的 API 类型'}</small>
+                             </div>
+                             <select id="cmSetTransApi" class="cm-select-input">
+                                 <option value="openai" ${settings.translationApi === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
+                                 <option value="tavern" ${settings.translationApi === 'tavern' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? 'Tavern Native (Experimental)' : '酒馆原生 (实验性)'}</option>
+                             </select>
+                         </div>
+ 
+                         <div id="cmSetOpenaiConfig" style="display:${settings.translationApi === 'openai' ? 'block' : 'none'}">
+                             <div style="margin-bottom:8px">
+                                 <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)">API Base URL</label>
+                                 <input type="text" id="cmSetOpenaiUrl" class="cm-input" value="${settings.openaiBaseUrl || ''}" placeholder="https://api.openai.com/v1" style="width:100%;box-sizing:border-box">
+                             </div>
+                             <div style="margin-bottom:8px">
+                                 <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)">API Key</label>
+                                 <input type="password" id="cmSetOpenaiKey" class="cm-input" value="${settings.openaiApiKey || ''}" placeholder="sk-..." style="width:100%;box-sizing:border-box">
+                             </div>
+                             <div style="margin-bottom:8px">
+                                 <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="model">${settings.translationUILanguage === 'en' ? 'Model' : '模型'}</label>
+                                 <div style="display:flex;gap:6px;align-items:center">
+                                     <select id="cmSetOpenaiModel" class="cm-select-input" style="flex:1;min-width:0">
+                                         ${settings.openaiModel ? '<option value="' + settings.openaiModel + '" selected>' + settings.openaiModel + '</option>' : '<option value="">' + (settings.translationUILanguage === 'en' ? 'Connect first to get model list' : '请先连接获取模型列表') + '</option>'}
+                                     </select>
+                                     <button id="cmSetFetchModels" class="cm-btn cm-btn-primary" style="flex-shrink:0;font-size:12px;padding:6px 12px;white-space:nowrap">${settings.translationUILanguage === 'en' ? '🔗 Connect' : '🔗 连接'}</button>
+                                 </div>
+                                 <div id="cmSetModelStatus" style="font-size:11px;margin-top:4px;color:var(--cm-text-sec)"></div>
+                             </div>
+                         </div>
+                     </div>
+ 
+                     <!-- 前置 System Prompt -->
+                     <div>
+                         <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--cm-text)" data-tl-key="sysPromptTitle">📝 ${settings.translationUILanguage === 'en' ? 'Translation System Prompt' : '翻译 System Prompt'}</div>
+                         <div style="font-size:11px;color:var(--cm-text-sec);margin-bottom:6px" data-tl-key="sysPromptDesc">${settings.translationUILanguage === 'en' ? 'System prompt sent to AI during translation, guiding translation behavior and style' : '翻译时发送给 AI 的系统提示词，指导翻译行为和风格'}</div>
+                         <textarea id="cmSetTransSysPrompt" style="width:100%;box-sizing:border-box;min-height:120px;resize:vertical;
+                             background:var(--cm-input-bg);color:var(--cm-text);border:1px solid var(--cm-border);
+                             border-radius:6px;padding:8px;font-size:12px;line-height:1.5;font-family:inherit"
+                             placeholder="${settings.translationUILanguage === 'en' ? 'Enter translation system prompt...' : '输入翻译系统提示词...'}">${escapeHtml(settings.translationSystemPrompt || '')}</textarea>
+                         <div style="display:flex;justify-content:flex-end;margin-top:4px">
+                             <button id="cmSetResetSysPrompt" class="cm-btn cm-btn-secondary" style="font-size:11px;padding:3px 8px">${settings.translationUILanguage === 'en' ? 'Reset Default' : '恢复默认'}</button>
+                         </div>
+                     </div>
+                 </div>
             </div>
 
             <!-- 数据管理 -->
@@ -197,6 +266,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     <div class="cm-about-item">
                         <span class="cm-about-role">三改作者</span>
                         <span class="cm-about-name">Kirafishy</span>
+                        <small class="cm-about-note">角色卡管理器 小鱼改版 v1.0</small>
                     </div>
                 </div>
             </div>
@@ -229,14 +299,104 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindCheck('cmSetAuthor', 'showAuthor');
         bindCheck('cmSetAutoScan', 'autoScan');
 
-        // Translation Settings
+        // Translation Settings — 版权声明弹窗逻辑
         const transCheck = ov.querySelector('#cmSetTrans');
         const transSettings = ov.querySelector('#cmTransSettings');
         if (transCheck && transSettings) {
             transCheck.onchange = (e) => {
-                state.settings.translationEnabled = e.target.checked;
+                if (e.target.checked) {
+                    // 检查是否已接受过版权声明
+                    const accepted = localStorage.getItem('cm_translation_disclaimer_accepted');
+                    if (accepted === 'true') {
+                        // 已接受，直接启用
+                        state.settings.translationEnabled = true;
+                        saveSettings();
+                        transSettings.style.display = 'block';
+                    } else {
+                        // 未接受，弹出版权声明
+                        e.target.checked = false; // 先恢复为未选中
+                        showTranslationDisclaimer(createBaseDialog, () => {
+                            // 接受回调
+                            localStorage.setItem('cm_translation_disclaimer_accepted', 'true');
+                            state.settings.translationEnabled = true;
+                            saveSettings();
+                            transCheck.checked = true;
+                            transSettings.style.display = 'block';
+                            notify('翻译功能已启用', 'success');
+                        }, () => {
+                            // 拒绝回调
+                            notify('已拒绝，翻译功能未启用', 'info');
+                        });
+                    }
+                } else {
+                    state.settings.translationEnabled = false;
+                    saveSettings();
+                    transSettings.style.display = 'none';
+                }
+            };
+        }
+
+        // 语言设置绑定
+        const bindLangSelect = (id, key) => {
+            const el = ov.querySelector('#' + id);
+            if (el) {
+                el.onchange = (e) => {
+                    state.settings[key] = e.target.value;
+                    saveSettings();
+                };
+            }
+        };
+        bindLangSelect('cmSetSourceLang', 'sourceLanguage');
+
+        // 目标语言 — 包含自定义选项逻辑
+        const targetLangSelect = ov.querySelector('#cmSetTargetLang');
+        const customTargetWrap = ov.querySelector('#cmCustomTargetLangWrap');
+        const customTargetInput = ov.querySelector('#cmSetCustomTargetLang');
+        if (targetLangSelect) {
+            targetLangSelect.onchange = (e) => {
+                state.settings.targetLanguage = e.target.value;
                 saveSettings();
-                transSettings.style.display = e.target.checked ? 'block' : 'none';
+                if (customTargetWrap) {
+                    customTargetWrap.style.display = e.target.value === 'custom' ? 'flex' : 'none';
+                }
+            };
+        }
+        if (customTargetInput) {
+            customTargetInput.onchange = (e) => {
+                state.settings.customTargetLanguage = e.target.value.trim();
+                saveSettings();
+            };
+        }
+
+        // UI 语言切换 — 切换后重新打开设置界面以刷新标签
+        const transUILangSelect = ov.querySelector('#cmSetTransUILang');
+        if (transUILangSelect) {
+            transUILangSelect.onchange = (e) => {
+                state.settings.translationUILanguage = e.target.value;
+                saveSettings();
+                // 重新打开设置界面以刷新翻译设置区域的语言
+                ov.remove();
+                showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm });
+            };
+        }
+
+        // System Prompt 绑定
+        const sysPromptInput = ov.querySelector('#cmSetTransSysPrompt');
+        if (sysPromptInput) {
+            sysPromptInput.onchange = () => {
+                state.settings.translationSystemPrompt = sysPromptInput.value;
+                saveSettings();
+            };
+        }
+
+        // 恢复默认 System Prompt
+        const resetSysPromptBtn = ov.querySelector('#cmSetResetSysPrompt');
+        if (resetSysPromptBtn) {
+            resetSysPromptBtn.onclick = () => {
+                state.settings.translationSystemPrompt = defaultSettings.translationSystemPrompt;
+                saveSettings();
+                if (sysPromptInput) sysPromptInput.value = defaultSettings.translationSystemPrompt;
+                notify('System Prompt 已恢复默认', 'success');
             };
         }
 
@@ -415,4 +575,126 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
             };
         }
     });
+}
+
+// ========== 版权提示与免责声明弹窗 ==========
+
+/**
+ * 显示翻译功能的版权提示和免责声明
+ * 使用独立 overlay，不会影响底层的设置界面
+ * @param {Function} _unused - 保留参数（兼容旧调用）
+ * @param {Function} onAccept - 接受回调
+ * @param {Function} onReject - 拒绝回调
+ */
+function showTranslationDisclaimer(_unused, onAccept, onReject) {
+    // 移除已有的免责声明弹窗（防止重复）
+    const existingDisclaimer = document.querySelector('.cm-disclaimer-overlay');
+    if (existingDisclaimer) existingDisclaimer.remove();
+
+    const ov = document.createElement('div');
+    ov.className = 'cm-disclaimer-overlay ' + (state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light');
+    ov.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);z-index:200000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+
+    ov.innerHTML = `
+        <div style="background:var(--cm-bg-sec);border-radius:16px;max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--cm-border);flex-shrink:0">
+                <h3 style="margin:0;font-size:16px;color:var(--cm-text)">⚠️ 重要提示 / Important Notice</h3>
+            </div>
+            <div style="padding:16px 20px;overflow-y:auto;flex:1;min-height:0">
+                <!-- 中文部分 -->
+                <div style="margin-bottom:20px">
+                    <h3 style="margin:0 0 12px 0;font-size:16px;color:var(--cm-text);display:flex;align-items:center;gap:8px">
+                        ⚠️ 版权提示与免责声明
+                    </h3>
+                    <div style="font-size:13px;line-height:1.8;color:var(--cm-text);background:var(--cm-bg-ter);padding:14px;border-radius:8px;border-left:3px solid #f59e0b">
+                        <p style="margin:0 0 8px 0"><strong>请在使用翻译功能前仔细阅读以下条款：</strong></p>
+                        <ol style="margin:0;padding-left:20px">
+                            <li style="margin-bottom:6px">翻译功能仅供<strong>个人学习和研究</strong>使用。</li>
+                            <li style="margin-bottom:6px">翻译后的角色卡<strong>仅限您个人使用</strong>，严禁以任何形式二次发布、分享、传播。</li>
+                            <li style="margin-bottom:6px"><strong>严禁</strong>将翻译后的内容用于任何商业目的，包括但不限于售卖、付费分享、商业展示等。</li>
+                            <li style="margin-bottom:6px">请<strong>尊重原作者的创作版权</strong>，翻译行为不代表对原作品的所有权转移。</li>
+                            <li style="margin-bottom:6px">使用翻译功能产生的一切后果由用户自行承担，本插件不承担任何法律责任。</li>
+                            <li style="margin-bottom:6px">翻译质量受 AI 模型能力限制，可能存在误译、漏译等情况，请自行校对。</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- 英文部分 -->
+                <div style="margin-bottom:16px">
+                    <h3 style="margin:0 0 12px 0;font-size:16px;color:var(--cm-text);display:flex;align-items:center;gap:8px">
+                        ⚠️ Copyright Notice & Disclaimer
+                    </h3>
+                    <div style="font-size:13px;line-height:1.8;color:var(--cm-text);background:var(--cm-bg-ter);padding:14px;border-radius:8px;border-left:3px solid #3b82f6">
+                        <p style="margin:0 0 8px 0"><strong>Please read the following terms carefully before using the translation feature:</strong></p>
+                        <ol style="margin:0;padding-left:20px">
+                            <li style="margin-bottom:6px">The translation feature is for <strong>personal learning and research purposes only</strong>.</li>
+                            <li style="margin-bottom:6px">Translated character cards are <strong>strictly for your personal use</strong>. Any form of redistribution, sharing, or dissemination is <strong>prohibited</strong>.</li>
+                            <li style="margin-bottom:6px">It is <strong>strictly forbidden</strong> to use translated content for any commercial purpose, including but not limited to selling, paid sharing, or commercial display.</li>
+                            <li style="margin-bottom:6px">Please <strong>respect the original creator's copyright</strong>. Translation does not transfer ownership of the original work.</li>
+                            <li style="margin-bottom:6px">Users assume all responsibility for any consequences arising from the use of the translation feature. This plugin bears no legal liability.</li>
+                            <li style="margin-bottom:6px">Translation quality is limited by AI model capabilities and may contain errors or omissions. Please proofread the results.</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- 倒计时提示 -->
+                <div style="text-align:center;font-size:12px;color:var(--cm-text-sec);margin-top:8px">
+                    <span id="cmDisclaimerCountdown">请阅读以上条款，接受按钮将在 <strong>5</strong> 秒后可用</span>
+                </div>
+            </div>
+            <div style="padding:12px 20px;border-top:1px solid var(--cm-border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0">
+                <button id="cmDisclaimerReject" class="cm-btn cm-btn-secondary">拒绝 / Decline</button>
+                <button id="cmDisclaimerAccept" class="cm-btn cm-btn-primary">接受 (5s) / Accept (5s)</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(ov);
+
+    const closeDisclaimer = () => ov.remove();
+
+    // 拒绝按钮
+    const rejectBtn = ov.querySelector('#cmDisclaimerReject');
+    if (rejectBtn) {
+        rejectBtn.onclick = () => {
+            closeDisclaimer();
+            if (onReject) onReject();
+        };
+    }
+
+    // 接受按钮
+    const acceptBtn = ov.querySelector('#cmDisclaimerAccept');
+    const countdownEl = ov.querySelector('#cmDisclaimerCountdown');
+
+    if (acceptBtn) {
+        acceptBtn.disabled = true;
+        acceptBtn.style.opacity = '0.5';
+        acceptBtn.style.cursor = 'not-allowed';
+
+        acceptBtn.onclick = () => {
+            closeDisclaimer();
+            if (onAccept) onAccept();
+        };
+    }
+
+    let remaining = 5;
+    const timer = setInterval(() => {
+        remaining--;
+        if (countdownEl) {
+            if (remaining > 0) {
+                countdownEl.innerHTML = `请阅读以上条款，接受按钮将在 <strong>${remaining}</strong> 秒后可用`;
+            } else {
+                countdownEl.innerHTML = '✅ 您现在可以点击接受按钮 / You may now click Accept';
+            }
+        }
+        if (remaining <= 0) {
+            clearInterval(timer);
+            if (acceptBtn) {
+                acceptBtn.disabled = false;
+                acceptBtn.style.opacity = '1';
+                acceptBtn.style.cursor = 'pointer';
+                acceptBtn.textContent = '接受 / Accept';
+            }
+        }
+    }, 1000);
 }

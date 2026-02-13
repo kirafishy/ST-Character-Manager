@@ -76,21 +76,30 @@ export function writePngText(pngBuffer, key, value) {
         const chunkTotalLen = len + 12;
         const chunkData = uint8.slice(pos, pos + chunkTotalLen);
         
-        // 检查是否是需要替换的 tEXt 块
+        // 检查是否需要移除的元数据块
         let keep = true;
-        if (type === 'tEXt') {
+        
+        // 需要移除的关键字列表（与参考项目一致）
+        const removeKeywords = [key, 'ccv3', 'description', 'score', 'comment'];
+        
+        if (type === 'tEXt' || type === 'zTXt' || type === 'iTXt') {
             const data = uint8.slice(pos + 8, pos + 8 + len);
-            // tEXt 格式: Keyword + null + Text
+            // 文本块格式: Keyword + null + Text
             let nullIndex = -1;
             for(let i=0; i<data.length; i++) {
                 if(data[i] === 0) { nullIndex = i; break; }
             }
             if (nullIndex > 0) {
-                const keyword = bytesToStr(data.slice(0, nullIndex));
-                if (keyword === key) {
-                    keep = false; // 移除旧的 chara 数据
+                const keyword = bytesToStr(data.slice(0, nullIndex)).toLowerCase();
+                if (removeKeywords.some(k => keyword.includes(k))) {
+                    keep = false; // 移除旧的元数据
                 }
             }
+        }
+        
+        // 移除 EXIF 数据
+        if (type === 'eXIf') {
+            keep = false;
         }
         
         if (keep) {

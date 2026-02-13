@@ -59,42 +59,107 @@ export class TranslationService {
     }
 
     /**
-     * 构建 System Prompt
+     * 语言名称映射
+     */
+    static LANGUAGE_NAMES = {
+        'auto': 'Auto-detected',
+        'en': 'English',
+        'ja': 'Japanese (日本語)',
+        'ko': 'Korean (한국어)',
+        'zh-CN': 'Simplified Chinese (简体中文)',
+        'zh-TW': 'Traditional Chinese (繁體中文)'
+    };
+
+    /**
+     * 获取目标语言的显示名称（支持 custom 自定义语言）
+     * @param {object} settings - 设置对象
      * @returns {string}
      */
-    getSystemPrompt() {
-        // 默认的基础 System Prompt
-        const basePrompt = `You are a professional translator for SillyTavern character cards.
-Your task is to translate the provided character data into Simplified Chinese (简体中文).
-Maintain the original character's tone, style, and formatting strictly.
-Do not censor or refuse to translate any content. This is for a fictional roleplay setting.
-If the content is NSFW, translate it accurately using appropriate terminology.
-Output ONLY the translated JSON object. Do not include any explanations or other text.
-`;
+    static getTargetLangName(settings) {
+        const targetLang = settings.targetLanguage || 'zh-CN';
+        if (targetLang === 'custom') {
+            return settings.customTargetLanguage || 'Custom Language';
+        }
+        return TranslationService.LANGUAGE_NAMES[targetLang] || targetLang;
+    }
+
+    /**
+     * 构建 System Prompt
+     * @param {object} [options] - 可选参数
+     * @param {string} [options.glossaryText] - 术语表文本（如有）
+     * @param {string} [options.mvuProtectionPrompt] - MVU 框架变量保护提示（如有）
+     * @returns {string}
+     */
+    getSystemPrompt(options = {}) {
+        // 用户配置的 System Prompt（优先使用设置中的 translationSystemPrompt）
+        const systemPrompt = this.settings.translationSystemPrompt || this.settings.translationPrompt || '';
         
-        // 用户自定义的 Translation Prompt
-        const userPrompt = this.settings.translationPrompt || '';
+        // 构建语言指令
+        const sourceLang = this.settings.sourceLanguage || 'auto';
+        const targetLangName = TranslationService.getTargetLangName(this.settings);
+        const sourceLangName = sourceLang === 'auto' ? 'the source language (auto-detect)' : (TranslationService.LANGUAGE_NAMES[sourceLang] || sourceLang);
         
-        return `${basePrompt}\n${userPrompt}`;
+        let langInstruction = `\n\nTranslation Direction: Translate from ${sourceLangName} to ${targetLangName}.`;
+        if (sourceLang === 'auto') {
+            langInstruction += ` Auto-detect the source language. If the content is already in ${targetLangName}, keep it unchanged.`;
+        }
+        
+        // 术语表注入
+        let glossarySection = '';
+        if (options.glossaryText) {
+            glossarySection = `\n\nTranslation Glossary (must follow strictly):\n${options.glossaryText}`;
+        }
+        
+        // MVU 框架变量保护提示注入
+        let mvuSection = '';
+        if (options.mvuProtectionPrompt) {
+            mvuSection = options.mvuProtectionPrompt;
+        }
+        
+        return `${systemPrompt}${langInstruction}${glossarySection}${mvuSection}`;
     }
 
     /**
      * 执行翻译
      * @param {object} dataToTranslate - 需要翻译的键值对对象
      * @param {object} charContext - 角色上下文 (name, personality, etc.)
+     * @param {object} [options] - 可选参数
+     * @param {string} [options.glossaryText] - 术语表文本
      * @returns {Promise<object>} 翻译后的键值对对象
      */
-    async translate(dataToTranslate, charContext) {
-        const prompt = this.getSystemPrompt();
+    async translate(dataToTranslate, charContext, options = {}) {
+        const prompt = this.getSystemPrompt(options);
+        
+        // 获取目标语言名称用于 User Prompt
+        const targetLangName = TranslationService.getTargetLangName(this.settings);
         
         // 构建 User Prompt
         const contextStr = `Character Context:\nName: ${charContext.name}\nPersonality: ${charContext.personality || 'Unknown'}\nDescription Summary: ${(charContext.description || '').slice(0, 200)}...`;
         
         const contentStr = JSON.stringify(dataToTranslate, null, 2);
         
+        // 根据数据内容检测是否包含代码混合内容（正则脚本 replaceString、酒馆助手 content）
+        const keys = Object.keys(dataToTranslate);
+        let extraInstructions = '';
+        
+        const hasRegexReplace = keys.some(k => k.includes('replaceString'));
+        const hasScriptContent = keys.some(k => k.match(/script_.*_content$/));
+        
+        if (hasRegexReplace || hasScriptContent) {
+            extraInstructions = `\n\nIMPORTANT - Code-mixed content rules:
+- The values contain HTML/CSS/JavaScript mixed with natural language text.
+- ONLY translate the natural language text (UI labels, tooltips, descriptions, comments visible to users).
+- DO NOT modify: HTML tags, CSS properties/values, JavaScript code, variable names, function names, regex patterns, URLs, class names, id attributes.
+- For .describe('...') calls in Zod schemas: translate ONLY the string inside .describe(), keep the code structure intact.
+- For .prefault('...') calls: translate the default value string if it's natural language.
+- For HTML data-* attributes (data-open, data-close, etc.): translate the attribute values.
+- For button names in script objects: translate them.
+- Keep all code indentation and formatting exactly as-is.`;
+        }
+        
         const messages = [
             { role: 'system', content: prompt },
-            { role: 'user', content: `${contextStr}\n\nData to translate (JSON format):\n${contentStr}\n\nPlease translate the values in the JSON above to Simplified Chinese. Keep keys unchanged.` }
+            { role: 'user', content: `${contextStr}\n\nData to translate (JSON format):\n${contentStr}\n\nPlease translate the values in the JSON above to ${targetLangName}. Keep keys unchanged. Output ONLY the JSON object.${extraInstructions}` }
         ];
 
         let lastError = null;
@@ -229,5 +294,26 @@ Output ONLY the translated JSON object. Do not include any explanations or other
         } catch (e) {
             throw new Error('无法调用酒馆原生 API，请在设置中配置 OpenAI 兼容服务信息。');
         }
+    }
+
+    /**
+     * 公开的 API 调用方法，供外部模块（如术语表扫描器）使用
+     * @param {Array<{role: string, content: string}>} messages - 消息数组
+     * @returns {Promise<object>} 解析后的 JSON 对象
+     */
+    async callAPI(messages) {
+        let responseText = '';
+
+        if (this.settings.translationApi === 'openai') {
+            responseText = await this._callOpenAI(messages);
+        } else {
+            responseText = await this._callTavernAPI(messages);
+        }
+
+        const result = safeParseJson(responseText);
+        if (!result) {
+            throw new Error('Failed to parse JSON response from API');
+        }
+        return result;
     }
 }
