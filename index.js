@@ -4106,7 +4106,10 @@ function createModal() {
         renderView,
         notify,
         setZoom,
-        showConfirm
+        showConfirm,
+        showProgressBar,
+        updateProgressBar,
+        hideProgressBar
     });
 
     const importBtn = m.querySelector('#cmImportBtn');

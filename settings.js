@@ -3,7 +3,7 @@ import { ICONS } from './constants.js';
 import { escapeHtml } from './utils.js';
 import { syncAllTags } from './data.js';
 
-export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm }) {
+export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm, showProgressBar, updateProgressBar, hideProgressBar }) {
     const settings = state.settings;
 
     const content = `
@@ -568,20 +568,28 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
             syncAllTagsBtn.onclick = async () => {
                 if (await showConfirm('确定要将所有插件标签写入角色卡文件吗？\n\n这可能需要一些时间，期间请勿关闭页面。\n建议在网络良好时进行。')) {
                     syncAllTagsBtn.disabled = true;
-                    const originalText = syncAllTagsBtn.textContent;
-                    syncAllTagsBtn.textContent = '准备中...';
+                    // const originalText = syncAllTagsBtn.textContent;
+                    // syncAllTagsBtn.textContent = '准备中...';
+                    if (showProgressBar) showProgressBar('准备同步标签...');
                     
                     try {
                         const count = await syncAllTags((current, total) => {
-                            syncAllTagsBtn.textContent = `同步中 (${current}/${total})`;
+                            // syncAllTagsBtn.textContent = `同步中 (${current}/${total})`;
+                            if (updateProgressBar) {
+                                const progress = Math.round((current / total) * 100);
+                                updateProgressBar(progress, `正在同步标签... ${current}/${total}`, `当前进度: ${progress}%`);
+                            }
                         });
+                        if (updateProgressBar) updateProgressBar(100, '同步完成！', '正在收尾...');
+                        await new Promise(r => setTimeout(r, 800)); // 稍作停顿展示完成状态
                         notify(`已成功同步 ${count} 个角色的标签`, 'success');
                     } catch (e) {
                         console.error(e);
                         notify('同步过程中发生错误，请查看控制台', 'error');
                     } finally {
+                        if (hideProgressBar) hideProgressBar();
                         syncAllTagsBtn.disabled = false;
-                        syncAllTagsBtn.textContent = originalText;
+                        // syncAllTagsBtn.textContent = originalText;
                     }
                 }
             };
