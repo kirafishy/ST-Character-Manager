@@ -999,6 +999,41 @@ body.cm-resizing * {
     flex: 1
 }
 
+/* Settings Language Row Layout */
+.cm-settings-lang-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.cm-settings-lang-col {
+    flex: 0 0 auto;
+    min-width: 140px;
+    max-width: 180px;
+}
+
+.cm-settings-lang-custom {
+    align-items: flex-end;
+    flex: 0 0 auto;
+    min-width: 140px;
+    max-width: 200px;
+}
+
+@media (max-width: 768px) {
+    .cm-settings-lang-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .cm-settings-lang-col,
+    .cm-settings-lang-custom {
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+    }
+}
+
 /* 图片裁剪器 */
 .cm-cropper-overlay {
     position: fixed;

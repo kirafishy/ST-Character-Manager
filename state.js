@@ -17,6 +17,7 @@ export const defaultSettings = {
     showTokenBadge: true,
     showAuthor: true,
     autoScan: true,
+    autoSyncTags: false, // 自动同步 Tag 到角色卡
     doubleClickAction: 'detail', // 'detail' | 'chat'
     defaultSort: 'date_desc',
     translationEnabled: false, // 角色卡翻译功能开关

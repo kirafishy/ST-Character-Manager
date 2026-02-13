@@ -2,6 +2,7 @@ import { state } from './state.js';
 import { generateId, notify } from './utils.js';
 import { getSTContext } from './context.js';
 import { COLORS } from './constants.js';
+import { authFetch } from './api.js';
 
 export function loadTags() {
     const ctx = getSTContext();
@@ -63,6 +64,9 @@ export function addTagToChar(fileName, tagId) {
     if (!state.tagMap[fileName].includes(tagId)) {
         state.tagMap[fileName].push(tagId);
         saveTags();
+        if (state.settings.autoSyncTags) {
+            syncTagsToCard(fileName);
+        }
         return true;
     }
     return false;
@@ -75,10 +79,106 @@ export function removeTagFromChar(fileName, tagId) {
         if (idx > -1) {
             ids.splice(idx, 1);
             saveTags();
+            if (state.settings.autoSyncTags) {
+                syncTagsToCard(fileName);
+            }
             return true;
         }
     }
     return false;
+}
+
+/**
+ * 将当前插件中的 Tag 同步写入到角色卡文件的 data.tags 字段
+ * @param {string} fileName - 角色卡文件名
+ */
+export async function syncTagsToCard(fileName) {
+    try {
+        // 1. 获取当前插件为该角色设置的 Tag 名称列表
+        const currentPluginTags = getCharTags(fileName).map(t => t.name);
+
+        // 2. 获取角色完整数据
+        const getRes = await authFetch('/api/characters/get', {
+            method: 'POST',
+            body: JSON.stringify({ avatar_url: fileName })
+        });
+        
+        if (!getRes.ok) {
+            console.error('[TagSync] Failed to get char data:', getRes.status);
+            return;
+        }
+        
+        const fullData = await getRes.json();
+        
+        // 3. 定位 tags 字段并合并
+        let targetObj = fullData;
+        if (fullData.data && (fullData.spec === 'chara_card_v3' || fullData.data.name)) {
+            targetObj = fullData.data;
+        }
+        
+        const existingCardTags = Array.isArray(targetObj.tags) ? targetObj.tags : [];
+        
+        // 获取所有插件已知 Tag 名称 (用于识别哪些是“受管”的)
+        // 逻辑：如果卡片里的 Tag 在插件已知列表中，说明它受插件管理 -> 使用插件当前设置覆盖 (即如果插件里没选，就删掉)
+        // 如果卡片里的 Tag 不在插件已知列表中，说明是外部 Tag -> 保留
+        const allPluginTagNames = state.tags.map(t => t.name.toLowerCase());
+        
+        const preservedTags = existingCardTags.filter(t =>
+            !allPluginTagNames.includes(String(t).toLowerCase())
+        );
+        
+        // 合并：保留的外部 Tag + 插件当前的 Tag
+        // 使用 Set 去重
+        const finalTags = [...new Set([...preservedTags, ...currentPluginTags])];
+        
+        targetObj.tags = finalTags;
+
+        // 4. 保存回文件
+        // 使用 merge-attributes 接口进行局部更新，避免全量覆盖导致的数据丢失或 400 错误
+        const payload = { avatar: fileName };
+        
+        if (fullData.data && (fullData.spec === 'chara_card_v3' || fullData.data.name)) {
+            // V2/V3: 更新 data.tags
+            payload.data = { tags: finalTags };
+        } else {
+            // V1: 更新 tags
+            payload.tags = finalTags;
+        }
+
+        console.log('[TagSync] Sending merge payload for', fileName, payload);
+
+        // 使用 /api/characters/merge-attributes 接口
+        const saveRes = await authFetch('/api/characters/merge-attributes', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        if (!saveRes.ok) {
+            console.error('[TagSync] Failed to save char data:', saveRes.status);
+        } else {
+            console.log('[TagSync] Tags synced for', fileName);
+        }
+    } catch (e) {
+        console.error('[TagSync] Error:', e);
+    }
+}
+
+/**
+ * 同步所有角色的 Tag 到文件
+ * @param {Function} onProgress - 进度回调 (current, total)
+ */
+export async function syncAllTags(onProgress) {
+    const chars = state.characters;
+    let count = 0;
+    const total = chars.length;
+    
+    for (let i = 0; i < total; i++) {
+        const char = chars[i];
+        await syncTagsToCard(char.fileName);
+        count++;
+        if (onProgress) onProgress(i + 1, total);
+    }
+    return count;
 }
 
 export function getUntaggedChars() {

@@ -5,6 +5,7 @@ import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
 import { getCache, setCache, migrateFromLocalStorage } from './db.js';
 import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars } from './data.js';
+import { importTags } from './st-tags.js';
 import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
 import { showSettingsDialog } from './settings.js';
 import { initTranslationUI, openTranslationDialog } from './translation/translation-ui.js';
@@ -131,27 +132,90 @@ async function importFiles(files) {
 
 // 实际执行导入的逻辑 (原 importFiles)
 async function doActualImport(files, remainingInQueue) {
-    const nativeInput = parentWin.document.getElementById('character_import_file');
-    if (!nativeInput) throw new Error('未找到酒馆原生导入接口');
-
-    // 不再禁用全局按钮，因为支持队列
-    // const btn = doc.getElementById('cmImportBtn');
-    
-    // 如果酒馆列表尚未加载(0)，则使用本地缓存数量作为基准，避免误报“新增全部”
-    const stLen = getSTCharacters().length;
-    const oldLen = stLen === 0 && state.characters.length > 0 ? state.characters.length : stLen;
-
-    const dt = new DataTransfer();
-    for (const f of files) dt.items.add(f);
-    nativeInput.files = dt.files;
-    nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
-
-    // 显示进度条提示等待
+    // 改为手动上传，以便控制标签导入流程
     const queueMsg = remainingInQueue > 0 ? ` (队列剩余: ${remainingInQueue})` : '';
-    showProgressBar(`正在等待导入完成${queueMsg}...`, true);
+    showProgressBar(`正在导入${queueMsg}...`, true);
 
-    // 使用抽取的监控函数 (btn 传 null 因为我们不控制按钮了)
-    await monitorImportProgress(oldLen, null, files.length);
+    const ctx = getSTContext();
+    const importedChars = [];
+
+    // 1. 上传文件
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        updateProgressBar(Math.floor((i / files.length) * 50), `正在上传 ${file.name}...`);
+        
+        try {
+            const formData = new FormData();
+            const ext = file.name.split('.').pop().toLowerCase();
+            formData.append('avatar', file);
+            formData.append('file_type', ext);
+            formData.append('user_name', ctx.name1 || 'User');
+            
+            const res = await authFetch('/api/characters/import', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!res.ok) throw new Error(await res.text());
+            
+            const data = await res.json();
+            if (data && data.file_name) {
+                importedChars.push(data.file_name);
+            }
+        } catch (e) {
+            console.error('上传失败:', file.name, e);
+            notify(`上传失败 ${file.name}: ${e.message}`, 'error');
+        }
+    }
+
+    if (importedChars.length === 0) {
+        hideProgressBar();
+        return;
+    }
+
+    updateProgressBar(60, '正在刷新列表...');
+
+    // 2. 刷新原生列表 (确保 ctx.characters 更新)
+    if (ctx && ctx.getCharacters) {
+        await ctx.getCharacters();
+    }
+
+    // 3. 处理标签导入
+    updateProgressBar(80, '正在处理标签...');
+    const allChars = getSTCharacters(); // 获取最新列表
+    
+    // 加载最新的标签数据（因为原生刷新可能重置了 ctx.tags/tagMap，虽然不应该）
+    loadTags();
+
+    for (const fileName of importedChars) {
+        // 查找对应的角色对象
+        // 注意：API 返回的 file_name 是带扩展名的，allChars 里的 avatar 也是带扩展名的
+        // 但为了保险，也检查一下去掉扩展名的匹配
+        let char = allChars.find(c => c.avatar === fileName);
+        if (!char) {
+             // 尝试 fuzzy match
+             const nameNoExt = fileName.replace(/\.[^/.]+$/, "");
+             char = allChars.find(c => c.avatar.startsWith(nameNoExt));
+        }
+
+        if (char) {
+            try {
+                await importTags(char);
+            } catch (e) {
+                console.warn('标签导入失败:', fileName, e);
+            }
+        }
+    }
+
+    // 4. 完成
+    updateProgressBar(100, '完成', '');
+    await new Promise(r => setTimeout(r, 500));
+    
+    // 刷新扩展 UI
+    await scan(false, false, true);
+    
+    hideProgressBar();
+    notify(`成功导入 ${importedChars.length} 个角色`, 'success');
 }
 
 // 队列处理器

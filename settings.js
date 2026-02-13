@@ -1,6 +1,7 @@
 import { state, saveSettings, defaultSettings } from './state.js';
 import { ICONS } from './constants.js';
 import { escapeHtml } from './utils.js';
+import { syncAllTags } from './data.js';
 
 export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm }) {
     const settings = state.settings;
@@ -130,8 +131,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                      <!-- 语言设置 -->
                      <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
                          <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--cm-text)" data-tl-key="langSettings">🌐 ${settings.translationUILanguage === 'en' ? 'Language Settings' : '语言设置'}</div>
-                         <div style="display:flex;gap:10px;align-items:flex-start">
-                             <div style="flex:0 0 auto;min-width:140px;max-width:180px">
+                         <div class="cm-settings-lang-row">
+                             <div class="cm-settings-lang-col">
                                  <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="sourceLang">${settings.translationUILanguage === 'en' ? 'Source Language' : '源语言'}</label>
                                  <select id="cmSetSourceLang" class="cm-select-input" style="width:100%;height:30px;box-sizing:border-box">
                                      <option value="auto" ${settings.sourceLanguage === 'auto' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? 'Auto Detect' : '自动检测 (Auto)'}</option>
@@ -142,7 +143,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                                      <option value="zh-TW" ${settings.sourceLanguage === 'zh-TW' ? 'selected' : ''}>繁體中文</option>
                                  </select>
                              </div>
-                             <div style="flex:0 0 auto;min-width:140px;max-width:180px">
+                             <div class="cm-settings-lang-col">
                                  <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="targetLang">${settings.translationUILanguage === 'en' ? 'Target Language' : '目标语言'}</label>
                                  <select id="cmSetTargetLang" class="cm-select-input" style="width:100%;height:30px;box-sizing:border-box">
                                      <option value="zh-CN" ${settings.targetLanguage === 'zh-CN' ? 'selected' : ''}>简体中文</option>
@@ -153,7 +154,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                                      <option value="custom" ${settings.targetLanguage === 'custom' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? '✏️ Custom...' : '✏️ 自定义...'}</option>
                                  </select>
                              </div>
-                             <div id="cmCustomTargetLangWrap" style="display:${settings.targetLanguage === 'custom' ? 'flex' : 'none'};align-items:flex-end;flex:0 0 auto;min-width:140px;max-width:200px">
+                             <div id="cmCustomTargetLangWrap" class="cm-settings-lang-custom" style="display:${settings.targetLanguage === 'custom' ? 'flex' : 'none'}">
                                  <div style="width:100%">
                                      <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)">${settings.translationUILanguage === 'en' ? 'Custom Language' : '自定义语言'}</label>
                                      <input type="text" id="cmSetCustomTargetLang" class="cm-input" value="${escapeHtml(settings.customTargetLanguage || '')}"
@@ -234,6 +235,25 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
+                        <span>自动同步标签</span>
+                        <small>修改标签时自动写入角色卡文件</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetAutoSyncTags" ${settings.autoSyncTags ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>全量同步标签</span>
+                        <small>将插件标签写入所有角色卡文件</small>
+                    </div>
+                    <button id="cmSyncAllTagsBtn" class="cm-btn cm-btn-secondary">立即同步</button>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
                         <span>清除索引缓存</span>
                         <small>修复列表显示滞后或数据错误</small>
                     </div>
@@ -298,6 +318,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindCheck('cmSetToken', 'showTokenBadge');
         bindCheck('cmSetAuthor', 'showAuthor');
         bindCheck('cmSetAutoScan', 'autoScan');
+        bindCheck('cmSetAutoSyncTags', 'autoSyncTags');
 
         // Translation Settings — 版权声明弹窗逻辑
         const transCheck = ov.querySelector('#cmSetTrans');
@@ -540,6 +561,31 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         };
         bindSelect('cmSetDbClick', 'doubleClickAction');
         bindSelect('cmSetDefSort', 'defaultSort');
+
+        // Sync All Tags
+        const syncAllTagsBtn = ov.querySelector('#cmSyncAllTagsBtn');
+        if (syncAllTagsBtn) {
+            syncAllTagsBtn.onclick = async () => {
+                if (await showConfirm('确定要将所有插件标签写入角色卡文件吗？\n\n这可能需要一些时间，期间请勿关闭页面。\n建议在网络良好时进行。')) {
+                    syncAllTagsBtn.disabled = true;
+                    const originalText = syncAllTagsBtn.textContent;
+                    syncAllTagsBtn.textContent = '准备中...';
+                    
+                    try {
+                        const count = await syncAllTags((current, total) => {
+                            syncAllTagsBtn.textContent = `同步中 (${current}/${total})`;
+                        });
+                        notify(`已成功同步 ${count} 个角色的标签`, 'success');
+                    } catch (e) {
+                        console.error(e);
+                        notify('同步过程中发生错误，请查看控制台', 'error');
+                    } finally {
+                        syncAllTagsBtn.disabled = false;
+                        syncAllTagsBtn.textContent = originalText;
+                    }
+                }
+            };
+        }
 
         // Clear Cache
         const clearCacheBtn = ov.querySelector('#cmClearCacheBtn');
