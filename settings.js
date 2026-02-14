@@ -69,6 +69,28 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
+                        <span>显示悬浮按钮</span>
+                        <small>鼠标悬停在卡片上时显示操作按钮</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetHoverBtns" ${settings.showCardHoverButtons ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>显示卡片注释</span>
+                        <small>在卡片列表中显示角色注释</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetCardNote" ${settings.showCardNote ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
                         <span>侧边栏宽度</span>
                         <small>恢复侧边栏到默认宽度</small>
                     </div>
@@ -310,6 +332,12 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     if (['showGalleryBadge', 'showTokenBadge', 'showAuthor'].includes(key)) {
                         renderView();
                     }
+                    if (key === 'showCardHoverButtons') {
+                         document.getElementById('charManagerModal')?.classList.toggle('cm-hide-hover-btns', !e.target.checked);
+                    }
+                    if (key === 'showCardNote') {
+                         document.getElementById('charManagerModal')?.classList.toggle('cm-hide-card-note', !e.target.checked);
+                    }
                 };
             }
         };
@@ -317,6 +345,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindCheck('cmSetGallery', 'showGalleryBadge');
         bindCheck('cmSetToken', 'showTokenBadge');
         bindCheck('cmSetAuthor', 'showAuthor');
+        bindCheck('cmSetHoverBtns', 'showCardHoverButtons');
+        bindCheck('cmSetCardNote', 'showCardNote');
         bindCheck('cmSetAutoScan', 'autoScan');
         bindCheck('cmSetAutoSyncTags', 'autoSyncTags');
 

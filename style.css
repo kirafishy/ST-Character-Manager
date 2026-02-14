@@ -180,7 +180,69 @@
 .cm-header-actions {
     display: flex;
     align-items: center;
+    gap: 8px;
+    position: relative
+}
+
+.cm-desktop-actions {
+    display: flex;
+    align-items: center;
     gap: 8px
+}
+
+.cm-mobile-only {
+    display: none
+}
+
+/* Mobile Menu Dropdown */
+.cm-mobile-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 180px;
+    background: var(--cm-bg-sec);
+    border: 1px solid var(--cm-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 1001;
+    overflow: hidden;
+    margin-top: 8px;
+    animation: cmFadeIn 0.2s ease
+}
+
+.cm-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    font-size: 14px;
+    color: var(--cm-text);
+    cursor: pointer;
+    transition: background 0.1s;
+    border-bottom: 1px solid var(--cm-border)
+}
+
+.cm-menu-item:last-child {
+    border-bottom: none
+}
+
+.cm-menu-item:hover {
+    background: var(--cm-hover)
+}
+
+.cm-menu-item svg {
+    width: 16px;
+    height: 16px;
+    opacity: 0.8
+}
+
+@media (max-width: 768px) {
+    .cm-desktop-actions {
+        display: none
+    }
+    .cm-mobile-only {
+        display: flex
+    }
 }
 
 .cm-close {
@@ -2128,6 +2190,21 @@ body.cm-resizing * {
 
 /* 移动端适配 */
 @media (max-width: 600px) {
+    /* Header Actions Optimization */
+    .cm-header-actions {
+        gap: 2px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        max-width: 140px; /* Limit width to force wrap if needed, or prevent overflow */
+    }
+
+    .cm-header-btn {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        font-size: 14px;
+    }
+
     .cm-toolbar-row {
         flex-wrap: wrap;
         gap: 8px;
@@ -3781,9 +3858,15 @@ input:checked + .cm-slider:before {
 
 @media (max-width: 480px) {
     .cm-trans-filter-group {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 3px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        width: 100%; /* Ensure full width */
+    }
+    
+    .cm-trans-filter-label {
+        white-space: nowrap; /* Prevent text wrapping inside label */
     }
 
     .cm-trans-actions {
@@ -3804,4 +3887,16 @@ input:checked + .cm-slider:before {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+}
+
+/* Settings: Hide Card Hover Buttons */
+.cm-hide-hover-btns .cm-card-actions,
+body.hide-card-buttons .cm-card-actions {
+    display: none !important;
+}
+
+/* Settings: Hide Card Note */
+.cm-hide-card-note .cm-note,
+body.hide-card-note .cm-note {
+    display: none !important;
 }

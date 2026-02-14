@@ -87,6 +87,10 @@ function toggleTheme() {
     if (themeBtn) {
         themeBtn.innerHTML = state.isDarkMode ? ICONS.moon : ICONS.sun;
     }
+    const menuTheme = doc.getElementById('cmMenuTheme');
+    if (menuTheme) {
+        menuTheme.innerHTML = (state.isDarkMode ? ICONS.moon : ICONS.sun) + ' 切换主题';
+    }
 }
 
 function applyTheme() {
@@ -319,6 +323,7 @@ async function showUrlImportDialog() {
                 const urlInput = ov.querySelector('#cmUrlImportLink');
                 const sourceInput = ov.querySelector('#cmUrlImportSource');
                 const noteInput = ov.querySelector('#cmUrlImportNote');
+                const importBtn = ov.querySelector('#cmUrlImportOk');
                 
                 const url = urlInput.value.trim();
                 const source = sourceInput.value.trim();
@@ -330,19 +335,23 @@ async function showUrlImportDialog() {
                     return;
                 }
 
-                close();
-                const btn = doc.getElementById('cmUrlImportBtn');
-                if (btn) btn.disabled = true;
+                // 锁定按钮防止重复点击
+                importBtn.disabled = true;
+                importBtn.textContent = '下载中...';
+                const originalBtnText = '导入';
 
                 try {
-                    showProgressBar('正在请求服务器下载...', true);
-
                     // 1. 下载文件
-                    const response = await authFetch('/api/content/import', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: url })
-                    });
+                    let response;
+                    try {
+                        response = await authFetch('/api/content/import', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: url })
+                        });
+                    } catch (fetchErr) {
+                        throw new Error(`网络请求失败: ${fetchErr.message}`);
+                    }
 
                     if (!response.ok) {
                         const errText = await response.text();
@@ -436,6 +445,11 @@ async function showUrlImportDialog() {
                     // 3. 记录当前角色列表，执行导入
                     // FIX: getSTCharacters() 返回的是原生对象，属性是 avatar 而非 fileName
                     const oldChars = getSTCharacters().map(c => c.avatar);
+                    
+                    // 关键修改：下载成功后，关闭弹窗，然后将文件推入队列
+                    close();
+                    notify('下载成功，已加入导入队列', 'success');
+                    
                     await importFiles([fileToImport]);
 
                     // 4. 查找新导入的角色并应用 ST-CM 标签关联
@@ -472,9 +486,11 @@ async function showUrlImportDialog() {
                 } catch (e) {
                     console.error(e);
                     notify('导入处理失败: ' + e.message, 'error');
+                    // 恢复按钮状态
+                    importBtn.disabled = false;
+                    importBtn.textContent = originalBtnText;
                 } finally {
                     hideProgressBar();
-                    if (btn) btn.disabled = false;
                 }
             }
         }
@@ -3998,19 +4014,33 @@ function createModal() {
     const m = doc.createElement('div');
     m.id = MODAL_ID;
     m.className = state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light';
+    
+    // 初始化应用设置类
+    if (!state.settings.showCardHoverButtons) m.classList.add('cm-hide-hover-btns');
+    if (!state.settings.showCardNote) m.classList.add('cm-hide-card-note');
 
     m.innerHTML = '<div class="cm-dialog">' +
         '<div class="cm-header">' +
         '<h2><span style="margin-right:6px">' + ICONS.folder + '</span> 角色卡管理<span id="cmHeaderStats" class="cm-header-stats"></span></h2>' +
         '<div class="cm-header-actions">' +
+        '<button class="cm-header-btn cm-mobile-only" id="cmMobileMenuBtn" title="更多">' + ICONS.menu + '</button>' +
+        '<div class="cm-desktop-actions">' +
         '<button class="cm-header-btn" id="cmSettingsBtn" title="设置">' + ICONS.settings + '</button>' +
         '<button class="cm-header-btn" id="cmThemeBtn" title="切换主题">' + (state.isDarkMode ? ICONS.moon : ICONS.sun) + '</button>' +
         '<button class="cm-header-btn" id="cmMigrateBtn" title="从旧版本迁移数据" style="display:none;color:#fbbf24">📥</button>' +
         '<button class="cm-header-btn" id="cmImportBtn" title="导入角色/ZIP">' + ICONS.upload + '</button>' +
         '<button class="cm-header-btn" id="cmUrlImportBtn" title="从 URL 导入">' + ICONS.link + '</button>' +
+        '</div>' +
         '<button class="cm-header-btn" id="cmSyncBtn" title="快速刷新">' + ICONS.refresh + '</button>' +
         '<button class="cm-header-btn" id="cmFullScanBtn" title="强制全量刷新">' + ICONS.search + '</button>' +
         '<button class="cm-close">' + ICONS.close + '</button>' +
+        '<div class="cm-mobile-menu" id="cmMobileMenu" style="display:none">' +
+        '<div class="cm-menu-item" id="cmMenuImport">' + ICONS.upload + ' 导入文件</div>' +
+        '<div class="cm-menu-item" id="cmMenuUrlImport">' + ICONS.link + ' URL 导入</div>' +
+        '<div class="cm-menu-item" id="cmMenuSettings">' + ICONS.settings + ' 设置</div>' +
+        '<div class="cm-menu-item" id="cmMenuTheme">' + (state.isDarkMode ? ICONS.moon : ICONS.sun) + ' 切换主题</div>' +
+        '<div class="cm-menu-item" id="cmMenuMigrate" style="display:none">📥 迁移数据</div>' +
+        '</div>' +
         '</div>' +
         '</div>' +
         '<div class="cm-toolbar">' +
@@ -4111,6 +4141,47 @@ function createModal() {
         updateProgressBar,
         hideProgressBar
     });
+
+    // Mobile Menu Logic
+    const mobileMenuBtn = m.querySelector('#cmMobileMenuBtn');
+    const mobileMenu = m.querySelector('#cmMobileMenu');
+    
+    if (mobileMenuBtn && mobileMenu) {
+        mobileMenuBtn.onclick = (e) => {
+            e.stopPropagation();
+            mobileMenu.style.display = mobileMenu.style.display === 'none' ? 'block' : 'none';
+        };
+
+        const closeMenu = (e) => {
+            // Check if element still exists in DOM
+            if (!doc.body.contains(mobileMenu)) {
+                doc.removeEventListener('click', closeMenu);
+                return;
+            }
+            if (mobileMenu.style.display !== 'none' && !mobileMenu.contains(e.target) && e.target !== mobileMenuBtn) {
+                mobileMenu.style.display = 'none';
+            }
+        };
+        doc.addEventListener('click', closeMenu);
+
+        // Bind menu items
+        const bindMenu = (id, targetId) => {
+            const el = m.querySelector(id);
+            const target = m.querySelector(targetId);
+            if (el && target) {
+                el.onclick = () => {
+                    target.click();
+                    mobileMenu.style.display = 'none';
+                };
+            }
+        };
+
+        bindMenu('#cmMenuImport', '#cmImportBtn');
+        bindMenu('#cmMenuUrlImport', '#cmUrlImportBtn');
+        bindMenu('#cmMenuSettings', '#cmSettingsBtn');
+        bindMenu('#cmMenuTheme', '#cmThemeBtn');
+        bindMenu('#cmMenuMigrate', '#cmMigrateBtn');
+    }
 
     const importBtn = m.querySelector('#cmImportBtn');
     importBtn.onclick = function () {
@@ -4218,7 +4289,11 @@ function createModal() {
         };
         // 检查是否显示
         const sources = checkForMigration();
-        if (sources.length > 0) migrateBtn.style.display = 'flex';
+        if (sources.length > 0) {
+            migrateBtn.style.display = 'flex';
+            const menuMigrate = m.querySelector('#cmMenuMigrate');
+            if (menuMigrate) menuMigrate.style.display = 'flex';
+        }
     }
 
     const zoomInput = m.querySelector('.cm-zoom-input');
@@ -4605,6 +4680,14 @@ function createModal() {
             await downloadAsZip(files);
         }
     };
+
+    // 应用初始化设置
+    if (!state.settings.showCardHoverButtons) {
+        m.classList.add('cm-hide-hover-btns');
+    }
+    if (!state.settings.showCardNote) {
+        m.classList.add('cm-hide-card-note');
+    }
 
     doc.body.appendChild(m);
 }
