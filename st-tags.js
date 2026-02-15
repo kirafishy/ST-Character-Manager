@@ -30,7 +30,7 @@ function getTag(tagName) {
  * @param {object} [options] - Options
  * @param {number} [options.importSetting=null] - Force a tag import setting
  */
-export async function importTags(character, { importSetting = null } = {}) {
+export async function importTags(character, { importSetting = null, skipSave = false } = {}) {
     const ctx = getSTContext();
     if (!ctx) return;
 
@@ -136,7 +136,7 @@ export async function importTags(character, { importSetting = null } = {}) {
     }
 
     if (addedCount > 0) {
-        saveTags(); // Persist changes
+        if (!skipSave) saveTags(); // Persist changes
         log(`Imported ${addedCount} tags for ${character.name}`);
         // Refresh UI via callback or event if necessary, but caller (index.js) usually handles refresh
     }

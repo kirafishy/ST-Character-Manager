@@ -43,12 +43,27 @@
     position: fixed;
     bottom: 20px;
     right: 20px;
-    z-index: 200000;
+    z-index: 2147483000;
     pointer-events: none;
+    display: flex;
+    justify-content: flex-end;
+}
+
+@media (max-width: 768px) {
+    .cm-progress-overlay {
+        right: 0;
+        left: 0;
+        margin: 0 auto;
+        width: 90%;
+        bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+        display: flex;
+        justify-content: center;
+    }
 }
 
 .cm-progress-box {
     width: 320px;
+    max-width: 100%;
     background: linear-gradient(135deg, #1a1b26 0%, #0f1016 100%);
     padding: 16px;
     border-radius: 12px;
@@ -981,6 +996,26 @@ body.cm-resizing * {
 
 .cm-form-group {
     margin-bottom: 20px
+}
+
+.cm-glossary-delete-btn {
+    background: transparent;
+    border: none;
+    color: var(--cm-text-sec);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    width: 24px;
+    height: 24px;
+}
+
+.cm-glossary-delete-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
 }
 
 .cm-form-group label {
@@ -2249,10 +2284,12 @@ body.cm-resizing * {
 
     /* 移动端进度条修复 */
     .cm-progress-overlay {
-        bottom: 10px;
         right: 10px;
         left: 10px;
         width: auto;
+        bottom: auto;
+        top: 100px;
+        z-index: 2147483647;
     }
 
     .cm-progress-box {

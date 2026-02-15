@@ -1690,6 +1690,8 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                 const results = await Promise.all(chunk.map(c => getCharacterData(c.avatar, c)));
                 for (const fresh of results) {
                     if (!fresh.error) {
+                        // 自动导入标签 (importSetting: 3 = ALL, skipSave: true)
+                        await importTags(fresh, { importSetting: 3, skipSave: true });
                         newList.push(fresh);
                         newCount++;
                     }
@@ -1698,6 +1700,9 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
         }
 
         if (forceFull) updateProgressBar(100, '扫描完成！', '即将刷新列表...');
+
+        // 批量保存标签更改
+        saveTags();
 
         state.characters = newList;
 
@@ -1937,9 +1942,12 @@ function renderTagSidebar() {
     });
 }
 
-function createBaseDialog(title, bodyContent, footerButtons = [], onOpen = null) {
-    const existing = doc.querySelector('.cm-tag-editor-overlay');
-    if (existing) existing.remove();
+function createBaseDialog(title, bodyContent, footerButtons = [], onOpen = null, options = {}) {
+    const { stack = false } = options;
+    if (!stack) {
+        const existing = doc.querySelector('.cm-tag-editor-overlay');
+        if (existing) existing.remove();
+    }
 
     const ov = doc.createElement('div');
     ov.className = state.isDarkMode ? 'cm-tag-editor-overlay cm-theme-dark' : 'cm-tag-editor-overlay cm-theme-light';

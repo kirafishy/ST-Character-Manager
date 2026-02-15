@@ -252,14 +252,87 @@ export async function scanAndFilterGlossary(charData, settings) {
     // 步骤1: 代码粗提取
     const { charName, candidates } = extractCandidateTerms(charData);
     
-    if (candidates.length === 0) return [];
+    let results = [];
 
-    console.log(`[GlossaryScanner] 粗提取 ${candidates.length} 个候选词，交由 AI 筛选...`);
+    if (candidates.length > 0) {
+        console.log(`[GlossaryScanner] 粗提取 ${candidates.length} 个候选词，交由 AI 筛选...`);
+        // 步骤2: AI 筛选 + 翻译
+        results = await aiFilterAndTranslate(candidates, charName, settings);
+    }
 
-    // 步骤2: AI 筛选 + 翻译
-    const results = await aiFilterAndTranslate(candidates, charName, settings);
+    // 步骤3: 如果提取结果较少（可能是非英文内容导致正则提取失败），尝试 AI 深度发现
+    // 阈值设为 5，如果少于5个，说明可能漏掉了重要的专有名词
+    if (results.length < 5) {
+        console.log('[GlossaryScanner] 提取结果较少，尝试 AI 深度发现...');
+        try {
+            const discovered = await discoverTermsWithAI(charData, settings);
+            
+            // 合并去重
+            const existingKeys = new Set(results.map(r => r.original));
+            discovered.forEach(d => {
+                if (!existingKeys.has(d.original)) {
+                    results.push(d);
+                    existingKeys.add(d.original);
+                }
+            });
+            console.log(`[GlossaryScanner] AI 深度发现补充了 ${discovered.length} 个词条`);
+        } catch (e) {
+            console.warn('[GlossaryScanner] AI 深度发现失败:', e);
+        }
+    }
 
-    console.log(`[GlossaryScanner] AI 筛选后保留 ${results.length} 个专有名词`);
+    console.log(`[GlossaryScanner] 最终保留 ${results.length} 个专有名词`);
 
     return results;
+}
+
+/**
+ * 使用 AI 直接从文本片段中发现专有名词（用于非英文或正则提取失败的情况）
+ */
+async function discoverTermsWithAI(charData, settings) {
+    const data = charData.data || charData;
+    const service = new TranslationService(settings);
+    const targetLang = TranslationService.getTargetLangName(settings);
+    const charName = data.name || '';
+
+    // 选取最具代表性的文本片段：简介 + 第一条消息
+    // 限制长度以节省 Token
+    const description = (data.description || '').slice(0, 800);
+    const firstMes = (data.first_mes || '').slice(0, 500);
+    const textToAnalyze = `Character Name: ${charName}\n\nDescription:\n${description}\n\nFirst Message:\n${firstMes}`;
+
+    if (textToAnalyze.length < 50) return [];
+
+    const systemPrompt = `You are an expert in fiction/roleplay content analysis.
+Your task: Read the following character description and extract proper nouns (names, places, skills, specific terms) that need consistent translation.
+
+## Rules:
+1. Identify proper nouns found in the text.
+2. Determine the type: "name", "place", "skill", "term".
+3. Provide a ${targetLang} translation for each.
+4. Ignore common words.
+5. If the text is not in English, extract the terms in their original language.
+
+## Output Format:
+Return a JSON array: [{"original": "...", "type": "...", "translation": "..."}]
+Return [] if nothing found.`;
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: textToAnalyze }
+    ];
+
+    const result = await service.callAPI(messages);
+
+    if (Array.isArray(result)) {
+        return result.filter(item =>
+            item && item.original && typeof item.original === 'string'
+        ).map(item => ({
+            original: item.original,
+            translation: item.translation || '',
+            type: ['name', 'place', 'skill', 'term'].includes(item.type) ? item.type : 'term'
+        }));
+    }
+
+    return [];
 }

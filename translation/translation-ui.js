@@ -36,6 +36,7 @@ let originalPngBuffer = null;      // 原始 PNG ArrayBuffer (用于 PNG 导出)
 let service = null;                // TranslationService 实例
 let currentChar = null;            // 当前角色对象
 let glossaryData = [];             // 术语表数据
+let isGlossaryEditing = false;     // 术语表是否处于编辑模式
 let mvuAnalysis = null;            // MVU 框架分析结果（如果检测到）
 let isDirty = false;               // 是否有未保存的翻译进度
 
@@ -165,6 +166,7 @@ function handleClose(ov, originalClose) {
     _createBaseDialog(`⚠️ ${t('dialogTitle')}`, confirmHtml, [
         {
             text: t('btnSaveProgressAndClose'),
+            id: 'cmTransConfirmSave',
             cls: 'cm-btn-primary',
             onClick: (dlg, closeDlg) => {
                 doExportProgress();
@@ -175,6 +177,7 @@ function handleClose(ov, originalClose) {
         },
         {
             text: t('btnDiscardAndClose'),
+            id: 'cmTransConfirmDiscard',
             cls: 'cm-btn-danger',
             onClick: (dlg, closeDlg) => {
                 isDirty = false;
@@ -184,10 +187,11 @@ function handleClose(ov, originalClose) {
         },
         {
             text: t('cancel'),
+            id: 'cmTransConfirmCancel',
             cls: 'cm-btn-secondary',
             onClick: (dlg, closeDlg) => closeDlg()
         }
-    ]);
+    ], null, { stack: true });
 }
 
 function renderMainDialog() {
@@ -320,7 +324,7 @@ function buildDialogHTML() {
                     </div>
 
                     <!-- 翻译指导（内联折叠） -->
-                    <details class="cm-trans-prompt-panel" style="flex-basis:100%;margin-top:2px">
+                    <details class="cm-trans-prompt-panel" style="flex-basis:100%;margin-top:2px" open>
                         <summary>📝 ${t('close') === 'Close' ? 'Translation Guidance' : '翻译指导'}</summary>
                         <textarea id="cmTransPromptInput" class="cm-trans-prompt-textarea"
                             placeholder="${t('close') === 'Close' ? 'e.g.: Keep archaic tone, do not translate names...' : '例如：请保留古风语气，不要翻译人名，使用中文标点...'}">${escapeHtml(state.settings.translationPrompt || '')}</textarea>
@@ -332,9 +336,8 @@ function buildDialogHTML() {
             <div id="cmTransGlossaryPanel" class="cm-trans-glossary-panel" style="display:none;margin:0 12px">
                 <div class="cm-trans-glossary-header" id="cmTransGlossaryToggle">
                     <span class="cm-trans-glossary-title">📖 ${t('glossaryTitle')} (<span id="cmTransGlossaryCount">0</span>)</span>
-                    <div style="display:flex;gap:4px">
-                        <button id="cmTransApplyGlossary" class="cm-trans-btn" style="font-size:10px;padding:2px 6px">${t('btnApplyGlossary')}</button>
-                        <button id="cmTransClearGlossary" class="cm-trans-btn" style="font-size:10px;padding:2px 6px">${t('btnClearGlossary')}</button>
+                    <div style="display:flex;gap:4px" id="cmTransGlossaryControls">
+                        <!-- 动态渲染按钮 -->
                     </div>
                 </div>
                 <div class="cm-trans-glossary-body" id="cmTransGlossaryBody">
@@ -564,28 +567,10 @@ function bindAllEvents(ov) {
         scanGlossaryBtn.onclick = () => doScanGlossary(ov);
     }
 
-    const applyGlossaryBtn = ov.querySelector('#cmTransApplyGlossary');
-    if (applyGlossaryBtn) {
-        applyGlossaryBtn.onclick = () => {
-            collectGlossaryFromTable(ov);
-            _notify(t('btnApplyGlossary') + ' ✅', 'success');
-        };
-    }
-
-    const clearGlossaryBtn = ov.querySelector('#cmTransClearGlossary');
-    if (clearGlossaryBtn) {
-        clearGlossaryBtn.onclick = () => {
-            glossaryData = [];
-            const panel = ov.querySelector('#cmTransGlossaryPanel');
-            if (panel) panel.style.display = 'none';
-            _notify(t('btnClearGlossary') + ' ✅', 'info');
-        };
-    }
-
     const glossaryToggle = ov.querySelector('#cmTransGlossaryToggle');
     if (glossaryToggle) {
         glossaryToggle.onclick = (e) => {
-            if (e.target.closest('button')) return;
+            if (e.target.closest('button') || e.target.closest('input')) return;
             const body = ov.querySelector('#cmTransGlossaryBody');
             if (body) body.style.display = body.style.display === 'none' ? 'block' : 'none';
         };
@@ -736,6 +721,9 @@ async function runTranslation(ov, mode, groupFilter) {
         personality: currentTranslationData.basic?.personality?.original || ''
     };
 
+    // 确保术语表数据最新
+    collectGlossaryFromTable(ov);
+    
     // 构建术语表文本
     const glossaryText = buildGlossaryText();
     const translateOptions = glossaryText ? { glossaryText } : {};
@@ -1277,29 +1265,89 @@ function renderGlossaryTable(ov) {
     const panel = ov.querySelector('#cmTransGlossaryPanel');
     const grid = ov.querySelector('#cmTransGlossaryGrid');
     const countEl = ov.querySelector('#cmTransGlossaryCount');
+    const controls = ov.querySelector('#cmTransGlossaryControls');
 
     if (!panel || !grid) return;
 
     panel.style.display = 'block';
     if (countEl) countEl.textContent = glossaryData.length;
 
+    // 渲染控制按钮
+    if (controls) {
+        if (isGlossaryEditing) {
+            controls.innerHTML = `
+                <button id="cmTransGlossaryDone" class="cm-trans-btn cm-trans-btn-success" style="font-size:12px;padding:2px 6px" title="完成编辑">✓</button>
+            `;
+            const doneBtn = controls.querySelector('#cmTransGlossaryDone');
+            if (doneBtn) {
+                doneBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    isGlossaryEditing = false;
+                    renderGlossaryTable(ov);
+                };
+            }
+        } else {
+            controls.innerHTML = `
+                <button id="cmTransGlossaryAdd" class="cm-trans-btn" style="font-size:12px;padding:2px 6px" title="添加术语">➕</button>
+                <button id="cmTransGlossaryEdit" class="cm-trans-btn" style="font-size:12px;padding:2px 6px" title="编辑/删除">➖</button>
+                <button id="cmTransClearGlossary" class="cm-trans-btn" style="font-size:10px;padding:2px 6px" title="清空">🗑️</button>
+            `;
+            
+            const addBtn = controls.querySelector('#cmTransGlossaryAdd');
+            if (addBtn) {
+                addBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    glossaryData.unshift({ original: '', translation: '', type: 'term' });
+                    renderGlossaryTable(ov);
+                };
+            }
+            
+            const editBtn = controls.querySelector('#cmTransGlossaryEdit');
+            if (editBtn) {
+                editBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    isGlossaryEditing = true;
+                    renderGlossaryTable(ov);
+                };
+            }
+
+            const clearBtn = controls.querySelector('#cmTransClearGlossary');
+            if (clearBtn) {
+                clearBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    if (confirm(t('confirmClearGlossary') || '确定要清空术语表吗？')) {
+                        glossaryData = [];
+                        panel.style.display = 'none';
+                        _notify(t('btnClearGlossary') + ' ✅', 'info');
+                    }
+                };
+            }
+        }
+    }
+
     const typeLabels = {
-        name: '👤',
-        place: '📍',
-        skill: '⚔️',
-        term: '📝',
-        other: '❓'
+        name: '👤 角色',
+        place: '📍 地点',
+        skill: '⚔️ 技能',
+        term: '📝 专名',
+        other: '❓ 其他'
     };
 
-    // 紧凑网格布局：每个术语一个小卡片
+    // 紧凑网格布局
     grid.innerHTML = glossaryData.map((entry, i) => `
-        <div class="cm-trans-glossary-item" title="${escapeHtml(entry.sources || '')}">
-            <span class="cm-glossary-original-text" title="${escapeHtml(entry.original)}">${escapeHtml(entry.original)}</span>
+        <div class="cm-trans-glossary-item ${isGlossaryEditing ? 'cm-glossary-editing' : ''}" title="${escapeHtml(entry.sources || '')}">
+            ${isGlossaryEditing ?
+                `<button class="cm-glossary-delete-btn" data-index="${i}">×</button>` : ''
+            }
+            ${isGlossaryEditing || !entry.original ?
+                `<input class="cm-glossary-original-input" data-index="${i}" value="${escapeHtml(entry.original)}" placeholder="原文">` :
+                `<span class="cm-glossary-original-text" title="${escapeHtml(entry.original)}">${escapeHtml(entry.original)}</span>`
+            }
             <span class="cm-glossary-arrow">→</span>
-            <input class="cm-glossary-translation" data-index="${i}" value="${escapeHtml(entry.translation)}" placeholder="...">
-            <select class="cm-glossary-type" data-index="${i}">
-                ${Object.entries(typeLabels).map(([val, icon]) =>
-                    `<option value="${val}" ${entry.type === val ? 'selected' : ''}>${icon}</option>`
+            <input class="cm-glossary-translation" data-index="${i}" value="${escapeHtml(entry.translation)}" placeholder="译文">
+            <select class="cm-glossary-type" data-index="${i}" title="类型">
+                ${Object.entries(typeLabels).map(([val, label]) =>
+                    `<option value="${val}" ${entry.type === val ? 'selected' : ''}>${label}</option>`
                 ).join('')}
             </select>
         </div>
@@ -1313,12 +1361,29 @@ function renderGlossaryTable(ov) {
         };
     });
 
+    grid.querySelectorAll('.cm-glossary-original-input').forEach(input => {
+        input.onchange = () => {
+            const idx = parseInt(input.dataset.index);
+            if (glossaryData[idx]) glossaryData[idx].original = input.value;
+        };
+    });
+
     grid.querySelectorAll('.cm-glossary-type').forEach(select => {
         select.onchange = () => {
             const idx = parseInt(select.dataset.index);
             if (glossaryData[idx]) glossaryData[idx].type = select.value;
         };
     });
+
+    if (isGlossaryEditing) {
+        grid.querySelectorAll('.cm-glossary-delete-btn').forEach(btn => {
+            btn.onclick = () => {
+                const idx = parseInt(btn.dataset.index);
+                glossaryData.splice(idx, 1);
+                renderGlossaryTable(ov);
+            };
+        });
+    }
 }
 
 function collectGlossaryFromTable(ov) {
