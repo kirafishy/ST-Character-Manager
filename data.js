@@ -1,6 +1,6 @@
 import { state } from './state.js';
-import { generateId, notify } from './utils.js';
-import { getSTContext } from './context.js';
+import { generateId, notify, loadJSZip, calculateTokens } from './utils.js';
+import { getSTContext, doc, parentWin, getSTCharacters } from './context.js';
 import { COLORS } from './constants.js';
 import { authFetch } from './api.js';
 
@@ -92,6 +92,82 @@ export function removeTagFromChar(fileName, tagId) {
  * 将当前插件中的 Tag 同步写入到角色卡文件的 data.tags 字段
  * @param {string} fileName - 角色卡文件名
  */
+export async function replaceCharacterImage(char, file) {
+    try {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        await new Promise(r => img.onload = r);
+
+        const canvas = doc.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        const cleanBlob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+
+        const getRes = await authFetch('/api/characters/get', {
+            method: 'POST',
+            body: JSON.stringify({ avatar_url: char.fileName })
+        });
+        if (!getRes.ok) throw new Error('无法读取角色数据');
+        const fullData = await getRes.json();
+
+        const dataBlock = fullData.data || fullData;
+
+        const fd = new FormData();
+        fd.append('ch_name', dataBlock.name || char.name);
+        fd.append('avatar', cleanBlob, file.name);
+        fd.append('avatar_url', char.fileName);
+        fd.append('json_data', JSON.stringify(fullData));
+
+        const explicitFields = [
+            'description', 'first_mes', 'personality', 'scenario',
+            'mes_example', 'creator_notes', 'system_prompt',
+            'post_history_instructions', 'creator', 'character_version',
+            'talkativeness'
+        ];
+
+        explicitFields.forEach(k => {
+            if (dataBlock[k] !== undefined && dataBlock[k] !== null) {
+                fd.append(k, dataBlock[k]);
+            }
+        });
+
+        if (Array.isArray(dataBlock.alternate_greetings)) {
+            dataBlock.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
+        }
+        if (Array.isArray(dataBlock.tags)) {
+            dataBlock.tags.forEach(t => fd.append('tags', t));
+        }
+
+        const isFav = dataBlock.extensions?.fav || dataBlock.fav;
+        fd.append('fav', isFav ? 'true' : 'false');
+
+        // 显式处理 character_book 以防止世界书解绑
+        if (dataBlock.character_book) {
+            if (typeof dataBlock.character_book === 'string') {
+                fd.append('character_book', dataBlock.character_book);
+            } else if (typeof dataBlock.character_book === 'object') {
+                fd.append('character_book', JSON.stringify(dataBlock.character_book));
+            }
+        }
+
+        const r = await authFetch('/api/characters/edit', {
+            method: 'POST',
+            body: fd
+        });
+
+        if (!r.ok) throw new Error(await r.text());
+
+        char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
+        return true;
+    } catch (e) {
+        console.error(e);
+        throw new Error('更换图片失败: ' + e.message);
+    }
+}
+
 export async function syncTagsToCard(fileName) {
     try {
         // 1. 获取当前插件为该角色设置的 Tag 名称列表
@@ -262,4 +338,433 @@ export function compareChars(a, b) {
             break;
     }
     return state.sortOrder === 'asc' ? ret : -ret;
+}
+
+export async function saveCharacterData(fileName, updateCallback) {
+    try {
+        const getRes = await authFetch('/api/characters/get', {
+            method: 'POST',
+            body: JSON.stringify({ avatar_url: fileName })
+        });
+        if (!getRes.ok) throw new Error('无法读取角色数据');
+        const fullData = await getRes.json();
+
+        let charData = fullData;
+        if (fullData.data && (fullData.spec === 'chara_card_v3' || fullData.data.name)) {
+            charData = fullData.data;
+        }
+
+        updateCallback(charData);
+
+        // --- 修复：防止收藏操作导致世界书解绑 ---
+        // 如果 API 返回的数据中丢失了 world book 信息（可能为空或 undefined），尝试从酒馆内存缓存中恢复
+        // 只有当 updateCallback 没有明确设置（即非有意删除）时才恢复
+        if (!charData.character_book) {
+            try {
+                const stChars = typeof getSTCharacters === 'function' ? getSTCharacters() : [];
+                const cached = stChars.find(c => c.avatar === fileName);
+                if (cached) {
+                    // V3数据在data里，V2/Internal直接在对象上
+                    const cachedBook = (cached.data && cached.data.character_book) || cached.character_book;
+                    if (cachedBook) {
+                        // 再次确认 cachedBook 不是空字符串
+                        console.log('[CharManager] 检测到 API 数据丢失 character_book，已从缓存恢复:', cachedBook);
+                        charData.character_book = cachedBook;
+                    }
+                }
+            } catch (e) { console.warn('尝试恢复 character_book 失败', e); }
+        }
+        // -------------------------------------
+
+        const fd = new FormData();
+
+        fd.append('ch_name', charData.name || fileName.replace(/\.png$/i, ''));
+        fd.append('avatar_url', fileName);
+        fd.append('avatar', new Blob([''], { type: 'application/octet-stream' }), '');
+
+        // Removed 'tags' from this list to handle it explicitly
+        const fields = [
+            'fav', 'description', 'first_mes', 'personality', 'scenario',
+            'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
+            'character_version', 'creator', 'talkativeness', 'alternate_names'
+        ];
+
+        fields.forEach(k => {
+            if (charData[k] !== undefined && charData[k] !== null) {
+                fd.append(k, charData[k]);
+            }
+            if (k === 'fav') {
+                if (charData.extensions && charData.extensions.fav !== undefined) {
+                    fd.set('fav', charData.extensions.fav.toString());
+                } else if (charData.fav !== undefined) {
+                    fd.set('fav', charData.fav.toString());
+                }
+            }
+        });
+
+        // Explicitly handle array fields to prevent data loss
+        if (charData.alternate_greetings && Array.isArray(charData.alternate_greetings)) {
+            charData.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
+        }
+
+        if (charData.tags && Array.isArray(charData.tags)) {
+            charData.tags.forEach(t => fd.append('tags', t));
+        }
+
+        // 显式处理 character_book 以防止世界书解绑
+        if (charData.character_book) {
+            if (typeof charData.character_book === 'string') {
+                fd.append('character_book', charData.character_book);
+            } else if (typeof charData.character_book === 'object') {
+                // 如果是对象形式，保留完整结构
+                fd.append('character_book', JSON.stringify(charData.character_book));
+            }
+        }
+
+        if (fullData.data && (fullData.spec === 'chara_card_v3' || fullData.data.name)) {
+            fullData.data = charData;
+        }
+        fd.append('json_data', JSON.stringify(fullData));
+
+        const r = await authFetch('/api/characters/edit', {
+            method: 'POST',
+            body: fd
+        });
+
+        if (!r.ok) throw new Error(await r.text());
+        return true;
+    } catch (e) {
+        console.error(e);
+        notify('保存失败: ' + e.message, 'error');
+        return false;
+    }
+}
+
+export async function deleteWorldInfo(wiName, skipRefresh = false) {
+    try {
+        let r = await authFetch('/api/worldinfo/delete', {
+            method: 'POST',
+            body: JSON.stringify({ name: wiName })
+        });
+
+        // 兼容性尝试：如果失败且没有后缀，加上 .json 再试一次
+        if (!r.ok && !wiName.toLowerCase().endsWith('.json')) {
+            // console.log('[CharManager] 删除WI失败，尝试追加.json后缀重试...');
+            r = await authFetch('/api/worldinfo/delete', {
+                method: 'POST',
+                body: JSON.stringify({ name: wiName + '.json' })
+            });
+        }
+
+        if (!r.ok) {
+            console.warn('[CharManager] 删除世界书失败:', wiName, r.status);
+            // 这里返回 false 但不抛出异常，防止阻塞主流程
+            return false;
+        }
+
+        if (skipRefresh) return true;
+
+        try {
+            if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+                const context = parentWin.SillyTavern.getContext();
+                if (typeof context.updateWorldInfoList === 'function') {
+                    await context.updateWorldInfoList();
+                }
+            }
+        } catch (e) { }
+        return true;
+    } catch (err) {
+        console.error('[CharManager] 删除世界书时发生异常:', err);
+        return false;
+    }
+}
+
+export async function updateCharacter(fileName, newCharData, imageBlob = null, options = {}) {
+    const {
+        cleanOldWorldInfo = true,
+        preserveSourceLink = true,
+        refreshUI = true,
+        notifySuccess = true,
+        fullCardData = null
+    } = options;
+
+    const char = state.characters.find(c => c.fileName === fileName);
+    if (!char) throw new Error('未找到目标角色: ' + fileName);
+
+    // 1. 清理旧世界书逻辑
+    // 如果新数据指定了新的 WB，且旧 WB 不再被使用，则尝试删除旧 WB
+    if (cleanOldWorldInfo && char.character_book && newCharData.character_book) {
+        const oldWI = char.character_book;
+        // 如果新旧 WB 不同（且旧的不为空）
+        // 注意：这里简单比较名称，如果是对象则比较 name
+        let oldWIName = typeof oldWI === 'object' ? oldWI.name : oldWI;
+        let newWIName = typeof newCharData.character_book === 'object' ? newCharData.character_book.name : newCharData.character_book;
+
+        if (oldWIName && oldWIName !== newWIName) {
+            const isUsedByOthers = state.characters.some(c => c.fileName !== fileName && c.character_book === oldWIName);
+            if (!isUsedByOthers) {
+                try {
+                    console.log('[CharManager] 自动清理旧世界书:', oldWIName);
+                    await deleteWorldInfo(oldWIName, true); // skipRefresh=true
+                } catch (e) {
+                    console.warn('[CharManager] 清理旧世界书失败:', e);
+                }
+            }
+        }
+    }
+
+    // 2. 构建 FormData
+    const fd = new FormData();
+    fd.append('ch_name', newCharData.name || char.name);
+    fd.append('avatar_url', fileName);
+    
+    if (imageBlob) {
+        fd.append('avatar', imageBlob);
+    } else {
+        fd.append('avatar', new Blob([''], { type: 'application/octet-stream' }), '');
+    }
+
+    // 3. 保留 Source Link
+    if (preserveSourceLink) {
+        const savedLink = char.source_link || '';
+        if (savedLink) {
+            if (!newCharData.extensions) newCharData.extensions = {};
+            newCharData.extensions.source_url = savedLink;
+            // 删除旧字段以保持整洁（可选）
+            if (newCharData.extensions.source_link) delete newCharData.extensions.source_link;
+        }
+    }
+
+    // 4. 添加字段
+    const fields = [
+        'description', 'first_mes', 'personality', 'scenario',
+        'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
+        'character_version', 'creator', 'talkativeness'
+    ];
+
+    fields.forEach(k => {
+        if (newCharData[k] !== undefined && newCharData[k] !== null) {
+            fd.append(k, newCharData[k]);
+        }
+    });
+
+    if (newCharData.alternate_greetings && Array.isArray(newCharData.alternate_greetings)) {
+        newCharData.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
+    }
+
+    if (newCharData.tags && Array.isArray(newCharData.tags)) {
+        newCharData.tags.forEach(t => fd.append('tags', t));
+    }
+
+    // 5. 处理收藏状态
+    const isFav = newCharData.extensions?.fav || newCharData.fav;
+    fd.append('fav', isFav ? 'true' : 'false');
+
+    // 6. 处理世界书
+    if (newCharData.character_book) {
+        if (typeof newCharData.character_book === 'string') {
+            fd.append('character_book', newCharData.character_book);
+        } else if (typeof newCharData.character_book === 'object') {
+            fd.append('character_book', JSON.stringify(newCharData.character_book));
+        }
+    }
+
+    // 7. 附加完整 JSON 数据 (如果提供)
+    if (fullCardData) {
+        fd.append('json_data', JSON.stringify(fullCardData));
+    }
+
+    const r = await authFetch('/api/characters/edit', {
+        method: 'POST',
+        body: fd
+    });
+
+    if (!r.ok) throw new Error(await r.text());
+
+    // 8. 更新本地状态
+    Object.assign(char, newCharData);
+    char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
+    
+    if (notifySuccess) notify('角色更新成功', 'success');
+    return true;
+}
+
+export async function toggleFavorite(fileName, currentFavState) {
+    const newState = !currentFavState;
+    let isActiveChar = false;
+    try {
+        const currentChId = parentWin.this_chid;
+        if (typeof currentChId !== 'undefined' && parentWin.characters && parentWin.characters[currentChId]) {
+            const curName = parentWin.characters[currentChId].avatar.split('/').pop();
+            const tarName = fileName.split('/').pop();
+            if (curName === tarName) isActiveChar = true;
+        }
+    } catch (e) { }
+    if (isActiveChar) {
+        const domBtn = parentWin.document.getElementById('favorite_button');
+        if (domBtn) {
+            domBtn.click();
+            const char = state.characters.find(c => c.fileName === fileName);
+            if (char) char.fav = newState;
+            notify(newState ? '已收藏 (当前角色)' : '取消收藏 (当前角色)', 'success');
+            return newState;
+        }
+    }
+    const char = state.characters.find(c => c.fileName === fileName);
+    
+    // 如果不是当前角色，手动调用 API
+    try {
+        await saveCharacterData(fileName, (data) => {
+            if (!data.extensions) data.extensions = {};
+            data.extensions.fav = newState;
+            data.fav = newState;
+        });
+        if (char) char.fav = newState;
+        notify(newState ? '已收藏' : '取消收藏', 'success');
+        return newState;
+    } catch (e) {
+        notify('操作失败: ' + e.message, 'error');
+        return currentFavState;
+    }
+}
+
+export async function updateCharacterVersion(char, newVersion) {
+    try {
+        await saveCharacterData(char.fileName, (data) => {
+            data.character_version = newVersion;
+        });
+        char.version = newVersion;
+        notify('版本号已更新', 'success');
+        return true;
+    } catch (e) {
+        notify('版本号更新失败: ' + e.message, 'error');
+        return false;
+    }
+}
+
+export async function renameCharacterFile(char, newName) {
+    if (!newName || newName === char.name) return null;
+    try {
+        const r = await authFetch('/api/characters/rename', {
+            method: 'POST',
+            body: JSON.stringify({
+                avatar_url: char.fileName,
+                new_name: newName
+            })
+        });
+        if (!r.ok) throw new Error('重命名失败');
+
+        const data = await r.json();
+        const newFileName = (data && data.avatar) ? data.avatar : (newName + '.png');
+
+        const oldFileName = char.fileName;
+        if (state.tagMap[oldFileName]) {
+            state.tagMap[newFileName] = state.tagMap[oldFileName];
+            delete state.tagMap[oldFileName];
+            saveTags();
+        }
+        if (state.selectedCards.has(oldFileName)) {
+            state.selectedCards.delete(oldFileName);
+            state.selectedCards.add(newFileName);
+        }
+
+        char.fileName = newFileName;
+        char.name = newName;
+        char.avatarUrl = '/characters/' + encodeURIComponent(newFileName);
+
+        notify('重命名成功', 'success');
+        return true;
+    } catch (e) {
+        notify('重命名失败: ' + e.message, 'error');
+        return false;
+    }
+}
+
+export async function downloadChar(fn) {
+    const r = await authFetch('/characters/' + encodeURIComponent(fn));
+    const b = await r.blob();
+    const a = doc.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = fn;
+    doc.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+export async function downloadAsZip(files) {
+    try {
+        const JSZip = await loadJSZip();
+        const zip = new JSZip();
+        let count = 0;
+        const total = files.length;
+        notify('正在准备打包 ' + total + ' 个角色...', 'info');
+        for (const fn of files) {
+            try {
+                const r = await authFetch('/characters/' + encodeURIComponent(fn));
+                const blob = await r.blob();
+                zip.file(fn, blob);
+                count++;
+            } catch (e) {
+                console.error('Download failed for ' + fn, e);
+            }
+        }
+        const content = await zip.generateAsync({ type: 'blob' });
+        const a = doc.createElement('a');
+        a.href = URL.createObjectURL(content);
+        a.download = 'characters_backup_' + new Date().toISOString().slice(0, 10) + '.zip';
+        doc.body.appendChild(a);
+        a.click();
+        a.remove();
+        notify('打包下载完成', 'success');
+    } catch (e) {
+        console.error(e);
+        notify('打包下载失败: ' + e.message, 'error');
+    }
+}
+
+export async function getCharChatHistory(char) {
+    try {
+        const response = await authFetch('/api/characters/chats', {
+            method: 'POST',
+            body: JSON.stringify({ avatar_url: char.fileName })
+        });
+        if (!response.ok) return [];
+        const data = await response.json();
+        if (typeof data === 'object' && data.error === true) return [];
+
+        // 返回聊天记录数组，包含 file_name, last_mes, file_size 等信息
+        const chats = Object.values(data);
+        return chats.sort((a, b) => (b.last_mes || 0) - (a.last_mes || 0));
+    } catch (e) {
+        console.warn('[CharManager] getCharChatHistory error:', e);
+        return [];
+    }
+}
+
+export async function getCharHistoryCount(char) {
+    const history = await getCharChatHistory(char);
+    return history.length;
+}
+
+export async function deleteChar(fn, skipRefresh = false) {
+    const r = await authFetch('/api/characters/delete', { method: 'POST', body: JSON.stringify({ avatar_url: fn, delete_chats: false }) });
+    if (!r.ok) throw new Error('删除失败');
+
+    // 同步移除酒馆内存中的角色，防止快速刷新时误判为新角色
+    if (parentWin.characters && Array.isArray(parentWin.characters)) {
+        const idx = parentWin.characters.findIndex(c => c.avatar === fn);
+        if (idx !== -1) parentWin.characters.splice(idx, 1);
+    }
+
+    if (skipRefresh) return;
+
+    // 刷新酒馆原生的角色列表
+    try {
+        if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+            const context = parentWin.SillyTavern.getContext();
+            if (typeof context.getCharacters === 'function') {
+                await context.getCharacters();
+            }
+        }
+    } catch (e) { }
 }

@@ -162,6 +162,10 @@ export class TranslationService {
             { role: 'user', content: `${contextStr}\n\nData to translate (JSON format):\n${contentStr}\n\nPlease translate the values in the JSON above to ${targetLangName}. Keep keys unchanged. Output ONLY the JSON object.${extraInstructions}` }
         ];
 
+        if (this.settings.debugMode) {
+            console.log('[Translation Debug] Request Messages:', JSON.parse(JSON.stringify(messages)));
+        }
+
         let lastError = null;
 
         for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
@@ -178,6 +182,10 @@ export class TranslationService {
                 } else {
                     // 默认为酒馆原生 API
                     responseText = await this._callTavernAPI(messages);
+                }
+
+                if (this.settings.debugMode) {
+                    console.log('[Translation Debug] Raw Response:', responseText);
                 }
 
                 const result = safeParseJson(responseText);
@@ -302,12 +310,20 @@ export class TranslationService {
      * @returns {Promise<object>} 解析后的 JSON 对象
      */
     async callAPI(messages) {
+        if (this.settings.debugMode) {
+            console.log('[Translation Debug] API Request:', JSON.parse(JSON.stringify(messages)));
+        }
+
         let responseText = '';
 
         if (this.settings.translationApi === 'openai') {
             responseText = await this._callOpenAI(messages);
         } else {
             responseText = await this._callTavernAPI(messages);
+        }
+
+        if (this.settings.debugMode) {
+            console.log('[Translation Debug] API Response:', responseText);
         }
 
         const result = safeParseJson(responseText);

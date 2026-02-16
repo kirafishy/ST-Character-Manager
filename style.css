@@ -38,6 +38,43 @@
     --cm-radius: 8px;
 }
 
+/* Greetings */
+.cm-greetings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+}
+
+.cm-greeting-item {
+    background: var(--cm-bg-sec);
+    border: 1px solid var(--cm-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.cm-greeting-header {
+    background: var(--cm-bg-ter);
+    color: var(--cm-text-sec);
+    font-size: 11px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--cm-border);
+    font-weight: bold;
+}
+
+.cm-greeting-item pre {
+    background: var(--cm-bg);
+    border: none;
+    padding: 12px;
+    margin: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--cm-text);
+}
+
 /* Progress Bar Styles */
 .cm-progress-overlay {
     position: fixed;
@@ -961,6 +998,79 @@ body.cm-resizing * {
     max-width: 520px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
     overflow: hidden;
+}
+
+/* Macro Highlighting */
+.cm-macro-user {
+    color: #4ade80; /* green-400 */
+    font-weight: bold;
+    background: rgba(74, 222, 128, 0.1);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+
+.cm-macro-char {
+    color: #f472b6; /* pink-400 */
+    font-weight: bold;
+    background: rgba(244, 114, 182, 0.1);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+
+/* Mobile Detail View Optimization */
+@media (max-width: 768px) {
+    .cm-detail-header {
+        /* flex-direction: column; */ /* 恢复为 row */
+        align-items: flex-start; /* 顶部对齐 */
+        /* text-align: center; */
+        padding: 12px;
+        height: auto !important;
+        gap: 12px;
+    }
+
+    .cm-detail-avatar-wrap {
+        margin-bottom: 0;
+        flex-shrink: 0;
+    }
+    
+    .cm-detail-avatar {
+        width: 80px;
+        height: 120px;
+        object-fit: cover;
+    }
+
+    .cm-detail-info {
+        width: 100%;
+        min-width: 0; /* 防止 flex 子项溢出 */
+    }
+
+    .cm-detail-title-wrap {
+        justify-content: flex-start;
+    }
+
+    .cm-detail-meta {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .cm-detail-actions {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+    
+    /* 顶部按钮样式调整 */
+    .cm-header-actions {
+        gap: 4px;
+    }
+    
+    .cm-header-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+    }
+}
+
+.cm-tag-editor {
     display: flex;
     flex-direction: column;
     max-height: 90vh
@@ -1252,12 +1362,27 @@ body.cm-resizing * {
 
 .cm-detail {
     background: var(--cm-bg-sec);
-    min-height: 100%;
+    height: 90vh;
     position: relative;
-    padding-bottom: 100px;
-    max-width: 800px;
-    margin: 0 auto;
-    box-shadow: 0 0 50px rgba(0, 0, 0, 0.5)
+    max-width: 1200px;
+    width: 95vw;
+    margin: 5vh auto;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    overflow: hidden;
+    min-height: 0;
+}
+
+@media (max-width: 768px) {
+    .cm-detail {
+        width: 100vw;
+        height: 100vh;
+        max-width: none;
+        margin: 0;
+        border-radius: 0;
+    }
 }
 
 .cm-detail-close {
@@ -1440,7 +1565,35 @@ body.cm-resizing * {
 }
 
 .cm-detail-body {
-    padding: 16px
+    padding: 16px;
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    position: relative;
+}
+
+.cm-detail-body.has-fixed-content {
+    overflow-y: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+}
+
+.cm-tab-content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* 旧版视图样式适配 */
+.cm-detail-legacy .cm-detail-body {
+    padding: 20px;
+}
+
+.cm-detail-legacy .cm-detail-header {
+    border-bottom: none;
+    padding-bottom: 0;
 }
 
 .cm-detail-actions {
@@ -1452,6 +1605,8 @@ body.cm-resizing * {
     background: var(--cm-bg-ter);
     flex-wrap: wrap;
     margin-bottom: 24px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .cm-detail-actions .cm-btn {
@@ -1482,7 +1637,7 @@ body.cm-resizing * {
 .cm-section pre {
     margin: 0;
     padding: 14px;
-    font-size: 12px;
+    font-size: 14px;
     white-space: pre-wrap;
     word-break: break-word;
     max-height: 300px;
@@ -3936,4 +4091,180 @@ body.hide-card-buttons .cm-card-actions {
 .cm-hide-card-note .cm-note,
 body.hide-card-note .cm-note {
     display: none !important;
+}
+
+/* Markdown Styles */
+.cm-markdown-body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--cm-text);
+}
+
+.cm-markdown-body p {
+    margin-bottom: 1em;
+}
+
+.cm-markdown-body h1, .cm-markdown-body h2, .cm-markdown-body h3 {
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--cm-text);
+}
+
+.cm-markdown-body h1 { font-size: 1.5em; border-bottom: 1px solid var(--cm-border); padding-bottom: 0.3em; }
+.cm-markdown-body h2 { font-size: 1.3em; border-bottom: 1px solid var(--cm-border); padding-bottom: 0.3em; }
+.cm-markdown-body h3 { font-size: 1.1em; }
+
+.cm-markdown-body ul, .cm-markdown-body ol {
+    padding-left: 2em;
+    margin-bottom: 1em;
+}
+
+.cm-markdown-body li {
+    margin-bottom: 0.25em;
+}
+
+.cm-markdown-body blockquote {
+    margin: 0 0 1em;
+    padding: 0 1em;
+    color: var(--cm-text-sec);
+    border-left: 0.25em solid var(--cm-border);
+}
+
+.cm-markdown-body code {
+    padding: 0.2em 0.4em;
+    margin: 0;
+    font-size: 85%;
+    background-color: rgba(127, 127, 127, 0.15);
+    border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+}
+
+.cm-markdown-body pre {
+    padding: 16px;
+    overflow: auto;
+    font-size: 85%;
+    line-height: 1.45;
+    background-color: var(--cm-bg-sec);
+    border-radius: 6px;
+    margin-bottom: 1em;
+}
+
+.cm-markdown-body pre code {
+    background-color: transparent;
+    padding: 0;
+}
+
+.cm-markdown-body img {
+    max-width: 100%;
+    box-sizing: border-box;
+    background-color: var(--cm-bg);
+    border-radius: 4px;
+}
+
+.cm-markdown-body table {
+    border-spacing: 0;
+    border-collapse: collapse;
+    margin-bottom: 1em;
+    width: 100%;
+}
+
+.cm-markdown-body table th, .cm-markdown-body table td {
+    padding: 6px 13px;
+    border: 1px solid var(--cm-border);
+}
+
+.cm-markdown-body table tr:nth-child(2n) {
+    background-color: var(--cm-bg-sec);
+}
+
+.cm-markdown-body hr {
+    height: 0.25em;
+    padding: 0;
+    margin: 24px 0;
+    background-color: var(--cm-border);
+    border: 0;
+}
+
+/* Markdown Tag Highlighting */
+.cm-tag-user {
+    color: #4ade80;
+    font-weight: bold;
+}
+
+.cm-tag-char {
+    color: #f472b6;
+    font-weight: bold;
+}
+
+/* Gallery Drag & Drop */
+.cm-gallery-container.drag-over {
+    border: 2px dashed #2563eb;
+    background: rgba(37, 99, 235, 0.1);
+    position: relative;
+}
+
+.cm-gallery-container.drag-over::after {
+    content: '释放以上传图片';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 24px;
+    color: #2563eb;
+    font-weight: bold;
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* Gallery Lightbox Thumbnails */
+.cm-lightbox-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    width: 100%;
+}
+
+.cm-lightbox-thumbs {
+    height: 80px;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+    overflow-x: auto;
+    white-space: nowrap;
+    flex-shrink: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    justify-content: center;
+}
+
+.cm-lightbox-thumb {
+    height: 100%;
+    aspect-ratio: 1;
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: all 0.2s;
+    border: 2px solid transparent;
+    flex-shrink: 0;
+}
+
+.cm-lightbox-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.cm-lightbox-thumb:hover {
+    opacity: 0.8;
+}
+
+.cm-lightbox-thumb.active {
+    opacity: 1;
+    border-color: #2563eb;
+    transform: scale(1.05);
 }

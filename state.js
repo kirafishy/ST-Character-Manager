@@ -22,7 +22,9 @@ export const defaultSettings = {
     autoSyncTags: false, // 自动同步 Tag 到角色卡
     doubleClickAction: 'detail', // 'detail' | 'chat'
     defaultSort: 'date_desc',
+    detailContentMode: 'scroll', // 详情页内容显示模式: 'scroll' | 'expand'
     translationEnabled: false, // 角色卡翻译功能开关
+    debugMode: false, // 调试模式
     // --- Translation Settings ---
     translationApi: 'openai', // 'openai' | 'tavern' (暂未完全支持)
     openaiBaseUrl: 'https://api.openai.com/v1',

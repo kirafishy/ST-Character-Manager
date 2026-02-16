@@ -6,6 +6,10 @@ import { doc, parentWin, getSTContext } from './context.js';
 import { state } from './state.js';
 import { authFetch } from './api.js';
 import { escapeHtml } from './utils.js';
+import { GalleryViewer } from './gallery-viewer.js';
+import { notify } from './utils.js';
+import { showConfirm } from './ui-utils.js';
+import { replaceCharacterImage } from './data.js';
 
 // 画廊计数缓存
 const GALLERY_CACHE_KEY = 'cm_gallery_count_cache';
@@ -73,6 +77,33 @@ export async function deleteGalleryImage(imagePath) {
         return response.ok;
     } catch (e) {
         console.error('[CharManager] 删除画廊图片失败:', e);
+        return false;
+    }
+}
+
+// 上传画廊图片
+export async function uploadGalleryImage(charName, file) {
+    try {
+        const formData = new FormData();
+        formData.append('avatar', file);
+        formData.append('folder', charName);
+
+        const response = await authFetch('/api/images/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            // 更新缓存
+            if (galleryCountCache[charName] !== undefined) {
+                galleryCountCache[charName]++;
+                saveGalleryCountCache();
+            }
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.error('[CharManager] 上传画廊图片失败:', e);
         return false;
     }
 }
@@ -329,10 +360,317 @@ function showImageCropper(imageSrc, imageName) {
     });
 }
 
-// 创建画廊预览窗口
-export function showGallery(char, items, notify, showConfirm, replaceCharacterImage) {
+// 渲染画廊网格到指定容器
+export async function renderGallery(container, char) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--cm-text-sec);">加载中...</div>';
+    
+    const items = await getGalleryItems(char.name);
+    
+    container.innerHTML = '';
+    
+    // 状态
+    let batchMode = false;
+    let selectedItems = new Set();
+
+    // 工具栏
+    const toolbar = doc.createElement('div');
+    toolbar.className = 'cm-gallery-toolbar';
+    toolbar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px;border-bottom:1px solid var(--cm-border);';
+    
+    const leftTools = doc.createElement('div');
+    leftTools.style.cssText = 'display:flex;gap:8px;align-items:center;';
+    
+    const uploadBtn = doc.createElement('button');
+    uploadBtn.className = 'cm-btn cm-btn-primary';
+    uploadBtn.innerHTML = `${ICONS.upload} 上传图片`;
+    
+    const batchBtn = doc.createElement('button');
+    batchBtn.className = 'cm-btn cm-btn-secondary';
+    batchBtn.innerHTML = `${ICONS.checkSquare} 批量管理`;
+    
+    leftTools.appendChild(uploadBtn);
+    leftTools.appendChild(batchBtn);
+    
+    const countSpan = doc.createElement('span');
+    countSpan.style.cssText = 'font-size:12px;color:var(--cm-text-sec);';
+    countSpan.textContent = `${items.length} 张图片`;
+    
+    toolbar.appendChild(leftTools);
+    toolbar.appendChild(countSpan);
+    container.appendChild(toolbar);
+
+    // 批量操作栏（默认隐藏）
+    const batchBar = doc.createElement('div');
+    batchBar.className = 'cm-gallery-batch-bar';
+    batchBar.style.cssText = 'display:none;padding:10px;background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);align-items:center;gap:10px;';
+    batchBar.innerHTML = `
+        <span style="font-size:13px;">已选 <strong class="cm-gallery-sel-count">0</strong> 张</span>
+        <div style="flex:1"></div>
+        <button class="cm-btn cm-btn-secondary cm-gallery-select-all">全选</button>
+        <button class="cm-btn cm-btn-secondary cm-gallery-clear-sel">取消</button>
+        <button class="cm-btn cm-btn-danger cm-gallery-del-sel">${ICONS.trash} 删除</button>
+    `;
+    container.appendChild(batchBar);
+
+    // 拖拽上传区域
+    const dropzone = doc.createElement('div');
+    dropzone.className = 'cm-gallery-dropzone';
+    dropzone.style.cssText = 'display:none;padding:20px;border:2px dashed var(--cm-accent);background:var(--cm-bg-ter);text-align:center;margin:10px;border-radius:8px;color:var(--cm-accent);';
+    dropzone.innerHTML = '拖放图片到这里上传';
+    container.appendChild(dropzone);
+
+    // 图片网格
+    const grid = doc.createElement('div');
+    grid.className = 'cm-gallery-grid';
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill, minmax(120px, 1fr));gap:10px;padding:10px;overflow-y:auto;flex:1;min-height:0;';
+    container.appendChild(grid);
+
+    // 渲染逻辑
+    let renderBatchSize = 20;
+    let renderedCount = 0;
+    let isRendering = false;
+
+    function renderNextBatch() {
+        if (isRendering) return;
+        isRendering = true;
+
+        const fragment = doc.createDocumentFragment();
+        const endIdx = Math.min(renderedCount + renderBatchSize, items.length);
+
+        for (let idx = renderedCount; idx < endIdx; idx++) {
+            const item = items[idx];
+            const cell = doc.createElement('div');
+            cell.className = 'cm-gallery-cell' + (selectedItems.has(idx) ? ' selected' : '');
+            cell.style.cssText = 'position:relative;aspect-ratio:2/3;background:var(--cm-bg-ter);border-radius:4px;overflow:hidden;cursor:pointer;border:2px solid transparent;transition:all 0.2s;';
+            if (selectedItems.has(idx)) cell.style.borderColor = 'var(--cm-accent)';
+            
+            cell.dataset.index = idx;
+            cell.innerHTML = `
+                <img data-src="${item.src}" alt="${escapeHtml(item.name)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 0.3s">
+                ${batchMode ? '<div class="cm-gallery-checkbox" style="position:absolute;top:4px;right:4px;width:18px;height:18px;background:rgba(0,0,0,0.5);border:1px solid #fff;border-radius:3px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;">' + (selectedItems.has(idx) ? '✓' : '') + '</div>' : ''}
+            `;
+            
+            const img = cell.querySelector('img');
+            img.onload = () => { img.style.opacity = '1'; };
+            img.src = item.src;
+
+            const capturedIdx = idx;
+            cell.onclick = () => {
+                if (batchMode) {
+                    if (selectedItems.has(capturedIdx)) {
+                        selectedItems.delete(capturedIdx);
+                        cell.style.borderColor = 'transparent';
+                        cell.querySelector('.cm-gallery-checkbox').textContent = '';
+                    } else {
+                        selectedItems.add(capturedIdx);
+                        cell.style.borderColor = 'var(--cm-accent)';
+                        cell.querySelector('.cm-gallery-checkbox').textContent = '✓';
+                    }
+                    updateBatchCount();
+                } else {
+                    // 打开灯箱
+                    const viewer = new GalleryViewer(items, capturedIdx, {
+                        onDelete: async (item, idx) => {
+                            if (await showConfirm(`确定删除图片 "${item.name}" 吗？`)) {
+                                const success = await deleteGalleryImage(item.src);
+                                if (success) {
+                                    notify('图片已删除', 'success');
+                                    items.splice(idx, 1);
+                                    // 刷新网格
+                                    renderGrid();
+                                    countSpan.textContent = `${items.length} 张图片`;
+                                    return true;
+                                }
+                            }
+                            return false;
+                        },
+                        onDownload: (item) => {
+                            downloadImage(item.src, item.name);
+                        },
+                        onSetCover: async (item) => {
+                            try {
+                                const croppedBlob = await showImageCropper(item.src, item.name);
+                                if (!croppedBlob) return;
+
+                                const file = new File([croppedBlob], item.name.replace(/\.[^.]+$/, '.png'), { type: 'image/png' });
+                                await replaceCharacterImage(char, file);
+                                notify('封面已更换', 'success');
+                                
+                                // 更新 UI
+                                const cardImg = doc.querySelector(`.cm-card[data-file="${CSS.escape(char.fileName)}"] .cm-card-img`);
+                                if (cardImg) cardImg.src = char.avatarUrl;
+                                const detailAvatar = doc.querySelector('.cm-detail-avatar');
+                                if (detailAvatar) detailAvatar.src = char.avatarUrl;
+                            } catch (err) {
+                                notify('设置封面失败: ' + err.message, 'error');
+                            }
+                        }
+                    });
+                    viewer.show();
+                }
+            };
+            fragment.appendChild(cell);
+        }
+
+        grid.appendChild(fragment);
+        renderedCount = endIdx;
+        isRendering = false;
+
+        // 如果还有数据，且没有填满容器（或者没有滚动条），继续加载
+        if (renderedCount < items.length && grid.scrollHeight <= grid.clientHeight) {
+            setTimeout(renderNextBatch, 0);
+        }
+    }
+
+    function renderGrid() {
+        grid.innerHTML = '';
+        renderedCount = 0;
+        renderNextBatch();
+    }
+
+    function updateBatchCount() {
+        const el = batchBar.querySelector('.cm-gallery-sel-count');
+        if (el) el.textContent = selectedItems.size;
+    }
+
+    // 滚动加载
+    grid.onscroll = () => {
+        if (renderedCount < items.length &&
+            grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 200) {
+            renderNextBatch();
+        }
+    };
+
+    // 初始渲染
+    renderGrid();
+
+    // 事件绑定
+    
+    // 批量模式切换
+    batchBtn.onclick = () => {
+        batchMode = !batchMode;
+        batchBar.style.display = batchMode ? 'flex' : 'none';
+        batchBtn.classList.toggle('active', batchMode);
+        if (!batchMode) {
+            selectedItems.clear();
+            renderGrid(); // 重绘以移除复选框
+        } else {
+            renderGrid(); // 重绘以显示复选框
+        }
+    };
+
+    // 全选
+    batchBar.querySelector('.cm-gallery-select-all').onclick = () => {
+        items.forEach((_, idx) => selectedItems.add(idx));
+        updateBatchCount();
+        renderGrid();
+    };
+
+    // 取消选择
+    batchBar.querySelector('.cm-gallery-clear-sel').onclick = () => {
+        selectedItems.clear();
+        updateBatchCount();
+        renderGrid();
+    };
+
+    // 删除选中
+    batchBar.querySelector('.cm-gallery-del-sel').onclick = async () => {
+        if (selectedItems.size === 0) return;
+        if (await showConfirm(`确定删除选中的 ${selectedItems.size} 张图片吗？`)) {
+            const toDelete = Array.from(selectedItems).sort((a, b) => b - a);
+            let successCount = 0;
+            for (const idx of toDelete) {
+                if (await deleteGalleryImage(items[idx].src)) {
+                    items.splice(idx, 1);
+                    successCount++;
+                }
+            }
+            selectedItems.clear();
+            updateBatchCount();
+            renderGrid();
+            countSpan.textContent = `${items.length} 张图片`;
+            notify(`已删除 ${successCount} 张图片`, 'success');
+        }
+    };
+
+    // 上传按钮
+    uploadBtn.onclick = () => {
+        const input = doc.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.multiple = true;
+        input.onchange = async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+            
+            let successCount = 0;
+            for (const file of files) {
+                if (await uploadGalleryImage(char.name, file)) {
+                    successCount++;
+                }
+            }
+            
+            if (successCount > 0) {
+                notify(`成功上传 ${successCount} 张图片`, 'success');
+                // 重新获取列表并刷新
+                const newItems = await getGalleryItems(char.name);
+                items.length = 0;
+                items.push(...newItems);
+                renderGrid();
+                countSpan.textContent = `${items.length} 张图片`;
+            }
+        };
+        input.click();
+    };
+
+    // 拖拽上传
+    let dragCounter = 0;
+    container.ondragenter = (e) => {
+        e.preventDefault();
+        dragCounter++;
+        dropzone.style.display = 'block';
+    };
+    container.ondragleave = (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter === 0) dropzone.style.display = 'none';
+    };
+    container.ondragover = (e) => e.preventDefault();
+    container.ondrop = async (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        dropzone.style.display = 'none';
+        
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+        if (files.length === 0) return;
+
+        let successCount = 0;
+        for (const file of files) {
+            if (await uploadGalleryImage(char.name, file)) {
+                successCount++;
+            }
+        }
+
+        if (successCount > 0) {
+            notify(`成功上传 ${successCount} 张图片`, 'success');
+            const newItems = await getGalleryItems(char.name);
+            items.length = 0;
+            items.push(...newItems);
+            renderGrid();
+            countSpan.textContent = `${items.length} 张图片`;
+        }
+    };
+}
+
+// 创建画廊预览窗口 (旧版实现)
+export function showGallery(char, items, notifyFn, showConfirmFn, replaceCharacterImageFn) {
+    // 使用传入的函数或导入的函数
+    const _notify = notifyFn || notify;
+    const _showConfirm = showConfirmFn || showConfirm;
+    const _replaceCharacterImage = replaceCharacterImageFn || replaceCharacterImage;
+
     if (!items || items.length === 0) {
-        notify('画廊为空', 'warning');
+        _notify('画廊为空', 'warning');
         return;
     }
 
@@ -355,11 +693,73 @@ export function showGallery(char, items, notify, showConfirm, replaceCharacterIm
     header.innerHTML = `
         <div class="cm-gallery-title">${ICONS.gallery} ${escapeHtml(char.name)} 的画廊 <span class="cm-gallery-count">(${items.length}张)</span></div>
         <div class="cm-gallery-actions">
+            <button class="cm-btn cm-btn-primary cm-gallery-upload-btn" title="上传图片">${ICONS.upload} 上传</button>
             <button class="cm-btn cm-btn-secondary cm-gallery-batch-btn">${ICONS.checkSquare} 批量模式</button>
             <button class="cm-gallery-close">${ICONS.close}</button>
         </div>
     `;
     container.appendChild(header);
+
+    // 上传功能
+    const fileInput = doc.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.multiple = true;
+    fileInput.style.display = 'none';
+    
+    const handleFiles = async (files) => {
+        if (files.length === 0) return;
+        
+        let successCount = 0;
+        const total = files.length;
+        
+        for (let i = 0; i < total; i++) {
+            const file = files[i];
+            // 简单的进度提示
+            if (total > 1) _notify(`正在上传 ${i+1}/${total}...`, 'info');
+            
+            if (await uploadGalleryImage(char.name, file)) {
+                successCount++;
+            }
+        }
+        
+        if (successCount > 0) {
+            _notify(`成功上传 ${successCount} 张图片`, 'success');
+            // 刷新列表
+            const newItems = await getGalleryItems(char.name);
+            items.length = 0;
+            items.push(...newItems);
+            
+            // 更新计数
+            header.querySelector('.cm-gallery-count').textContent = `(${items.length}张)`;
+            char.galleryCount = items.length;
+            galleryCountCache[char.name] = items.length;
+            saveGalleryCountCache();
+            
+            renderGrid();
+        } else {
+            _notify('上传失败', 'error');
+        }
+    };
+
+    fileInput.onchange = (e) => handleFiles(Array.from(e.target.files));
+    
+    header.querySelector('.cm-gallery-upload-btn').onclick = () => fileInput.click();
+
+    // 拖拽上传
+    container.ondragover = (e) => {
+        e.preventDefault();
+        container.classList.add('drag-over');
+    };
+    container.ondragleave = () => {
+        container.classList.remove('drag-over');
+    };
+    container.ondrop = (e) => {
+        e.preventDefault();
+        container.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+        handleFiles(files);
+    };
 
     // 批量操作栏（默认隐藏）
     const batchBar = doc.createElement('div');
@@ -466,9 +866,39 @@ export function showGallery(char, items, notify, showConfirm, replaceCharacterIm
         const lightbox = doc.createElement('div');
         lightbox.className = 'cm-gallery-lightbox ' + (state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light');
 
+        // 缩略图容器
+        const thumbsContainer = doc.createElement('div');
+        thumbsContainer.className = 'cm-lightbox-thumbs';
+
+        function renderThumbs() {
+            thumbsContainer.innerHTML = '';
+            items.forEach((item, idx) => {
+                const thumb = doc.createElement('div');
+                thumb.className = 'cm-lightbox-thumb' + (idx === currentIndex ? ' active' : '');
+                thumb.innerHTML = `<img src="${item.src}" loading="lazy">`;
+                thumb.onclick = () => {
+                    currentIndex = idx;
+                    updateLightbox();
+                };
+                thumbsContainer.appendChild(thumb);
+            });
+            // 滚动到当前选中的缩略图
+            setTimeout(() => {
+                const activeThumb = thumbsContainer.querySelector('.active');
+                if (activeThumb) {
+                    activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                }
+            }, 0);
+        }
+
         function updateLightbox() {
             const item = items[currentIndex];
-            lightbox.innerHTML = `
+            // 清空除了缩略图容器以外的内容
+            lightbox.innerHTML = '';
+            
+            const content = doc.createElement('div');
+            content.className = 'cm-lightbox-content';
+            content.innerHTML = `
                 <div class="cm-lightbox-header">
                     <span class="cm-lightbox-counter">${currentIndex + 1} / ${items.length}</span>
                     <span class="cm-lightbox-filename">${escapeHtml(item.name)}</span>
@@ -487,24 +917,28 @@ export function showGallery(char, items, notify, showConfirm, replaceCharacterIm
                     <button class="cm-lightbox-nav cm-lightbox-next" ${currentIndex >= items.length - 1 ? 'disabled' : ''}>${ICONS.chevronRight}</button>
                 </div>
             `;
+            
+            lightbox.appendChild(content);
+            lightbox.appendChild(thumbsContainer);
+            renderThumbs();
 
             // 绑定事件
-            lightbox.querySelector('.cm-lightbox-close').onclick = () => lightbox.remove();
-            lightbox.querySelector('.cm-lightbox-prev').onclick = () => {
+            content.querySelector('.cm-lightbox-close').onclick = () => lightbox.remove();
+            content.querySelector('.cm-lightbox-prev').onclick = () => {
                 if (currentIndex > 0) { currentIndex--; updateLightbox(); }
             };
-            lightbox.querySelector('.cm-lightbox-next').onclick = () => {
+            content.querySelector('.cm-lightbox-next').onclick = () => {
                 if (currentIndex < items.length - 1) { currentIndex++; updateLightbox(); }
             };
-            lightbox.querySelector('.cm-lightbox-download').onclick = () => {
+            content.querySelector('.cm-lightbox-download').onclick = () => {
                 downloadImage(item.src, item.name);
             };
-            lightbox.querySelector('.cm-lightbox-delete').onclick = async () => {
-                const confirmed = await showConfirm(`确定删除图片 "${item.name}" 吗？`);
+            content.querySelector('.cm-lightbox-delete').onclick = async () => {
+                const confirmed = await _showConfirm(`确定删除图片 "${item.name}" 吗？`);
                 if (!confirmed) return;
                 const success = await deleteGalleryImage(item.src);
                 if (success) {
-                    notify('图片已删除', 'success');
+                    _notify('图片已删除', 'success');
                     items.splice(currentIndex, 1);
                     // 更新缓存
                     char.galleryCount = items.length;
@@ -521,13 +955,13 @@ export function showGallery(char, items, notify, showConfirm, replaceCharacterIm
                     // 更新标题计数
                     header.querySelector('.cm-gallery-count').textContent = `(${items.length}张)`;
                 } else {
-                    notify('删除失败', 'error');
+                    _notify('删除失败', 'error');
                 }
             };
             // 设为封面按钮
-            lightbox.querySelector('.cm-lightbox-set-cover').onclick = async () => {
-                if (!replaceCharacterImage) {
-                    notify('设置封面功能不可用', 'error');
+            content.querySelector('.cm-lightbox-set-cover').onclick = async () => {
+                if (!_replaceCharacterImage) {
+                    _notify('设置封面功能不可用', 'error');
                     return;
                 }
                 try {
@@ -536,8 +970,8 @@ export function showGallery(char, items, notify, showConfirm, replaceCharacterIm
                     if (!croppedBlob) return;
 
                     const file = new File([croppedBlob], item.name.replace(/\.[^.]+$/, '.png'), { type: 'image/png' });
-                    await replaceCharacterImage(char, file);
-                    notify('封面已更换', 'success');
+                    await _replaceCharacterImage(char, file);
+                    _notify('封面已更换', 'success');
                     // 更新卡片上的图片
                     const cardImg = doc.querySelector(`.cm-card[data-file="${CSS.escape(char.fileName)}"] .cm-card-img`);
                     if (cardImg) cardImg.src = char.avatarUrl;
@@ -545,7 +979,7 @@ export function showGallery(char, items, notify, showConfirm, replaceCharacterIm
                     const detailAvatar = doc.querySelector('.cm-detail-avatar');
                     if (detailAvatar) detailAvatar.src = char.avatarUrl;
                 } catch (err) {
-                    notify('设置封面失败: ' + err.message, 'error');
+                    _notify('设置封面失败: ' + err.message, 'error');
                 }
             };
         }
@@ -606,10 +1040,10 @@ export function showGallery(char, items, notify, showConfirm, replaceCharacterIm
     // 删除选中
     batchBar.querySelector('.cm-gallery-del-sel').onclick = async () => {
         if (selectedItems.size === 0) {
-            notify('请先选择图片', 'warning');
+            _notify('请先选择图片', 'warning');
             return;
         }
-        const confirmed = await showConfirm(`确定删除选中的 ${selectedItems.size} 张图片吗？`);
+        const confirmed = await _showConfirm(`确定删除选中的 ${selectedItems.size} 张图片吗？`);
         if (!confirmed) return;
 
         const toDelete = Array.from(selectedItems).sort((a, b) => b - a); // 倒序删除
@@ -625,7 +1059,7 @@ export function showGallery(char, items, notify, showConfirm, replaceCharacterIm
         updateBatchCount();
         renderGrid();
         header.querySelector('.cm-gallery-count').textContent = `(${items.length}张)`;
-        notify(`已删除 ${successCount} 张图片`, 'success');
+        _notify(`已删除 ${successCount} 张图片`, 'success');
 
         // 更新缓存
         char.galleryCount = items.length;

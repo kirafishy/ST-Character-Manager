@@ -755,7 +755,18 @@ async function runTranslation(ov, mode, groupFilter) {
         });
 
         for (const group of Object.keys(grouped)) {
-            await translateGroup(ov, group, grouped[group], charContext, translateOptions);
+            // 针对每个组进行分批处理，避免单次请求过大
+            const keys = grouped[group];
+            const BATCH_SIZE = 15; // 限制每批次翻译的字段数量
+            
+            for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+                const batchKeys = keys.slice(i, i + BATCH_SIZE);
+                await translateGroup(ov, group, batchKeys, charContext, translateOptions);
+                // 批次间短暂延迟
+                if (i + BATCH_SIZE < keys.length) {
+                    await new Promise(r => setTimeout(r, 500));
+                }
+            }
         }
     }
 

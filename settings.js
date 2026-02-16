@@ -91,6 +91,17 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
+                        <span>详情页内容显示</span>
+                        <small>选择长文本内容的显示方式</small>
+                    </div>
+                    <select id="cmSetDetailMode" class="cm-select-input">
+                        <option value="scroll" ${settings.detailContentMode === 'scroll' ? 'selected' : ''}>↕️ 滚动 (默认)</option>
+                        <option value="expand" ${settings.detailContentMode === 'expand' ? 'selected' : ''}>📜 展开全部</option>
+                    </select>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
                         <span>侧边栏宽度</span>
                         <small>恢复侧边栏到默认宽度</small>
                     </div>
@@ -212,6 +223,18 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                                  <option value="openai" ${settings.translationApi === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
                                  <option value="tavern" ${settings.translationApi === 'tavern' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? 'Tavern Native (Experimental)' : '酒馆原生 (实验性)'}</option>
                              </select>
+                         </div>
+
+                         <!-- Debug Mode Switch -->
+                         <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                             <div class="cm-setting-label">
+                                 <span style="font-size:12px">Debug Mode</span>
+                                 <small>${settings.translationUILanguage === 'en' ? 'Output raw API requests/responses to console' : '在控制台输出原始 API 请求和响应信息'}</small>
+                             </div>
+                             <label class="cm-switch" style="transform:scale(0.8);margin-right:-5px">
+                                 <input type="checkbox" id="cmSetDebugMode" ${settings.debugMode ? 'checked' : ''}>
+                                 <span class="cm-slider"></span>
+                             </label>
                          </div>
  
                          <div id="cmSetOpenaiConfig" style="display:${settings.translationApi === 'openai' ? 'block' : 'none'}">
@@ -349,7 +372,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindCheck('cmSetCardNote', 'showCardNote');
         bindCheck('cmSetAutoScan', 'autoScan');
         bindCheck('cmSetAutoSyncTags', 'autoSyncTags');
-
+        bindCheck('cmSetDebugMode', 'debugMode');
+        
         // Translation Settings — 版权声明弹窗逻辑
         const transCheck = ov.querySelector('#cmSetTrans');
         const transSettings = ov.querySelector('#cmTransSettings');
@@ -591,6 +615,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         };
         bindSelect('cmSetDbClick', 'doubleClickAction');
         bindSelect('cmSetDefSort', 'defaultSort');
+        bindSelect('cmSetDetailMode', 'detailContentMode');
 
         // Sync All Tags
         const syncAllTagsBtn = ov.querySelector('#cmSyncAllTagsBtn');
