@@ -345,8 +345,21 @@ export class CharacterDetails {
             altSection.className = 'cm-section';
             
             const header = doc.createElement('h4');
-            header.style.cursor = 'pointer';
-            header.innerHTML = `<span style="display:inline-block;width:16px;transition:transform 0.2s">▶</span> 📝 备选开场白 (${char.alternate_greetings.length})`;
+            header.style.cssText = 'cursor:pointer;display:flex;align-items:center;justify-content:space-between;';
+            
+            const titleDiv = doc.createElement('div');
+            titleDiv.innerHTML = `<span class="cm-alt-arrow" style="display:inline-block;width:16px;transition:transform 0.2s">▶</span> 📝 备选开场白 (${char.alternate_greetings.length})`;
+            header.appendChild(titleDiv);
+
+            const maxBtn = doc.createElement('button');
+            maxBtn.innerHTML = ICONS.maximize || '⛶';
+            maxBtn.title = '全屏查看';
+            maxBtn.style.cssText = 'background:transparent;border:none;color:var(--cm-text-sec);cursor:pointer;padding:0 8px;';
+            maxBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.openAltGreetingsModal(char.alternate_greetings);
+            };
+            header.appendChild(maxBtn);
             
             const contentDiv = doc.createElement('div');
             contentDiv.className = 'cm-greetings-list';
@@ -363,13 +376,13 @@ export class CharacterDetails {
 
             // Toggle logic
             header.onclick = () => {
-                const icon = header.querySelector('span');
+                const icon = header.querySelector('.cm-alt-arrow');
                 if (contentDiv.style.display === 'none') {
                     contentDiv.style.display = 'flex';
-                    icon.style.transform = 'rotate(90deg)';
+                    if (icon) icon.style.transform = 'rotate(90deg)';
                 } else {
                     contentDiv.style.display = 'none';
-                    icon.style.transform = 'rotate(0deg)';
+                    if (icon) icon.style.transform = 'rotate(0deg)';
                 }
             };
 
@@ -513,10 +526,125 @@ export class CharacterDetails {
         }
     }
 
+    openAltGreetingsModal(greetings) {
+        let currentIndex = 0;
+        const total = greetings.length;
+
+        const content = doc.createElement('div');
+        content.className = 'cm-alt-modal-content';
+        content.style.cssText = 'height:100%;display:flex;flex-direction:column;overflow:hidden;';
+
+        // 顶部工具栏
+        const toolbar = doc.createElement('div');
+        toolbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px;border-bottom:1px solid var(--cm-border);background:var(--cm-bg-sec);flex-shrink:0;';
+
+        // 上一条
+        const prevBtn = doc.createElement('button');
+        prevBtn.className = 'cm-btn cm-btn-secondary';
+        prevBtn.innerHTML = '◀ 上一条';
+        prevBtn.onclick = () => showIndex(currentIndex - 1);
+
+        // 指示器
+        const indicator = doc.createElement('div');
+        indicator.style.cssText = 'font-weight:bold;font-size:14px;color:var(--cm-text);';
+        indicator.textContent = `1 / ${total}`;
+
+        // 下一条
+        const nextBtn = doc.createElement('button');
+        nextBtn.className = 'cm-btn cm-btn-secondary';
+        nextBtn.innerHTML = '下一条 ▶';
+        nextBtn.onclick = () => showIndex(currentIndex + 1);
+
+        toolbar.appendChild(prevBtn);
+        toolbar.appendChild(indicator);
+        toolbar.appendChild(nextBtn);
+
+        // 内容区域
+        const cardContainer = doc.createElement('div');
+        cardContainer.style.cssText = 'flex:1;overflow-y:auto;padding:20px;position:relative;background:var(--cm-bg);';
+        
+        // 复制按钮
+        const copyBtn = doc.createElement('button');
+        copyBtn.className = 'cm-icon-btn';
+        copyBtn.innerHTML = ICONS.copy || '📋';
+        copyBtn.title = '复制当前内容';
+        copyBtn.style.cssText = 'position:absolute;top:16px;right:16px;z-index:10;padding:8px;background:var(--cm-bg-sec);border:1px solid var(--cm-border);border-radius:4px;cursor:pointer;opacity:0.8;transition:opacity 0.2s;';
+        copyBtn.onmouseover = () => copyBtn.style.opacity = '1';
+        copyBtn.onmouseout = () => copyBtn.style.opacity = '0.8';
+        copyBtn.onclick = () => {
+            navigator.clipboard.writeText(greetings[currentIndex]);
+            notify('已复制', 'success');
+        };
+        cardContainer.appendChild(copyBtn);
+
+        // Markdown 内容
+        const markdownBody = doc.createElement('div');
+        markdownBody.className = 'cm-markdown-body';
+        markdownBody.style.cssText = 'font-size:15px;line-height:1.6;max-width:100%;';
+        cardContainer.appendChild(markdownBody);
+
+        content.appendChild(toolbar);
+        content.appendChild(cardContainer);
+
+        // 切换逻辑
+        const showIndex = (index) => {
+            if (index < 0) index = total - 1;
+            if (index >= total) index = 0;
+            currentIndex = index;
+
+            // 更新 UI
+            indicator.textContent = `${currentIndex + 1} / ${total}`;
+            markdownBody.innerHTML = this.renderMarkdown(greetings[currentIndex]);
+            
+            // 滚动回顶部
+            cardContainer.scrollTop = 0;
+        };
+
+        // 初始化显示
+        showIndex(0);
+
+        createBaseDialog('备选开场白', '', [], (ov, close) => {
+            const body = ov.querySelector('.cm-tag-editor-body');
+            if (body) {
+                body.style.padding = '0';
+                body.style.background = 'var(--cm-bg)';
+                body.appendChild(content);
+            }
+            
+            // 调整弹窗大小
+            const dialog = ov.querySelector('.cm-tag-editor');
+            if (dialog) {
+                dialog.style.maxWidth = '90vw';
+                dialog.style.height = '80vh';
+                dialog.style.width = '800px';
+            }
+
+            // 键盘导航支持
+            const keyHandler = (e) => {
+                if (e.key === 'ArrowLeft') showIndex(currentIndex - 1);
+                if (e.key === 'ArrowRight') showIndex(currentIndex + 1);
+            };
+            window.addEventListener('keydown', keyHandler);
+            
+            // 清理事件监听
+            const observer = new MutationObserver((mutations) => {
+                if (!doc.body.contains(ov)) {
+                    window.removeEventListener('keydown', keyHandler);
+                    observer.disconnect();
+                }
+            });
+            observer.observe(doc.body, { childList: true, subtree: true });
+        });
+    }
+
     renderHeader() {
         const header = doc.createElement('div');
         header.className = 'cm-detail-header';
 
+        // Top Row: Avatar + Info
+        const topRow = doc.createElement('div');
+        topRow.className = 'cm-detail-header-top';
+        
         // 1. 头像区域
         const avatarWrap = doc.createElement('div');
         avatarWrap.className = 'cm-detail-avatar-wrap';
@@ -535,7 +663,7 @@ export class CharacterDetails {
 
         avatarWrap.appendChild(avatar);
         avatarWrap.appendChild(camBtn);
-        header.appendChild(avatarWrap);
+        topRow.appendChild(avatarWrap);
 
         // 2. 信息区域
         const info = doc.createElement('div');
@@ -612,10 +740,12 @@ export class CharacterDetails {
         this.renderTags(tagsContainer);
         info.appendChild(tagsContainer);
 
-        // 操作按钮栏
-        this.renderActionButtons(info);
+        topRow.appendChild(info);
+        header.appendChild(topRow);
 
-        header.appendChild(info);
+        // 操作按钮栏 (Full Width Row)
+        this.renderActionButtons(header);
+
         this.container.appendChild(header);
     }
 
@@ -909,30 +1039,96 @@ export class CharacterDetails {
         container.innerHTML = '';
         container.style.padding = '16px';
 
-        // 作者注释
+        // 1. 备注/注释 (带编辑功能)
         const notes = this.getCharProp('creator_notes') || this.getCharProp('creatorcomment');
-        this.renderMarkdownField(container, '作者注释', notes || '(无)');
+        
+        const notesWrapper = doc.createElement('div');
+        notesWrapper.style.marginBottom = '16px';
+        
+        const notesHeader = doc.createElement('div');
+        notesHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;';
+        
+        const notesLabel = doc.createElement('div');
+        notesLabel.textContent = '备注/注释';
+        notesLabel.style.cssText = 'font-size:12px;font-weight:600;color:var(--cm-text-sec);text-transform:uppercase;';
+        
+        const editBtn = doc.createElement('button');
+        editBtn.innerHTML = ICONS.pencil;
+        editBtn.title = '编辑注释';
+        editBtn.style.cssText = 'background:transparent;border:none;color:var(--cm-text-sec);cursor:pointer;padding:0 4px;font-size:14px;';
+        
+        notesHeader.appendChild(notesLabel);
+        notesHeader.appendChild(editBtn);
+        notesWrapper.appendChild(notesHeader);
 
-        // 描述
-        this.renderMarkdownField(container, '描述', this.getCharProp('description'));
+        const notesContent = doc.createElement('div');
+        notesContent.className = 'cm-markdown-body';
         
-        // 第一条消息
-        this.renderMarkdownField(container, '开场白', this.getCharProp('first_mes') || this.getCharProp('first_message'));
+        const isExpand = state.settings.detailContentMode === 'expand';
+        const maxHeightStyle = isExpand ? 'max-height:none;overflow-y:visible;' : 'max-height:400px;overflow-y:auto;';
         
-        // 备选开场白
+        notesContent.style.cssText = `font-size:14px;color:var(--cm-text);line-height:1.5;background:var(--cm-bg-ter);padding:10px;border-radius:6px;border:1px solid var(--cm-border);${maxHeightStyle}overflow-x:hidden;word-wrap:break-word;`;
+        notesContent.innerHTML = this.renderMarkdown(notes || '(无)');
+        
+        notesWrapper.appendChild(notesContent);
+        container.appendChild(notesWrapper);
+
+        // 编辑逻辑
+        editBtn.onclick = () => {
+            if (notesContent.tagName === 'DIV') {
+                const textarea = doc.createElement('textarea');
+                textarea.className = 'cm-input';
+                textarea.style.cssText = 'width:100%;height:150px;padding:8px;border-radius:6px;border:1px solid var(--cm-border);background:var(--cm-input-bg);color:var(--cm-text);resize:vertical;font-family:inherit;font-size:13px;';
+                textarea.value = notes || '';
+                
+                notesContent.replaceWith(textarea);
+                editBtn.innerHTML = '💾';
+                
+                editBtn.onclick = async () => {
+                    const val = textarea.value.trim();
+                    if (await updateCreatorComment(this.char, val)) {
+                        this.renderDetailsTab(); // 刷新整个标签页
+                    }
+                };
+            }
+        };
+
+        // 2. 描述
+        this.renderMarkdownField(container, '📋 描述', this.getCharProp('description'));
+        
+        // 3. 主开场白
+        this.renderMarkdownField(container, '💬 主开场白', this.getCharProp('first_mes') || this.getCharProp('first_message'));
+        
+        // 4. 备选开场白
         const altGreetings = this.getCharProp('alternate_greetings');
         if (altGreetings && altGreetings.length > 0) {
             const wrapper = doc.createElement('div');
-            wrapper.className = 'cm-adv-block';
+            wrapper.className = 'cm-adv-block cm-alt-greetings-block';
             wrapper.style.marginBottom = '16px';
             
             const header = doc.createElement('div');
-            header.className = 'cm-adv-block-header cm-adv-toggle';
+            header.className = 'cm-adv-block-header cm-adv-toggle cm-alt-greetings-header';
             header.innerHTML = `
-                <span class="cm-adv-toggle-icon">▶</span>
-                <span class="cm-adv-block-title">📝 备选开场白</span>
-                <span class="cm-adv-block-stats">${altGreetings.length} 条</span>
+                <div style="display:flex;align-items:center;gap:4px;flex:1">
+                    <span class="cm-adv-toggle-icon">▶</span>
+                    <span class="cm-adv-block-title">📝 备选开场白</span>
+                    <span class="cm-adv-block-stats">${altGreetings.length} 条</span>
+                </div>
             `;
+
+            // 全屏查看按钮
+            const fullScreenBtn = doc.createElement('button');
+            fullScreenBtn.className = 'cm-icon-btn';
+            fullScreenBtn.innerHTML = ICONS.maximize || '⛶';
+            fullScreenBtn.title = '全屏查看';
+            fullScreenBtn.style.cssText = 'padding:4px;background:transparent;border:none;color:var(--cm-text-sec);cursor:pointer;opacity:0.7;';
+            fullScreenBtn.onmouseover = () => fullScreenBtn.style.opacity = '1';
+            fullScreenBtn.onmouseout = () => fullScreenBtn.style.opacity = '0.7';
+            fullScreenBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.openAltGreetingsModal(altGreetings);
+            };
+            header.appendChild(fullScreenBtn);
             
             const body = doc.createElement('div');
             body.className = 'cm-adv-block-body';
@@ -946,7 +1142,10 @@ export class CharacterDetails {
                 const contentEl = doc.createElement('div');
                 contentEl.className = 'cm-markdown-body';
                 contentEl.innerHTML = this.renderMarkdown(g);
-                contentEl.style.cssText = 'font-size:14px;color:var(--cm-text);line-height:1.5;background:var(--cm-bg-ter);padding:10px;border-radius:6px;border:1px solid var(--cm-border);max-height:300px;overflow-y:auto;overflow-x:hidden;word-wrap:break-word;';
+                
+                // 使用 detailContentMode 设置
+                const altMaxHeightStyle = isExpand ? 'max-height:none;overflow-y:visible;' : 'max-height:300px;overflow-y:auto;';
+                contentEl.style.cssText = `font-size:14px;color:var(--cm-text);line-height:1.5;background:var(--cm-bg-ter);padding:10px;border-radius:6px;border:1px solid var(--cm-border);${altMaxHeightStyle}overflow-x:hidden;word-wrap:break-word;`;
                 
                 item.appendChild(contentEl);
                 body.appendChild(item);

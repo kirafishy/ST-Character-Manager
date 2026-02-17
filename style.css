@@ -1405,12 +1405,19 @@ body.cm-resizing * {
 
 .cm-detail-header {
     display: flex;
+    flex-direction: column;
     gap: 16px;
     padding: 20px;
     padding-right: 60px;
     background: var(--cm-bg-sec);
     border-bottom: 1px solid var(--cm-border);
-    align-items: flex-start
+    align-items: stretch;
+}
+
+.cm-detail-header-top {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
 }
 
 .cm-detail-avatar-wrap {
@@ -1599,14 +1606,15 @@ body.cm-resizing * {
 .cm-detail-actions {
     display: flex;
     gap: 10px;
-    padding: 16px;
-    border-radius: 12px;
+    padding: 12px;
+    border-radius: 8px;
     border: 1px solid var(--cm-border);
     background: var(--cm-bg-ter);
     flex-wrap: wrap;
-    margin-bottom: 24px;
+    margin-bottom: 0;
     width: 100%;
     box-sizing: border-box;
+    margin-top: 4px;
 }
 
 .cm-detail-actions .cm-btn {
@@ -1997,6 +2005,137 @@ body.cm-resizing * {
     gap: 12px;
     margin: 10px 0;
     font-size: 14px;
+}
+
+/* Alternate Greetings Header Styling */
+.cm-alt-greetings-block {
+    border: 1px solid var(--cm-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.cm-alt-greetings-header {
+    background: var(--cm-bg-sec);
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.cm-alt-greetings-header:hover {
+    background: var(--cm-hover);
+}
+
+/* Alternate Greetings Modal Styles */
+.cm-alt-nav {
+    display: flex;
+    justify-content: flex-end;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--cm-border);
+    background: var(--cm-bg-sec);
+    flex-shrink: 0;
+}
+
+.cm-alt-view-toggle {
+    display: flex;
+    background: var(--cm-bg-ter);
+    border-radius: 6px;
+    padding: 2px;
+    border: 1px solid var(--cm-border);
+}
+
+.cm-alt-view-btn {
+    background: transparent;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--cm-text-sec);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cm-alt-view-btn:hover {
+    color: var(--cm-text);
+}
+
+.cm-alt-view-btn.active {
+    background: var(--cm-bg);
+    color: var(--cm-accent-text);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.cm-alt-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    background: var(--cm-bg);
+}
+
+.cm-alt-card {
+    background: var(--cm-bg-sec);
+    border: 1px solid var(--cm-border);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.cm-alt-card-header {
+    padding: 8px 12px;
+    background: var(--cm-bg-ter);
+    border-bottom: 1px solid var(--cm-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.cm-alt-idx {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--cm-text-sec);
+}
+
+.cm-alt-copy-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 4px;
+    border-radius: 4px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.cm-alt-copy-btn:hover {
+    opacity: 1;
+    background: var(--cm-hover);
+}
+
+.cm-alt-card-body {
+    padding: 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--cm-text);
+    overflow-x: auto;
+}
+
+/* View Modes */
+.cm-alt-list.mode-compact .cm-alt-card-body {
+    max-height: 100px;
+    overflow-y: hidden;
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+.cm-alt-list.mode-wide .cm-alt-card {
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .detail-link-icon {
