@@ -23,6 +23,7 @@ const BUTTON_ID = 'charManagerBtn';
 // 导入队列控制
 const importQueue = [];
 let isProcessingQueue = false;
+let lastTouchTime = 0;
 
 
 
@@ -1005,6 +1006,9 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
 
                 cached.version = stC.character_version || data.character_version || cached.version || '';
 
+                // 尝试从原生对象同步 Tag (解决跨设备同步问题)
+                await importTags(stC, { importSetting: 3, skipSave: true });
+
                 newList.push(cached);
             } else {
                 toFetch.push(stC);
@@ -1379,8 +1383,14 @@ function createCard(char, isDup) {
         if (e.target.tagName === 'BUTTON') return;
         if (e.button === 2) return;
 
+        // 防止触摸设备上的重复触发 (Touch -> Mouse)
+        if (e.type === 'mousedown' && Date.now() - lastTouchTime < 500) {
+            return;
+        }
+
         isDragging = false;
         if (e.type === 'touchstart') {
+            lastTouchTime = Date.now();
             startX = e.touches[0].clientX;
             startY = e.touches[0].clientY;
             state.isTouchSelecting = false;
@@ -1429,11 +1439,27 @@ function createCard(char, isDup) {
 
     const endHandler = (e) => {
         if (e.target.tagName === 'BUTTON') return;
+        // 交给 body.onclick 处理 Shift/Ctrl/Meta 组合键
+        if (e.shiftKey || e.ctrlKey || e.metaKey) return;
+
+        // 更新最后触摸时间，防止长按（>500ms）后的模拟鼠标事件穿透防抖检查
+        if (e.type === 'touchend') {
+            lastTouchTime = Date.now();
+        }
+
+        // 防止触摸设备上的重复触发
+        if (e.type === 'mouseup' && Date.now() - lastTouchTime < 500) {
+            return;
+        }
+
         clearTimeout(pressTimer);
         card.style.transform = 'scale(1)';
         card.classList.remove('pressing');
 
         if (!isDragging && !state.isTouchSelecting) {
+            // 标记此次点击已被处理，防止 body.onclick 再次触发导致状态反转
+            card.dataset.ignoreClick = 'true';
+
             if (state.selectedCards.size > 0) {
                 toggleCard();
             } else {
@@ -2239,7 +2265,7 @@ function createModal() {
         '<div class="cm-batch" id="cmBatchBar">' +
         '<span>已选 <strong id="cmSelectedCount">0</strong></span>' +
         '<button class="cm-btn cm-btn-secondary" id="cmSelectAll">全选</button>' +
-        '<button class="cm-btn cm-btn-secondary" id="cmClearSel">取消</button>' +
+        '<button class="cm-btn cm-btn-secondary" id="cmClearSel">退出</button>' +
         '<button class="cm-btn cm-btn-primary" id="cmBatchTag">标签</button>' +
         '<button class="cm-btn cm-btn-secondary" id="cmBatchFav">' + ICONS.star + '</button>' +
         '<button class="cm-btn cm-btn-danger" id="cmDelSel">' + ICONS.trash + '</button>' +

@@ -5,7 +5,7 @@ import { ICONS } from './constants.js';
 import { doc, parentWin, getSTContext } from './context.js';
 import { state } from './state.js';
 import { authFetch } from './api.js';
-import { escapeHtml } from './utils.js';
+import { escapeHtml, arrayBufferToBase64 } from './utils.js';
 import { GalleryViewer } from './gallery-viewer.js';
 import { notify } from './utils.js';
 import { showConfirm } from './ui-utils.js';
@@ -84,24 +84,47 @@ export async function deleteGalleryImage(imagePath) {
 // 上传画廊图片
 export async function uploadGalleryImage(charName, file) {
     try {
-        const formData = new FormData();
-        formData.append('avatar', file);
-        formData.append('folder', charName);
+        // 检查文件类型
+        if (!file.type.startsWith('image/')) {
+            console.warn(`[CharManager] 跳过非图片文件: ${file.name}`);
+            return false;
+        }
 
+        // 转换为 Base64
+        const buffer = await file.arrayBuffer();
+        const base64 = arrayBufferToBase64(buffer);
+        
+        // 准备文件名和扩展名
+        const nameOnly = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+        const ext = file.name.includes('.') ? file.name.split('.').pop() : 'png';
+
+        // 使用 JSON 格式上传，参考 library.js 的实现
         const response = await authFetch('/api/images/upload', {
             method: 'POST',
-            body: formData
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image: base64,
+                filename: nameOnly,
+                format: ext,
+                ch_name: charName
+            })
         });
         
         if (response.ok) {
+            // 消费响应体
+            await response.text().catch(() => {});
+            
             // 更新缓存
             if (galleryCountCache[charName] !== undefined) {
                 galleryCountCache[charName]++;
                 saveGalleryCountCache();
             }
             return true;
+        } else {
+            const errorText = await response.text();
+            console.error(`[CharManager] 上传失败 ${nameOnly}:`, response.status, errorText);
+            return false;
         }
-        return false;
     } catch (e) {
         console.error('[CharManager] 上传画廊图片失败:', e);
         return false;
@@ -393,7 +416,7 @@ export async function renderGallery(container, char) {
     
     const countSpan = doc.createElement('span');
     countSpan.style.cssText = 'font-size:12px;color:var(--cm-text-sec);';
-    countSpan.textContent = `${items.length} 张图片`;
+    countSpan.textContent = `${items.length} 张图片 (支持拖拽上传)`;
     
     toolbar.appendChild(leftTools);
     toolbar.appendChild(countSpan);
@@ -627,17 +650,23 @@ export async function renderGallery(container, char) {
     let dragCounter = 0;
     container.ondragenter = (e) => {
         e.preventDefault();
+        e.stopPropagation();
         dragCounter++;
         dropzone.style.display = 'block';
     };
     container.ondragleave = (e) => {
         e.preventDefault();
+        e.stopPropagation();
         dragCounter--;
         if (dragCounter === 0) dropzone.style.display = 'none';
     };
-    container.ondragover = (e) => e.preventDefault();
+    container.ondragover = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
     container.ondrop = async (e) => {
         e.preventDefault();
+        e.stopPropagation();
         dragCounter = 0;
         dropzone.style.display = 'none';
         
@@ -692,7 +721,7 @@ export function showGallery(char, items, notifyFn, showConfirmFn, replaceCharact
     const header = doc.createElement('div');
     header.className = 'cm-gallery-header';
     header.innerHTML = `
-        <div class="cm-gallery-title">${ICONS.gallery} ${escapeHtml(char.name)} 的画廊 <span class="cm-gallery-count">(${items.length}张)</span></div>
+        <div class="cm-gallery-title">${ICONS.gallery} ${escapeHtml(char.name)} 的画廊 <span class="cm-gallery-count">(${items.length}张)</span> <span style="font-size:0.8em;opacity:0.7;font-weight:normal;">(支持拖拽上传)</span></div>
         <div class="cm-gallery-actions">
             <button class="cm-btn cm-btn-primary cm-gallery-upload-btn" title="上传图片">${ICONS.upload} 上传</button>
             <button class="cm-btn cm-btn-secondary cm-gallery-batch-btn">${ICONS.checkSquare} 批量模式</button>
@@ -750,13 +779,17 @@ export function showGallery(char, items, notifyFn, showConfirmFn, replaceCharact
     // 拖拽上传
     container.ondragover = (e) => {
         e.preventDefault();
+        e.stopPropagation();
         container.classList.add('drag-over');
     };
-    container.ondragleave = () => {
+    container.ondragleave = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         container.classList.remove('drag-over');
     };
     container.ondrop = (e) => {
         e.preventDefault();
+        e.stopPropagation();
         container.classList.remove('drag-over');
         const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
         handleFiles(files);

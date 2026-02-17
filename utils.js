@@ -63,6 +63,18 @@ export function calculateTokens(text) {
     return words ? words.length : 0;
 }
 
+export function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.length;
+    const GROUP = 3072;
+    const parts = [];
+    for (let i = 0; i < len; i += GROUP) {
+        const chunk = bytes.subarray(i, Math.min(i + GROUP, len));
+        parts.push(btoa(String.fromCharCode.apply(null, chunk)));
+    }
+    return parts.join('');
+}
+
 export async function parsePNG(buf) {
     try {
         const v = new DataView(buf);
