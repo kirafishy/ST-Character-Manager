@@ -4,7 +4,8 @@
  * @returns {object} 分组后的翻译数据
  */
 export function extractTranslatableData(charData) {
-    const data = charData.data || charData; // 兼容 V2/V3 结构
+    // 混合根对象和 data 对象，确保能读取到所有字段 (兼容各种非标准结构)
+    const data = { ...charData, ...(charData.data || {}) };
     const result = {
         basic: {},
         system: {},
@@ -39,8 +40,14 @@ export function extractTranslatableData(charData) {
     ];
 
     systemFields.forEach(field => {
-        if (data[field] && typeof data[field] === 'string' && data[field].trim()) {
-            result.system[field] = data[field];
+        let val = data[field];
+        // Fallback to extensions if not found in root (for some V1/V2 variants)
+        if (!val && data.extensions && data.extensions[field]) {
+            val = data.extensions[field];
+        }
+
+        if (val && typeof val === 'string' && val.trim()) {
+            result.system[field] = val;
         }
     });
 

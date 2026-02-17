@@ -2945,7 +2945,7 @@ function openModal() {
     doc.getElementById(MODAL_ID).style.display = 'block';
 }
 
-function closeModal() {
+export function closeModal() {
     const m = doc.getElementById(MODAL_ID);
     if (m) m.style.display = 'none';
 }

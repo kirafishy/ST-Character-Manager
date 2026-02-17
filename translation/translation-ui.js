@@ -55,7 +55,7 @@ const GROUP_LABELS = {
     tags: '🏷️ 角色标签',
     lorebook: '📖 世界书',
     regex: '🔧 正则脚本',
-    script: '📜 酒馆助手脚本'
+    scripts: '📜 酒馆助手脚本'
 };
 
 // 获取本地化的分组标签
@@ -101,6 +101,13 @@ export async function openTranslationDialog(char) {
         });
         if (!getRes.ok) throw new Error('无法读取角色数据');
         originalCharData = await getRes.json();
+        console.log('[Translation Debug] source post_history_instructions', {
+            file: char.fileName,
+            root: originalCharData?.post_history_instructions,
+            data: originalCharData?.data?.post_history_instructions,
+            extensions: originalCharData?.data?.extensions?.post_history_instructions
+                || originalCharData?.extensions?.post_history_instructions
+        });
 
         // 2. 尝试获取原始 PNG (用于 PNG 导出)
         try {
@@ -115,6 +122,11 @@ export async function openTranslationDialog(char) {
 
         // 3. 提取可翻译数据
         const rawData = extractTranslatableData(originalCharData);
+        console.log('[Translation Debug] extracted system fields', {
+            system_keys: rawData?.system ? Object.keys(rawData.system) : [],
+            system_prompt: rawData?.system?.system_prompt,
+            post_history_instructions: rawData?.system?.post_history_instructions
+        });
         currentTranslationData = {};
 
         Object.keys(rawData).forEach(group => {
@@ -439,6 +451,29 @@ function buildItemHTML(group, key, item) {
         const uid = parts.slice(1, -1).join('_');
         const fieldLabel = isEn ? (field === 'content' ? 'Content' : 'Comment') : (field === 'content' ? '内容' : '备注');
         label = isEn ? `Entry ${uid} [${fieldLabel}]` : `世界书条目 ${uid} [${fieldLabel}]`;
+    } else if (group === 'scripts') {
+        // script_{uid}_{field} or script_{uid}_btn_{idx}_name
+        const parts = key.split('_');
+        if (parts.length >= 4 && parts[parts.length - 2] === 'btn') {
+            // Button name
+            const uid = parts.slice(1, -3).join('_');
+            label = isEn ? `Script ${uid} [Button]` : `脚本 ${uid} [按钮]`;
+        } else {
+            const field = parts[parts.length - 1];
+            const uid = parts.slice(1, -1).join('_');
+            const fieldMap = isEn
+                ? { name: 'Name', content: 'Content', info: 'Info' }
+                : { name: '名称', content: '内容', info: '说明' };
+            label = isEn ? `Script ${uid} [${fieldMap[field]||field}]` : `脚本 ${uid} [${fieldMap[field]||field}]`;
+        }
+    } else if (group === 'regex') {
+        const parts = key.split('_');
+        const field = parts[parts.length - 1];
+        const uid = parts.slice(1, -1).join('_');
+        const fieldMap = isEn
+            ? { scriptName: 'Script Name', replaceString: 'Replacement Pattern' }
+            : { scriptName: '脚本名称', replaceString: '替换内容' };
+        label = isEn ? `Regex ${uid} [${fieldMap[field]||field}]` : `正则 ${uid} [${fieldMap[field]||field}]`;
     }
 
     const origLen = (item.original || '').length;

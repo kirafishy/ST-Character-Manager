@@ -669,10 +669,11 @@ export function showGallery(char, items, notifyFn, showConfirmFn, replaceCharact
     const _showConfirm = showConfirmFn || showConfirm;
     const _replaceCharacterImage = replaceCharacterImageFn || replaceCharacterImage;
 
-    if (!items || items.length === 0) {
-        _notify('画廊为空', 'warning');
-        return;
-    }
+    if (!items) items = [];
+    // if (!items || items.length === 0) {
+    //     _notify('画廊为空', 'warning');
+    //     return;
+    // }
 
     // 状态
     let currentIndex = 0;
