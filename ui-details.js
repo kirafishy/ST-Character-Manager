@@ -62,13 +62,6 @@ export class CharacterDetails {
             this.container.classList.add('cm-detail-legacy');
         }
         
-        // 关闭按钮
-        const closeBtn = doc.createElement('span');
-        closeBtn.className = 'cm-detail-close';
-        closeBtn.innerHTML = ICONS.close;
-        closeBtn.onclick = () => this.close();
-        this.container.appendChild(closeBtn);
-
         // 渲染固定头部
         this.renderHeader();
 
@@ -76,6 +69,27 @@ export class CharacterDetails {
         const contentBody = doc.createElement('div');
         contentBody.className = 'cm-detail-body';
         this.container.appendChild(contentBody);
+
+        // 创建回顶按钮
+        const backToTopBtn = doc.createElement('div');
+        backToTopBtn.className = 'cm-back-to-top';
+        backToTopBtn.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>';
+        backToTopBtn.onclick = () => {
+            contentBody.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+        this.container.appendChild(backToTopBtn);
+
+        // 滚动监听
+        contentBody.addEventListener('scroll', () => {
+            const scrollTop = contentBody.scrollTop;
+            if (scrollTop > 50) {
+                this.container.classList.add('shrunk');
+                backToTopBtn.classList.add('visible');
+            } else {
+                this.container.classList.remove('shrunk');
+                backToTopBtn.classList.remove('visible');
+            }
+        }, { passive: true });
 
         if (this.viewMode === 'legacy') {
             // 旧版视图渲染
@@ -683,6 +697,26 @@ export class CharacterDetails {
         const header = doc.createElement('div');
         header.className = 'cm-detail-header';
 
+        // Mobile Drag Support
+        let startY = 0;
+        let startScrollTop = 0;
+
+        header.addEventListener('touchstart', (e) => {
+            if (e.target.closest('button') || e.target.closest('.cm-cam-btn') || e.target.closest('input')) return;
+            const body = this.container.querySelector('.cm-detail-body');
+            if (!body) return;
+            startY = e.touches[0].clientY;
+            startScrollTop = body.scrollTop;
+        }, { passive: true });
+
+        header.addEventListener('touchmove', (e) => {
+            if (e.target.closest('button') || e.target.closest('.cm-cam-btn') || e.target.closest('input')) return;
+            const body = this.container.querySelector('.cm-detail-body');
+            if (!body) return;
+            const deltaY = e.touches[0].clientY - startY;
+            body.scrollTop = startScrollTop - deltaY;
+        }, { passive: true });
+
         // Top Row: Avatar + Info
         const topRow = doc.createElement('div');
         topRow.className = 'cm-detail-header-top';
@@ -728,6 +762,7 @@ export class CharacterDetails {
 
         // Header Actions (Fav & Download)
         const headerActions = doc.createElement('div');
+        headerActions.className = 'cm-header-actions';
         headerActions.style.cssText = 'margin-left:auto;display:flex;gap:6px;align-items:center;';
 
         // Favorite
@@ -829,6 +864,13 @@ export class CharacterDetails {
 
         // 操作按钮栏 (Full Width Row)
         this.renderActionButtons(header);
+
+        // 关闭按钮 (Moved inside header for better layout control)
+        const closeBtn = doc.createElement('span');
+        closeBtn.className = 'cm-detail-close';
+        closeBtn.innerHTML = ICONS.close;
+        closeBtn.onclick = () => this.close();
+        header.appendChild(closeBtn);
 
         this.container.appendChild(header);
     }
@@ -1064,6 +1106,12 @@ export class CharacterDetails {
     switchTab(tabId) {
         this.currentTab = tabId;
         
+        // 切换标签页时回顶
+        const body = this.container.querySelector('.cm-detail-body');
+        if (body) {
+            body.scrollTop = 0;
+        }
+
         // 更新按钮状态
         const btns = this.container.querySelectorAll('.cm-tab-btn');
         btns.forEach(btn => {
@@ -1082,7 +1130,6 @@ export class CharacterDetails {
         });
 
         // 特殊处理 Gallery 标签页的滚动
-        const body = this.container.querySelector('.cm-detail-body');
         if (body) {
             if (tabId === 'gallery') {
                 body.classList.add('has-fixed-content');

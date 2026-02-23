@@ -226,14 +226,21 @@
     color: var(--cm-text);
     font-weight: 600;
     display: flex;
-    align-items: center
+    align-items: center;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    padding-right: 8px;
 }
 
 .cm-header-actions {
     display: flex;
     align-items: center;
     gap: 8px;
-    position: relative
+    position: relative;
+    flex-shrink: 0;
 }
 
 .cm-desktop-actions {
@@ -295,20 +302,23 @@
     .cm-mobile-only {
         display: flex
     }
+    .cm-header-actions {
+        gap: 6px;
+    }
 }
 
 .cm-close {
     background: transparent;
     border: none;
     color: var(--cm-text-sec);
-    width: 32px;
-    height: 32px;
-    border-radius: var(--cm-radius);
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
     cursor: pointer;
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: background 0.2s
+    transition: all 0.2s;
 }
 
 .cm-close:hover {
@@ -316,12 +326,16 @@
     color: var(--cm-text)
 }
 
+.cm-close:active {
+    background: var(--cm-active);
+}
+
 .cm-header-btn {
     background: transparent;
     border: none;
     width: 36px;
     height: 36px;
-    border-radius: 8px;
+    border-radius: 6px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -334,6 +348,10 @@
 .cm-header-btn:hover {
     background: var(--cm-hover);
     color: var(--cm-text)
+}
+
+.cm-header-btn:active {
+    background: var(--cm-active);
 }
 
 .cm-toolbar {
@@ -1059,15 +1077,15 @@ body.cm-resizing * {
     }
     
     /* 顶部按钮样式调整 */
-    .cm-header-actions {
+    /* .cm-header-actions {
         gap: 4px;
-    }
+    } */
     
-    .cm-header-btn {
+    /* .cm-header-btn {
         width: 32px;
         height: 32px;
         font-size: 14px;
-    }
+    } */
 }
 
 .cm-tag-editor {
@@ -1386,7 +1404,7 @@ body.cm-resizing * {
 }
 
 .cm-detail-close {
-    position: fixed;
+    position: absolute;
     top: 12px;
     right: 12px;
     background: var(--cm-bg-sec);
@@ -1404,6 +1422,7 @@ body.cm-resizing * {
 }
 
 .cm-detail-header {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -1412,6 +1431,7 @@ body.cm-resizing * {
     background: var(--cm-bg-sec);
     border-bottom: 1px solid var(--cm-border);
     align-items: stretch;
+    transition: height 0.3s ease, padding 0.3s ease, background-color 0.3s ease;
 }
 
 .cm-detail-header-top {
@@ -1467,6 +1487,16 @@ body.cm-resizing * {
     align-items: center;
     gap: 10px;
     margin-bottom: 8px;
+}
+
+@media (max-width: 768px) {
+    .cm-detail-title-wrap {
+        flex-wrap: wrap;
+    }
+    
+    .cm-detail-title-wrap h2 {
+        width: 100%;
+    }
 }
 
 .cm-detail-title-input {
@@ -1573,6 +1603,7 @@ body.cm-resizing * {
 
 .cm-detail-body {
     padding: 16px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
     flex: 1;
     overflow-y: auto;
     min-height: 0;
@@ -1607,6 +1638,7 @@ body.cm-resizing * {
     display: flex;
     gap: 10px;
     padding: 12px;
+    align-items: center;
     border-radius: 8px;
     border: 1px solid var(--cm-border);
     background: var(--cm-bg-ter);
@@ -4406,4 +4438,166 @@ body.hide-card-note .cm-note {
     opacity: 1;
     border-color: #2563eb;
     transform: scale(1.05);
+}
+
+/* Back to Top Button */
+.cm-back-to-top {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    background: var(--cm-accent-bg);
+    color: var(--cm-accent-text);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s ease;
+    z-index: 100;
+    border: 1px solid var(--cm-accent);
+}
+
+.cm-back-to-top.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.cm-back-to-top:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Shrunk Header Styles */
+.cm-detail.shrunk .cm-detail-header {
+    padding: 0 12px;
+    gap: 8px;
+    flex-direction: row;
+    align-items: center;
+    height: 50px !important;
+    border-bottom: 1px solid var(--cm-border);
+    background: var(--cm-bg-sec);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+}
+
+.cm-detail.shrunk .cm-detail-header-top {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    gap: 0;
+    display: flex;
+    align-items: center;
+}
+
+.cm-detail.shrunk .cm-detail-avatar-wrap {
+    display: none;
+}
+
+.cm-detail.shrunk .cm-detail-info {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+    flex: 1;
+}
+
+.cm-detail.shrunk .cm-detail-title-wrap {
+    margin: 0;
+    width: auto;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+}
+
+.cm-detail.shrunk .cm-detail-info h2 {
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    width: auto;
+    flex: 1;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.cm-detail.shrunk .cm-edit-btn,
+.cm-detail.shrunk .cm-header-actions,
+.cm-detail.shrunk .cm-detail-meta,
+.cm-detail.shrunk .cm-char-tags,
+.cm-detail.shrunk .detail-subrow,
+.cm-detail.shrunk .cm-detail-info > div:not(.cm-detail-title-wrap) {
+    display: none !important;
+}
+
+.cm-detail.shrunk .cm-detail-actions {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    width: auto;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+.cm-detail.shrunk .cm-detail-actions button {
+    display: none;
+}
+
+/* Only show Launch button in shrunk mode */
+.cm-detail.shrunk .cm-detail-actions button.cm-btn-success {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 13px;
+    height: 32px;
+    min-height: 32px;
+    white-space: nowrap;
+}
+
+.cm-detail.shrunk .cm-detail-close {
+    position: static;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    margin-left: 0;
+    flex-shrink: 0;
+    color: var(--cm-text-sec);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.cm-detail.shrunk .cm-detail-close:hover {
+    background: var(--cm-hover);
+    color: var(--cm-text);
+}
+
+/* Mobile adjustments for shrunk header */
+@media (max-width: 768px) {
+    .cm-detail.shrunk .cm-detail-header {
+        padding: 8px 12px;
+        align-items: center;
+    }
+    
+    .cm-detail.shrunk .cm-detail-info h2 {
+        font-size: 15px;
+    }
+    
+    .cm-back-to-top {
+        bottom: 80px; /* Avoid overlapping with bottom navigation if any */
+        right: 16px;
+    }
 }
