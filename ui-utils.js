@@ -67,6 +67,18 @@ export function showDeleteConfirm(count, wiCount) {
     return new Promise(resolve => {
         let html = `<div style="padding:10px 14px">`;
         html += `<div style="font-size:14px;margin-bottom:12px">确定要删除选中的 <b>${count}</b> 个角色吗？</div>`;
+        
+        html += `<div style="display:flex;flex-direction:column;gap:8px">`;
+        
+        // 聊天记录选项
+        html += `<div style="padding:10px;background:var(--cm-bg-ter);border-radius:6px;border:1px solid var(--cm-border)">`;
+        html += `<label style="display:flex;align-items:center;cursor:pointer;font-size:13px">`;
+        html += `<input type="checkbox" id="cmDelChatCb" style="width:16px;height:16px;margin-right:8px">`;
+        html += `<span>同时删除聊天记录</span>`;
+        html += `</label>`;
+        html += `</div>`;
+
+        // 世界书选项
         if (wiCount > 0) {
             html += `<div style="padding:10px;background:var(--cm-bg-ter);border-radius:6px;border:1px solid var(--cm-border)">`;
             html += `<label style="display:flex;align-items:center;cursor:pointer;font-size:13px">`;
@@ -76,16 +88,20 @@ export function showDeleteConfirm(count, wiCount) {
             html += `<div style="font-size:11px;color:var(--cm-text-sec);margin-top:4px;margin-left:24px;opacity:0.8">智能检测：仅删除未被其他角色使用的世界书</div>`;
             html += `</div>`;
         }
-        html += `</div>`;
+        
+        html += `</div>`; // end flex col
+        html += `</div>`; // end padding container
 
         createBaseDialog('删除确认', html, [
             { text: '取消', id: 'cmDelCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => { close(); resolve({ ok: false }); } },
             {
                 text: '确定删除', id: 'cmDelOk', cls: 'cm-btn-danger', onClick: (ov, close) => {
-                    const cb = ov.querySelector('#cmDelWiCb');
-                    const delWi = cb ? cb.checked : false;
+                    const wiCb = ov.querySelector('#cmDelWiCb');
+                    const chatCb = ov.querySelector('#cmDelChatCb');
+                    const delWi = wiCb ? wiCb.checked : false;
+                    const delChats = chatCb ? chatCb.checked : false;
                     close();
-                    resolve({ ok: true, delWi: delWi });
+                    resolve({ ok: true, delWi, delChats });
                 }
             }
         ]);

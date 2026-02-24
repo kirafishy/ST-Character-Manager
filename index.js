@@ -2533,10 +2533,10 @@ function createModal() {
             if (!confirmRes.ok) return;
 
             try {
-                await deleteChar(fileName);
-                if (confirmRes.delWi && wiCount > 0 && char.character_book) {
-                    await deleteWorldInfo(char.character_book);
-                }
+                await deleteChar(char, {
+                    deleteChats: confirmRes.delChats,
+                    deleteWi: confirmRes.delWi && wiCount > 0
+                });
 
                 card.remove();
                 state.characters = state.characters.filter(c => c.fileName !== fileName);
@@ -2814,30 +2814,17 @@ function createModal() {
 
         let ok = 0;
         for (const fn of files) {
+            const char = allChars.find(c => c.fileName === fn);
+            if (!char) continue;
+
             try {
-                await deleteChar(fn, true);
+                const shouldDeleteWi = confirmRes.delWi && char.character_book && targetWIs.has(char.character_book);
+                await deleteChar(char, {
+                    deleteChats: confirmRes.delChats,
+                    deleteWi: shouldDeleteWi
+                });
                 state.characters = state.characters.filter(c => c.fileName !== fn);
                 ok++;
-            } catch (e) { }
-        }
-
-        // 删除后也要同步清理酒馆内存中的角色列表
-        if (parentWin.characters && Array.isArray(parentWin.characters)) {
-            const toDel = new Set(files);
-            parentWin.characters = parentWin.characters.filter(c => !toDel.has(c.avatar));
-        }
-
-        if (confirmRes.delWi && targetWIs.size > 0) {
-            for (const wi of targetWIs) {
-                try { await deleteWorldInfo(wi, true); } catch (e) { }
-            }
-            try {
-                if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
-                    const context = parentWin.SillyTavern.getContext();
-                    if (typeof context.updateWorldInfoList === 'function') {
-                        await context.updateWorldInfoList();
-                    }
-                }
             } catch (e) { }
         }
 

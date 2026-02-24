@@ -7,7 +7,7 @@ import { state } from './state.js';
 import { ICONS } from './constants.js';
 import { escapeHtml, formatSize, notify, parsePNG } from './utils.js';
 import { createBaseDialog, showConfirm, showDeleteConfirm } from './ui-utils.js';
-import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion } from './data.js';
+import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion, deleteChatFile } from './data.js';
 import { authFetch } from './api.js';
 import { renderView, renderTagSidebar, updateCreatorComment, closeModal } from './index.js';
 import { getGalleryItems, showGallery, renderGallery } from './gallery.js';
@@ -1038,17 +1038,16 @@ export class CharacterDetails {
             if (!confirmRes.ok) return;
             
             try {
-                await deleteChar(this.char.fileName);
-                if (confirmRes.delWi && wiCount > 0 && this.char.character_book) {
-                    await deleteWorldInfo(this.char.character_book);
-                }
+                // 传递 deleteChats 参数
+                await deleteChar(this.char, {
+                    deleteChats: confirmRes.delChats,
+                    deleteWi: confirmRes.delWi && wiCount > 0
+                });
 
                 // 从本地状态移除
                 state.characters = state.characters.filter(c => c.fileName !== this.char.fileName);
                 
                 // 刷新界面
-                // findDuplicates(); // 需要导入或在 renderView 中处理
-                // updateStats(); // 需要导入
                 renderTagSidebar();
                 renderView();
                 
@@ -1352,14 +1351,27 @@ export class CharacterDetails {
                 delBtn.onclick = async (e) => {
                     e.stopPropagation();
                     if (await showConfirm(`确定删除聊天记录 "${chatName}" 吗？`)) {
-                        // TODO: Implement delete chat API call
-                        // For now just notify
-                        notify('暂不支持直接删除聊天记录 (需调用 ST API)', 'warning');
+                        try {
+                            const success = await deleteChatFile(h.file_name);
+                            if (success) {
+                                item.remove();
+                                notify('聊天记录已删除', 'success');
+                                // 刷新计数
+                                getCharHistoryCount(this.char).then(count => {
+                                    const el = this.container.querySelector('#cm-detail-chat-count');
+                                    if (el) el.innerHTML = '💬 ' + count;
+                                });
+                            } else {
+                                notify('删除失败', 'error');
+                            }
+                        } catch (err) {
+                            notify('删除失败: ' + err.message, 'error');
+                        }
                     }
                 };
 
                 item.appendChild(info);
-                // item.appendChild(delBtn); // 暂不显示删除按钮，因为没有对应的 API
+                item.appendChild(delBtn);
                 list.appendChild(item);
             });
         });

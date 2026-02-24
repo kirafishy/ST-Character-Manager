@@ -441,6 +441,16 @@ export async function saveCharacterData(fileName, updateCallback) {
 }
 
 export async function deleteWorldInfo(wiName, skipRefresh = false) {
+    // 兼容传入对象的情况
+    if (typeof wiName === 'object' && wiName !== null) {
+        wiName = wiName.name;
+    }
+
+    if (!wiName || typeof wiName !== 'string') {
+        console.warn('[CharManager] 删除世界书失败: 无效的名称参数', wiName);
+        return false;
+    }
+
     try {
         let r = await authFetch('/api/worldinfo/delete', {
             method: 'POST',
@@ -746,17 +756,117 @@ export async function getCharHistoryCount(char) {
     return history.length;
 }
 
-export async function deleteChar(fn, skipRefresh = false) {
-    const r = await authFetch('/api/characters/delete', { method: 'POST', body: JSON.stringify({ avatar_url: fn, delete_chats: false }) });
+export async function deleteChatFile(chatId) {
+    try {
+        const r = await authFetch('/api/chats/delete', {
+            method: 'POST',
+            body: JSON.stringify({ chat_file: chatId })
+        });
+        if (!r.ok) throw new Error('删除失败');
+        return true;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
+}
+
+export async function deleteWiEntry(wiName, uid) {
+    if (!wiName || !uid) return false;
+    try {
+        const res = await authFetch('/api/worldinfo/get', {
+            method: 'POST',
+            body: JSON.stringify({ name: wiName })
+        });
+        if (!res.ok) return false;
+        
+        const data = await res.json();
+        if (!data || !data.entries) return false;
+
+        let ok = false;
+        // Check for dictionary style entries
+        if (data.entries[uid]) {
+            delete data.entries[uid];
+            ok = true;
+        }
+        // Check for array style entries
+        else if (Array.isArray(data.entries)) {
+            const idx = data.entries.findIndex(e => e.uid == uid || e.id == uid);
+            if (idx > -1) {
+                data.entries.splice(idx, 1);
+                ok = true;
+            }
+        }
+
+        if (ok) {
+            await authFetch('/api/worldinfo/edit', {
+                method: 'POST',
+                body: JSON.stringify({ name: wiName, data: data })
+            });
+            
+            // Refresh WI list if possible
+            if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+                const ctx = parentWin.SillyTavern.getContext();
+                if (ctx.updateWorldInfoList) await ctx.updateWorldInfoList();
+            }
+        }
+        return ok;
+    } catch (e) {
+        console.warn('[CharManager] deleteWiEntry error', e);
+        return false;
+    }
+}
+
+export async function deleteChar(char, { deleteChats = false, deleteWi = false } = {}) {
+    const fileName = char.fileName || char.avatar;
+
+    if (deleteWi && char.character_book) {
+        try {
+            // Try to delete the specific entry first (cleanup)
+            await deleteWiEntry(char.character_book, char.name);
+            // Then delete the book
+            await deleteWorldInfo(char.character_book);
+        } catch (e) {
+            console.error('[CharManager] Failed to delete World Info:', e);
+        }
+    }
+
+    // 优先尝试调用酒馆原生的删除逻辑
+    if (typeof window.deleteCharacter === 'function') {
+        if (deleteChats) {
+            try {
+                // 确保传入正确的 fileName
+                const charObj = { ...char, fileName: fileName };
+                const chats = await getCharChatHistory(charObj);
+                for (const chat of chats) {
+                    if (chat.file_name) {
+                        await deleteChatFile(chat.file_name);
+                    }
+                }
+            } catch (e) {
+                console.error('[CharManager] Failed to delete chats:', e);
+            }
+        }
+
+        await window.deleteCharacter(fileName);
+        return;
+    }
+
+    // Fallback: 使用 API 删除
+    const r = await authFetch('/api/characters/delete', {
+        method: 'POST',
+        body: JSON.stringify({
+            avatar_url: fileName,
+            delete_chats: deleteChats
+        })
+    });
+    
     if (!r.ok) throw new Error('删除失败');
 
     // 同步移除酒馆内存中的角色，防止快速刷新时误判为新角色
     if (parentWin.characters && Array.isArray(parentWin.characters)) {
-        const idx = parentWin.characters.findIndex(c => c.avatar === fn);
+        const idx = parentWin.characters.findIndex(c => c.avatar === fileName);
         if (idx !== -1) parentWin.characters.splice(idx, 1);
     }
-
-    if (skipRefresh) return;
 
     // 刷新酒馆原生的角色列表
     try {
@@ -765,6 +875,11 @@ export async function deleteChar(fn, skipRefresh = false) {
             if (typeof context.getCharacters === 'function') {
                 await context.getCharacters();
             }
+        } else if (typeof parentWin.getCharacters === 'function') {
+            // Fallback for older versions
+            await parentWin.getCharacters();
         }
-    } catch (e) { }
+    } catch (e) {
+        console.warn('[CharManager] Failed to refresh character list:', e);
+    }
 }
