@@ -1410,15 +1410,21 @@ body.cm-resizing * {
     background: var(--cm-bg-sec);
     border: 1px solid var(--cm-border);
     color: var(--cm-text);
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
     cursor: pointer;
-    z-index: 100001;
+    z-index: 20;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2)
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+    transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cm-detail-close:hover {
+    background: var(--cm-hover);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
 .cm-detail-header {
@@ -1431,7 +1437,7 @@ body.cm-resizing * {
     background: var(--cm-bg-sec);
     border-bottom: 1px solid var(--cm-border);
     align-items: stretch;
-    transition: height 0.3s ease, padding 0.3s ease, background-color 0.3s ease;
+    transition: padding 0.24s ease, gap 0.24s ease, background-color 0.24s ease, box-shadow 0.24s ease;
 }
 
 .cm-detail-header-top {
@@ -2552,11 +2558,17 @@ body.cm-resizing * {
 /* 移动端适配 */
 @media (max-width: 600px) {
     /* Header Actions Optimization */
-    .cm-header-actions {
+    .cm-header .cm-header-actions {
         gap: 2px;
         flex-wrap: wrap;
         justify-content: flex-end;
         max-width: 140px; /* Limit width to force wrap if needed, or prevent overflow */
+    }
+
+    .cm-detail .cm-header-actions {
+        gap: 6px;
+        flex-wrap: nowrap;
+        max-width: none;
     }
 
     .cm-header-btn {
@@ -4475,11 +4487,11 @@ body.hide-card-note .cm-note {
 
 /* Shrunk Header Styles */
 .cm-detail.shrunk .cm-detail-header {
-    padding: 0 12px;
+    padding: 8px 12px;
     gap: 8px;
     flex-direction: row;
     align-items: center;
-    height: 50px !important;
+    min-height: 50px;
     border-bottom: 1px solid var(--cm-border);
     background: var(--cm-bg-sec);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
