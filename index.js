@@ -1680,6 +1680,7 @@ function renderTagManager() {
             '<option value="count">数量</option>' +
             '<option value="color">颜色</option>' +
             '</select></div>' +
+            '<button class="cm-btn cm-btn-secondary cm-btn-sm-tag" id="cmTagClearEmpty" title="清除空标签">🧹</button>' +
             '<button class="cm-btn cm-btn-secondary cm-btn-sm-tag" id="cmTagBatchStart">批量</button>' +
             '<button class="cm-btn cm-btn-primary cm-btn-sm-tag" id="cmAddTagBtn">新建</button>' +
             '</div>';
@@ -1747,6 +1748,21 @@ function renderTagManager() {
 
         const startBatchBtn = body.querySelector('#cmTagBatchStart');
         if (startBatchBtn) startBatchBtn.onclick = function () { state.tagBatchMode = true; renderTagManager(); };
+
+        const clearEmptyBtn = body.querySelector('#cmTagClearEmpty');
+        if (clearEmptyBtn) clearEmptyBtn.onclick = async function () {
+            const emptyTags = state.tags.filter(t => getTagCharCount(t.id) === 0);
+            if (emptyTags.length === 0) {
+                notify('没有空标签', 'info');
+                return;
+            }
+            if (await showConfirm(`确定要清除 ${emptyTags.length} 个空标签吗？`)) {
+                emptyTags.forEach(t => deleteTag(t.id, true));
+                renderTagManager();
+                renderTagSidebar();
+                notify(`已清除 ${emptyTags.length} 个空标签`, 'success');
+            }
+        };
 
         const sortSel = body.querySelector('#cmTagSortSelect');
         if (sortSel) {
@@ -1819,7 +1835,7 @@ function renderTagManager() {
             if (!doDel) return;
             checked.forEach(cb => {
                 const item = cb.closest('.cm-tag-manager-item');
-                if (item) deleteTag(item.dataset.id);
+                if (item) deleteTag(item.dataset.id, true);
             });
             state.tagBatchMode = false;
             renderTagManager();

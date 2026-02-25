@@ -40,15 +40,29 @@ export function updateTag(tagId, name, color) {
     return false;
 }
 
-export function deleteTag(tagId) {
+export function deleteTag(tagId, skipSync = false) {
     const idx = state.tags.findIndex(t => t.id === tagId);
     if (idx > -1) {
         state.tags.splice(idx, 1);
+        const affectedFiles = [];
         for (const fileName in state.tagMap) {
             const tagIdx = state.tagMap[fileName].indexOf(tagId);
-            if (tagIdx > -1) state.tagMap[fileName].splice(tagIdx, 1);
+            if (tagIdx > -1) {
+                state.tagMap[fileName].splice(tagIdx, 1);
+                affectedFiles.push(fileName);
+            }
         }
         saveTags();
+        
+        if (affectedFiles.length > 0) {
+            if (!skipSync && state.settings.autoSyncTags) {
+                affectedFiles.forEach(fileName => syncTagsToCard(fileName));
+            } else if (skipSync) {
+                state.hasUnsyncedTags = true;
+                setCache('hasUnsyncedTags', true);
+            }
+        }
+        
         return true;
     }
     return false;
