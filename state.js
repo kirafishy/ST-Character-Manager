@@ -23,6 +23,9 @@ export const defaultSettings = {
     doubleClickAction: 'detail', // 'detail' | 'chat'
     defaultSort: 'date_desc',
     detailContentMode: 'scroll', // 详情页内容显示模式: 'scroll' | 'expand'
+    macroColorTheme: 'dark1', // 预设主题
+    customCharColor: '#22D3EE',
+    customUserColor: '#FB923C',
     translationEnabled: false, // 角色卡翻译功能开关
     debugMode: false, // 调试模式
     // --- Translation Settings ---

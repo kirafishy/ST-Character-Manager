@@ -102,6 +102,35 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
+                        <span>宏替换颜色主题</span>
+                        <small>设置 {{char}} 和 {{user}} 的高亮颜色</small>
+                    </div>
+                    <select id="cmSetMacroTheme" class="cm-select-input">
+                        <option value="dark1" ${settings.macroColorTheme === 'dark1' ? 'selected' : ''}>暗色1 (冷青 vs 暖橙)</option>
+                        <option value="dark2" ${settings.macroColorTheme === 'dark2' ? 'selected' : ''}>暗色2 (蓝色 vs 粉色)</option>
+                        <option value="dark3" ${settings.macroColorTheme === 'dark3' ? 'selected' : ''}>暗色3 (粉色 vs 蓝色)</option>
+                        <option value="dark4" ${settings.macroColorTheme === 'dark4' ? 'selected' : ''}>暗色4 (紫 vs 金)</option>
+                        <option value="dark5" ${settings.macroColorTheme === 'dark5' ? 'selected' : ''}>暗色5 (薄荷绿 vs 天蓝)</option>
+                        <option value="dark6" ${settings.macroColorTheme === 'dark6' ? 'selected' : ''}>暗色6 (青绿 vs 粉红)</option>
+                        <option value="light1" ${settings.macroColorTheme === 'light1' ? 'selected' : ''}>亮色1 (深青 vs 深橙)</option>
+                        <option value="light2" ${settings.macroColorTheme === 'light2' ? 'selected' : ''}>亮色2 (深紫 vs 深蓝)</option>
+                        <option value="custom" ${settings.macroColorTheme === 'custom' ? 'selected' : ''}>自定义</option>
+                    </select>
+                </div>
+                
+                <div id="cmCustomMacroColorWrap" style="display:${settings.macroColorTheme === 'custom' ? 'block' : 'none'};padding:10px;background:var(--cm-bg-ter);border-radius:8px;margin-bottom:12px;">
+                    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                        <label style="font-size:12px;color:var(--cm-text-sec);width:60px;">{{char}}</label>
+                        <input type="color" id="cmSetCustomCharColor" value="${settings.customCharColor || '#22D3EE'}" style="cursor:pointer;background:none;border:none;padding:0;width:30px;height:30px;">
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <label style="font-size:12px;color:var(--cm-text-sec);width:60px;">{{user}}</label>
+                        <input type="color" id="cmSetCustomUserColor" value="${settings.customUserColor || '#FB923C'}" style="cursor:pointer;background:none;border:none;padding:0;width:30px;height:30px;">
+                    </div>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
                         <span>侧边栏宽度</span>
                         <small>恢复侧边栏到默认宽度</small>
                     </div>
@@ -616,6 +645,33 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindSelect('cmSetDbClick', 'doubleClickAction');
         bindSelect('cmSetDefSort', 'defaultSort');
         bindSelect('cmSetDetailMode', 'detailContentMode');
+
+        // Macro Color Theme
+        const macroThemeSelect = ov.querySelector('#cmSetMacroTheme');
+        const customMacroWrap = ov.querySelector('#cmCustomMacroColorWrap');
+        if (macroThemeSelect) {
+            macroThemeSelect.onchange = (e) => {
+                state.settings.macroColorTheme = e.target.value;
+                saveSettings();
+                if (customMacroWrap) {
+                    customMacroWrap.style.display = e.target.value === 'custom' ? 'block' : 'none';
+                }
+                renderView();
+            };
+        }
+        
+        const bindColor = (id, key) => {
+            const el = ov.querySelector('#' + id);
+            if (el) {
+                el.onchange = (e) => {
+                    state.settings[key] = e.target.value;
+                    saveSettings();
+                    renderView();
+                };
+            }
+        };
+        bindColor('cmSetCustomCharColor', 'customCharColor');
+        bindColor('cmSetCustomUserColor', 'customUserColor');
 
         // Sync All Tags
         const syncAllTagsBtn = ov.querySelector('#cmSyncAllTagsBtn');
