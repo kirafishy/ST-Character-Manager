@@ -6,7 +6,7 @@ export { createBaseDialog, showAlert, showConfirm, showDeleteConfirm };
 import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
 import { getCache, setCache, migrateFromLocalStorage } from './db.js';
-import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo } from './data.js';
+import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo, syncAllTags } from './data.js';
 import { importTags } from './st-tags.js';
 import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
 import { showSettingsDialog } from './settings.js';
