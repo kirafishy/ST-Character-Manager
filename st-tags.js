@@ -125,12 +125,12 @@ export async function importTags(character, { importSetting = null, skipSave = f
     for (const item of tagsToApply) {
         if (typeof item === 'object' && item.id) {
             // Existing tag object
-            if (addTagToChar(character.avatar, item.id)) addedCount++;
+            if (addTagToChar(character.avatar, item.id, true)) addedCount++;
         } else if (typeof item === 'string') {
             // New tag name -> Create then add
             const newTag = createTag(item);
             if (newTag) {
-                if (addTagToChar(character.avatar, newTag.id)) addedCount++;
+                if (addTagToChar(character.avatar, newTag.id, true)) addedCount++;
             }
         }
     }

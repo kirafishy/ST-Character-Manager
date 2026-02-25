@@ -76,6 +76,7 @@ const savedSettings = (() => {
 
 export const state = {
     settings: { ...defaultSettings, ...savedSettings },
+    hasUnsyncedTags: false, // 是否有未同步的标签
     characters: [], // 改为异步加载
     duplicateGroups: [],
     selectedCards: new Set(),

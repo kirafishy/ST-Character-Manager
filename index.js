@@ -418,7 +418,7 @@ async function showUrlImportDialog() {
                         if (selectedTagIds.length > 0) {
                             let tagCount = 0;
                             for (const tagId of selectedTagIds) {
-                                if (addTagToChar(targetChar.avatar, tagId)) tagCount++;
+                                if (addTagToChar(targetChar.avatar, tagId, true)) tagCount++;
                             }
                             if (tagCount > 0) notify(`已添加 ${tagCount} 个标签`, 'success');
                             
@@ -1982,7 +1982,7 @@ function showBatchTagDialog() {
                     const tagIds = Array.from(listContainer.querySelectorAll('input:checked')).map(cb => cb.value);
                     if (tagIds.length === 0) { notify('请选择标签', 'warning'); return; }
                     let count = 0;
-                    state.selectedCards.forEach(fileName => { tagIds.forEach(tagId => { if (removeTagFromChar(fileName, tagId)) count++; }); });
+                    state.selectedCards.forEach(fileName => { tagIds.forEach(tagId => { if (removeTagFromChar(fileName, tagId, true)) count++; }); });
                     renderTagSidebar(); renderView(); notify('已移除 ' + count + ' 个标签', 'success');
                     close();
                 }
@@ -1992,7 +1992,7 @@ function showBatchTagDialog() {
                     const tagIds = Array.from(listContainer.querySelectorAll('input:checked')).map(cb => cb.value);
                     if (tagIds.length === 0) { notify('请选择标签', 'warning'); return; }
                     let count = 0;
-                    state.selectedCards.forEach(fileName => { tagIds.forEach(tagId => { if (addTagToChar(fileName, tagId)) count++; }); });
+                    state.selectedCards.forEach(fileName => { tagIds.forEach(tagId => { if (addTagToChar(fileName, tagId, true)) count++; }); });
                     renderTagSidebar(); renderView(); notify('已添加 ' + count + ' 个标签', 'success');
                     close();
                 }
@@ -2942,7 +2942,7 @@ function performMigration(sourceKey) {
     }
 }
 
-function openModal() {
+async function openModal() {
     createModal();
     loadTags();
     renderTagSidebar();
@@ -2956,6 +2956,27 @@ function openModal() {
         renderView();
     }
     doc.getElementById(MODAL_ID).style.display = 'block';
+
+    // 检查是否有未同步的标签
+    if (state.settings.autoSyncTags && state.hasUnsyncedTags) {
+        if (await showConfirm('检测到有未同步的标签，是否立即执行全量同步？\n\n这可能需要一些时间，期间请勿关闭页面。')) {
+            const syncBtn = doc.getElementById('cmSyncBtn');
+            if (syncBtn) syncBtn.disabled = true;
+            showProgressBar('准备同步标签...');
+            try {
+                const count = await syncAllTags((current, total) => {
+                    updateProgressBar(Math.round((current / total) * 100), `同步中 (${current}/${total})`, '');
+                });
+                notify(`成功同步 ${count} 个角色的标签`, 'success');
+            } catch (e) {
+                console.error(e);
+                notify('同步失败: ' + e.message, 'error');
+            } finally {
+                hideProgressBar();
+                if (syncBtn) syncBtn.disabled = false;
+            }
+        }
+    }
 }
 
 export function closeModal() {

@@ -3,6 +3,7 @@ import { generateId, notify, loadJSZip, calculateTokens } from './utils.js';
 import { getSTContext, doc, parentWin, getSTCharacters } from './context.js';
 import { COLORS } from './constants.js';
 import { authFetch } from './api.js';
+import { setCache } from './db.js';
 
 export function loadTags() {
     const ctx = getSTContext();
@@ -59,28 +60,34 @@ export function getCharTags(fileName) {
     return ids.map(id => state.tags.find(t => t.id === id)).filter(Boolean);
 }
 
-export function addTagToChar(fileName, tagId) {
+export function addTagToChar(fileName, tagId, skipSync = false) {
     if (!state.tagMap[fileName]) state.tagMap[fileName] = [];
     if (!state.tagMap[fileName].includes(tagId)) {
         state.tagMap[fileName].push(tagId);
         saveTags();
-        if (state.settings.autoSyncTags) {
+        if (!skipSync && state.settings.autoSyncTags) {
             syncTagsToCard(fileName);
+        } else if (skipSync) {
+            state.hasUnsyncedTags = true;
+            setCache('hasUnsyncedTags', true);
         }
         return true;
     }
     return false;
 }
 
-export function removeTagFromChar(fileName, tagId) {
+export function removeTagFromChar(fileName, tagId, skipSync = false) {
     const ids = state.tagMap[fileName];
     if (ids) {
         const idx = ids.indexOf(tagId);
         if (idx > -1) {
             ids.splice(idx, 1);
             saveTags();
-            if (state.settings.autoSyncTags) {
+            if (!skipSync && state.settings.autoSyncTags) {
                 syncTagsToCard(fileName);
+            } else if (skipSync) {
+                state.hasUnsyncedTags = true;
+                setCache('hasUnsyncedTags', true);
             }
             return true;
         }
@@ -248,12 +255,29 @@ export async function syncAllTags(onProgress) {
     let count = 0;
     const total = chars.length;
     
-    for (let i = 0; i < total; i++) {
-        const char = chars[i];
-        await syncTagsToCard(char.fileName);
-        count++;
-        if (onProgress) onProgress(i + 1, total);
+    const concurrency = 50;
+    let currentIndex = 0;
+
+    const worker = async () => {
+        while (currentIndex < total) {
+            const i = currentIndex++;
+            const char = chars[i];
+            await syncTagsToCard(char.fileName);
+            count++;
+            if (onProgress) onProgress(count, total);
+        }
+    };
+
+    const workers = [];
+    for (let i = 0; i < concurrency; i++) {
+        workers.push(worker());
     }
+
+    await Promise.all(workers);
+    
+    state.hasUnsyncedTags = false;
+    setCache('hasUnsyncedTags', false);
+    
     return count;
 }
 
