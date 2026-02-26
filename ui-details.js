@@ -152,6 +152,9 @@ export class CharacterDetails {
                     const body = this.container.querySelector('.cm-detail-body');
                     if (body) {
                         body.innerHTML = '';
+                        // 先重新渲染 header（经典视图也需要顶部栏）
+                        this.renderHeader();
+                        body.appendChild(this.container.querySelector('.cm-detail-header'));
                         this.renderLegacyView(body);
                     }
                 } else {
@@ -856,7 +859,11 @@ export class CharacterDetails {
         const wiDiv = doc.createElement('div');
         wiDiv.style.cssText = 'margin-bottom:8px;font-size:12px;color:var(--cm-text-sec)';
         if (this.char.character_book) {
-            wiDiv.innerHTML = `<span title="角色世界书">🌐 ${escapeHtml(this.char.character_book)}</span>`;
+            // character_book 可能是字符串（文件名）或对象（世界书数据）
+            const bookName = typeof this.char.character_book === 'string'
+                ? this.char.character_book
+                : (this.char.character_book.name || '角色世界书');
+            wiDiv.innerHTML = `<span title="角色世界书">🌐 ${escapeHtml(bookName)}</span>`;
         } else {
             wiDiv.innerHTML = '<span style="opacity:0.5">🌐 无世界书</span>';
         }

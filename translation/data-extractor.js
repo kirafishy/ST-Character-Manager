@@ -95,7 +95,7 @@ export function extractTranslatableData(charData) {
             }
             
             // 世界书条目备注
-            if (entry.comment && entry.comment.trim()) {
+            if (entry.comment && typeof entry.comment === 'string' && entry.comment.trim()) {
                 result.lorebook[`entry_${uid}_comment`] = entry.comment;
             }
         });

@@ -273,7 +273,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     <div class="cm-about-item">
                         <span class="cm-about-role">三改作者</span>
                         <span class="cm-about-name">Kirafishy</span>
-                        <small class="cm-about-note">角色卡管理器 小鱼改版 v1.0</small>
+                        <small class="cm-about-note">角色卡管理器 小鱼改版 v1.1</small>
                     </div>
                 </div>
             </div>

@@ -1655,8 +1655,9 @@ body.cm-resizing * {
 }
 
 .cm-detail-legacy .cm-detail-header {
-    border-bottom: none;
-    padding-bottom: 0;
+    border-bottom: 1px solid var(--cm-border);
+    padding-bottom: 16px;
+    margin-bottom: 20px;
 }
 
 .cm-detail-actions {
