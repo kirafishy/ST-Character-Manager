@@ -1,6 +1,7 @@
 /**
  * 高级画廊灯箱 (Lightbox)
  * 支持缩放、平移、切换、键盘导航
+ * 支持单击图片放大/还原，放大后可拖拽平移
  */
 import { doc } from './context.js';
 import { ICONS } from './constants.js';
@@ -21,6 +22,8 @@ export class GalleryViewer {
         this.isDragging = false;
         this.startX = 0;
         this.startY = 0;
+        this.isZoomed = false; // 是否处于放大状态
+        this.baseScale = 1; // 初始适配缩放比例
     }
 
     show() {
@@ -76,6 +79,7 @@ export class GalleryViewer {
         this.counterEl = this.overlay.querySelector('.cm-lightbox-counter');
         this.filenameEl = this.overlay.querySelector('.cm-lightbox-filename');
         this.zoomLevelEl = this.overlay.querySelector('.cm-zoom-level');
+        this.viewport = this.overlay.querySelector('.cm-lightbox-viewport');
     }
 
     updateImage() {
@@ -89,10 +93,12 @@ export class GalleryViewer {
 
         const item = this.items[this.currentIndex];
         
-        // Reset zoom/pan
+        // 重置缩放/平移状态
         this.scale = 1;
         this.translateX = 0;
         this.translateY = 0;
+        this.isZoomed = false;
+        this.baseScale = 1;
         this.updateTransform();
 
         this.img.src = item.src;
@@ -100,25 +106,62 @@ export class GalleryViewer {
         this.counterEl.textContent = `${this.currentIndex + 1} / ${this.items.length}`;
         this.filenameEl.textContent = item.name;
 
-        // Update nav buttons state
+        // 更新导航按钮状态
         this.overlay.querySelector('.cm-lightbox-prev').disabled = this.currentIndex <= 0;
         this.overlay.querySelector('.cm-lightbox-next').disabled = this.currentIndex >= this.items.length - 1;
+
+        // 图片加载后计算初始适配缩放
+        this.img.onload = () => {
+            this.calculateBaseScale();
+        };
+        // 如果图片已缓存，立即计算
+        if (this.img.complete) {
+            this.calculateBaseScale();
+        }
+    }
+
+    /**
+     * 计算图片在视口内完整显示的初始缩放比例
+     */
+    calculateBaseScale() {
+        const viewportRect = this.viewport.getBoundingClientRect();
+        const imgW = this.img.naturalWidth;
+        const imgH = this.img.naturalHeight;
+        const viewW = viewportRect.width;
+        const viewH = viewportRect.height;
+
+        // 计算让图片完整显示在视口内的缩放比例
+        const scaleX = viewW / imgW;
+        const scaleY = viewH / imgH;
+        this.baseScale = Math.min(scaleX, scaleY, 1); // 不超过 1:1
+
+        // 设置初始状态：完整显示，不裁切
+        this.scale = this.baseScale;
+        this.isZoomed = false;
+        this.updateTransform();
     }
 
     updateTransform() {
         this.img.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
         this.zoomLevelEl.textContent = Math.round(this.scale * 100) + '%';
+        
+        // 更新鼠标样式：放大状态时显示可拖拽样式
+        if (this.isZoomed && this.scale > this.baseScale) {
+            this.viewport.style.cursor = 'grab';
+        } else {
+            this.viewport.style.cursor = 'default';
+        }
     }
 
     bindEvents() {
-        // Close
+        // 关闭按钮
         this.overlay.querySelector('.cm-lightbox-close').onclick = () => this.close();
         
-        // Navigation
+        // 导航
         this.overlay.querySelector('.cm-lightbox-prev').onclick = () => this.prev();
         this.overlay.querySelector('.cm-lightbox-next').onclick = () => this.next();
 
-        // Actions
+        // 操作按钮
         this.overlay.querySelector('.cm-lightbox-download').onclick = () => {
             if (this.options.onDownload) this.options.onDownload(this.items[this.currentIndex]);
         };
@@ -126,7 +169,6 @@ export class GalleryViewer {
             if (this.options.onDelete) {
                 const success = await this.options.onDelete(this.items[this.currentIndex], this.currentIndex);
                 if (success) {
-                    // Item removed from array by caller, just update view
                     this.updateImage();
                 }
             }
@@ -135,48 +177,56 @@ export class GalleryViewer {
             if (this.options.onSetCover) this.options.onSetCover(this.items[this.currentIndex]);
         };
 
-        // Zoom Controls
-        this.overlay.querySelector('.cm-zoom-in').onclick = () => this.zoom(0.1);
-        this.overlay.querySelector('.cm-zoom-out').onclick = () => this.zoom(-0.1);
+        // 缩放控制按钮
+        this.overlay.querySelector('.cm-zoom-in').onclick = () => this.zoom(0.2);
+        this.overlay.querySelector('.cm-zoom-out').onclick = () => this.zoom(-0.2);
         this.overlay.querySelector('.cm-zoom-reset').onclick = () => {
-            this.scale = 1;
+            this.scale = this.baseScale;
             this.translateX = 0;
             this.translateY = 0;
+            this.isZoomed = false;
             this.updateTransform();
         };
 
-        // Keyboard
+        // 键盘事件
         this.overlay.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') this.prev();
             else if (e.key === 'ArrowRight') this.next();
             else if (e.key === 'Escape') this.close();
-            else if (e.key === '+' || e.key === '=') this.zoom(0.1);
-            else if (e.key === '-' || e.key === '_') this.zoom(-0.1);
+            else if (e.key === '+' || e.key === '=') this.zoom(0.2);
+            else if (e.key === '-' || e.key === '_') this.zoom(-0.2);
             else if (e.key === '0') {
-                this.scale = 1;
+                this.scale = this.baseScale;
                 this.translateX = 0;
                 this.translateY = 0;
+                this.isZoomed = false;
                 this.updateTransform();
             }
         });
 
-        // Mouse Wheel Zoom
-        this.overlay.querySelector('.cm-lightbox-viewport').addEventListener('wheel', (e) => {
+        // 鼠标滚轮缩放
+        this.viewport.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            const delta = e.deltaY > 0 ? -0.15 : 0.15;
             this.zoom(delta);
         });
 
-        // Drag to Pan
-        const viewport = this.overlay.querySelector('.cm-lightbox-viewport');
-        
-        viewport.addEventListener('mousedown', (e) => {
-            if (e.target !== this.img && e.target !== viewport) return;
+        // 单击图片切换放大/还原
+        this.img.onclick = (e) => {
+            e.stopPropagation();
+            this.toggleZoom();
+        };
+
+        // 拖拽平移（仅在放大状态可用）
+        this.viewport.addEventListener('mousedown', (e) => {
+            // 只有在放大状态才允许拖拽
+            if (!this.isZoomed || this.scale <= this.baseScale) return;
+            if (e.target !== this.img && e.target !== this.viewport) return;
             e.preventDefault();
             this.isDragging = true;
             this.startX = e.clientX - this.translateX;
             this.startY = e.clientY - this.translateY;
-            viewport.style.cursor = 'grabbing';
+            this.viewport.style.cursor = 'grabbing';
         });
 
         doc.addEventListener('mousemove', (e) => {
@@ -188,9 +238,34 @@ export class GalleryViewer {
         });
 
         doc.addEventListener('mouseup', () => {
-            this.isDragging = false;
-            viewport.style.cursor = 'default';
+            if (this.isDragging) {
+                this.isDragging = false;
+                this.updateTransform(); // 更新鼠标样式
+            }
         });
+
+        // 移除点击遮罩关闭逻辑，仅保留关闭按钮和 Esc 关闭
+        // 不再添加 this.overlay.onclick 事件
+    }
+
+    /**
+     * 切换放大/还原状态
+     */
+    toggleZoom() {
+        if (this.isZoomed && this.scale > this.baseScale) {
+            // 当前是放大状态，还原
+            this.scale = this.baseScale;
+            this.translateX = 0;
+            this.translateY = 0;
+            this.isZoomed = false;
+        } else {
+            // 当前是初始状态，放大到 2 倍
+            this.scale = this.baseScale * 2;
+            this.translateX = 0;
+            this.translateY = 0;
+            this.isZoomed = true;
+        }
+        this.updateTransform();
     }
 
     prev() {
@@ -208,9 +283,14 @@ export class GalleryViewer {
     }
 
     zoom(delta) {
+        const oldScale = this.scale;
         this.scale += delta;
         if (this.scale < 0.1) this.scale = 0.1;
         if (this.scale > 5) this.scale = 5;
+        
+        // 判断是否处于放大状态
+        this.isZoomed = this.scale > this.baseScale;
+        
         this.updateTransform();
     }
 }

@@ -2411,14 +2411,17 @@ function createModal() {
 
     m.addEventListener('dragover', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         m.style.boxShadow = 'inset 0 0 0 4px #2563eb';
     });
     m.addEventListener('dragleave', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         m.style.boxShadow = 'none';
     });
     m.addEventListener('drop', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         m.style.boxShadow = 'none';
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             importFiles(Array.from(e.dataTransfer.files));

@@ -205,14 +205,14 @@ function showImageCropper(imageSrc, imageName) {
 
             ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
 
-            // 初始选择框 - 固定比例，尽量填满图片
+            // 初始选择框 - 固定 512:768 比例，最大化填满图片区域
             if (imgWidth / imgHeight > ASPECT_RATIO) {
-                // 图片更宽，以高度为准
-                selH = imgHeight * 0.8;
+                // 图片更宽，以高度为准填满
+                selH = imgHeight;
                 selW = selH * ASPECT_RATIO;
             } else {
-                // 图片更高，以宽度为准
-                selW = imgWidth * 0.8;
+                // 图片更高或等比，以宽度为准填满
+                selW = imgWidth;
                 selH = selW / ASPECT_RATIO;
             }
             selX = (imgWidth - selW) / 2;
@@ -373,13 +373,8 @@ function showImageCropper(imageSrc, imageName) {
             }, 'image/png');
         };
 
-        // 点击遮罩关闭
-        cropOverlay.onclick = (e) => {
-            if (e.target === cropOverlay) {
-                cropOverlay.remove();
-                resolve(null);
-            }
-        };
+        // 禁用点击遮罩关闭，避免拖拽越界时误触发关闭
+        // 用户只能通过"取消"或"确认裁剪"按钮关闭弹窗
     });
 }
 
@@ -1033,13 +1028,7 @@ export function showGallery(char, items, notifyFn, showConfirmFn, replaceCharact
         }
         doc.addEventListener('keydown', handleKeydown);
 
-        // 点击背景关闭
-        lightbox.onclick = (e) => {
-            if (e.target === lightbox || e.target.classList.contains('cm-lightbox-body')) {
-                lightbox.remove();
-                doc.removeEventListener('keydown', handleKeydown);
-            }
-        };
+        // 移除点击背景关闭逻辑，仅保留关闭按钮和 Esc 关闭
 
         updateLightbox();
         doc.body.appendChild(lightbox);

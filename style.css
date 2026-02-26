@@ -2546,6 +2546,43 @@ body.cm-resizing * {
     object-fit: contain;
     border-radius: 4px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+/* Lightbox zoom controls */
+.cm-lightbox-zoom-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: rgba(30, 30, 30, 0.9);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cm-lightbox-zoom-controls button {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: #fff;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.cm-lightbox-zoom-controls button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.cm-lightbox-zoom-controls .cm-zoom-level {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 13px;
+    min-width: 50px;
+    text-align: center;
 }
 
 /* Gallery button in detail actions */
