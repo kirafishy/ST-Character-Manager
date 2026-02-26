@@ -857,7 +857,7 @@ export class CharacterDetails {
         const wiDiv = doc.createElement('div');
         wiDiv.style.cssText = 'margin-bottom:8px;font-size:12px;color:var(--cm-text-sec)';
         if (this.char.character_book) {
-            wiDiv.innerHTML = `<span title="关联世界书">🌐 ${escapeHtml(this.char.character_book)}</span>`;
+            wiDiv.innerHTML = `<span title="角色世界书">🌐 ${escapeHtml(this.char.character_book)}</span>`;
         } else {
             wiDiv.innerHTML = '<span style="opacity:0.5">🌐 无世界书</span>';
         }
@@ -1024,7 +1024,7 @@ export class CharacterDetails {
         if (state.settings.translationEnabled) {
             const transBtn = doc.createElement('button');
             transBtn.className = 'cm-btn cm-btn-secondary';
-            transBtn.innerHTML = '🌍 翻译';
+            transBtn.innerHTML = ICONS.translate + ' \u7ffb\u8bd1';
             transBtn.onclick = () => {
                 this.close();
                 openTranslationDialog(this.char);
@@ -1035,7 +1035,7 @@ export class CharacterDetails {
         // 视图切换按钮
         const viewBtn = doc.createElement('button');
         viewBtn.className = 'cm-btn cm-btn-secondary';
-        viewBtn.innerHTML = this.viewMode === 'legacy' ? (ICONS.menu + ' 标签视图') : (ICONS.list + ' 经典视图');
+        viewBtn.innerHTML = this.viewMode === 'legacy' ? (ICONS.menu + ' 视图') : (ICONS.list + ' 视图');
         viewBtn.title = '切换详情页布局风格';
         viewBtn.onclick = () => this.toggleViewMode();
         actions.appendChild(viewBtn);
@@ -1077,6 +1077,20 @@ export class CharacterDetails {
         actions.appendChild(rmBtn);
 
         container.appendChild(actions);
+    }
+
+    rebuildHeaderPreserveOrder() {
+        if (!this.container) return;
+        const detailBody = this.container.querySelector('.cm-detail-body');
+        const tabsNav = this.container.querySelector('.cm-tabs-nav');
+        const oldHeader = this.container.querySelector('.cm-detail-header');
+        if (oldHeader) oldHeader.remove();
+        this.renderHeader();
+        const newHeader = this.container.querySelector('.cm-detail-header');
+        const anchor = tabsNav || detailBody;
+        if (anchor && newHeader) {
+            this.container.insertBefore(newHeader, anchor);
+        }
     }
 
     renderTabs() {
@@ -1815,25 +1829,23 @@ export class CharacterDetails {
         container.innerHTML = '';
         container.style.padding = '16px';
 
-        // 顶部工具栏：解锁开关
         const toolbar = doc.createElement('div');
         toolbar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--cm-border);';
-        
+
         const unlockLabel = doc.createElement('label');
         unlockLabel.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;';
-        
+
         const unlockCheck = doc.createElement('input');
         unlockCheck.type = 'checkbox';
-        
+
         const unlockText = doc.createElement('span');
         unlockText.innerHTML = `${ICONS.lock} 解锁编辑`;
         unlockText.style.fontSize = '13px';
-        
+
         unlockLabel.appendChild(unlockCheck);
         unlockLabel.appendChild(unlockText);
         toolbar.appendChild(unlockLabel);
 
-        // 保存按钮
         const saveBtn = doc.createElement('button');
         saveBtn.className = 'cm-btn cm-btn-primary';
         saveBtn.innerHTML = '💾 保存更改';
@@ -1843,20 +1855,53 @@ export class CharacterDetails {
 
         container.appendChild(toolbar);
 
-        // 表单容器
         const form = doc.createElement('div');
         form.className = 'cm-edit-form';
-        
-        // 字段定义
+        form.style.display = 'flex';
+        form.style.flexDirection = 'column';
+        form.style.gap = '14px';
+
+        const makeSection = (title) => {
+            const section = doc.createElement('div');
+            section.className = 'cm-section';
+            section.style.margin = '0';
+            section.style.border = '1px solid var(--cm-border)';
+            section.style.borderRadius = '8px';
+
+            const header = doc.createElement('div');
+            header.style.cssText = 'padding:10px 12px;font-size:13px;font-weight:600;color:var(--cm-text);background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);';
+            header.textContent = title;
+
+            const body = doc.createElement('div');
+            body.style.cssText = 'padding:12px;background:var(--cm-bg);display:flex;flex-direction:column;gap:10px;';
+
+            section.appendChild(header);
+            section.appendChild(body);
+            return { section, body };
+        };
+
+        const secBasic = makeSection('📌 基础信息');
+        const secRole = makeSection('🧩 角色信息');
+        const secGreeting = makeSection('💬 开场白');
+        const secNotes = makeSection('📝 作者注释');
+        const secWorld = makeSection('🌐 角色世界书');
+
+        form.appendChild(secBasic.section);
+        form.appendChild(secRole.section);
+        form.appendChild(secGreeting.section);
+        form.appendChild(secNotes.section);
+        form.appendChild(secWorld.section);
+
         const fields = [
-            { key: 'description', label: '描述', type: 'textarea', rows: 6 },
-            { key: 'first_mes', label: '首条消息', type: 'textarea', rows: 6 },
-            { key: 'post_history_instructions', label: '历史后指令', type: 'textarea', rows: 4 },
-            { key: 'scenario', label: '场景', type: 'textarea', rows: 4 },
-            { key: 'creator_notes', label: '作者注释', type: 'textarea', rows: 4 },
-            { key: 'alternate_names', label: '别名 (逗号分隔)', type: 'text' },
-            { key: 'creator', label: '作者', type: 'text' },
-            { key: 'version', label: '版本', type: 'text' },
+            { key: 'name', label: '角色名称', type: 'text', section: secBasic.body },
+            { key: 'creator', label: '作者', type: 'text', section: secBasic.body },
+            { key: 'version', label: '版本', type: 'text', section: secBasic.body },
+            { key: 'description', label: '描述 / 人设', type: 'textarea', rows: 6, section: secRole.body },
+            { key: 'personality_summary', label: '人格摘要', type: 'textarea', rows: 3, section: secRole.body },
+            { key: 'scenario', label: '场景 / 设定', type: 'textarea', rows: 4, section: secRole.body },
+            { key: 'first_mes', label: '默认开场白', type: 'textarea', rows: 6, section: secGreeting.body },
+            { key: 'creator_notes', label: '作者注释', type: 'textarea', rows: 6, section: secNotes.body },
+            { key: 'character_book', label: '世界书名称（可选）', type: 'text', section: secWorld.body },
         ];
 
         const inputs = {};
@@ -1864,58 +1909,50 @@ export class CharacterDetails {
         fields.forEach(f => {
             const fieldWrap = doc.createElement('div');
             fieldWrap.style.marginBottom = '12px';
-            
+
             const label = doc.createElement('div');
             label.textContent = f.label;
             label.style.cssText = 'font-size:12px;font-weight:600;color:var(--cm-text-sec);margin-bottom:4px;';
-            
+
             let input;
             if (f.type === 'textarea') {
                 input = doc.createElement('textarea');
-                input.rows = f.rows;
+                input.rows = f.rows || 4;
                 input.style.resize = 'vertical';
             } else {
                 input = doc.createElement('input');
                 input.type = 'text';
             }
-            
-            input.className = 'cm-input'; // 假设有通用样式，或者内联样式
-            input.style.cssText = 'width:100%;padding:8px;border-radius:4px;border:1px solid var(--cm-border);background:var(--cm-input-bg);color:var(--cm-text);font-family:inherit;font-size:13px;';
-            input.disabled = true; // 默认禁用
 
-            // 填充值
+            input.className = 'cm-input';
+            input.style.cssText = 'width:100%;padding:8px;border-radius:4px;border:1px solid var(--cm-border);background:var(--cm-input-bg);color:var(--cm-text);font-family:inherit;font-size:13px;';
+            input.disabled = true;
+
             let val = this.getCharProp(f.key);
-            if (f.key === 'alternate_names' && Array.isArray(val)) {
-                val = val.join(', ');
+            if (f.key === 'character_book') {
+                val = (typeof val === 'string') ? val : (val && typeof val === 'object' ? String(val.name || '') : '');
             }
             input.value = val || '';
-            
+
             inputs[f.key] = input;
-            
+
             fieldWrap.appendChild(label);
             fieldWrap.appendChild(input);
-            form.appendChild(fieldWrap);
+            f.section.appendChild(fieldWrap);
         });
 
-        // --- 备选开场白编辑区域 ---
-        const altWrap = doc.createElement('div');
-        altWrap.style.marginTop = '20px';
-        altWrap.style.borderTop = '1px solid var(--cm-border)';
-        altWrap.style.paddingTop = '16px';
-
-        const altHeader = doc.createElement('div');
-        altHeader.innerHTML = '<h4>📝 备选开场白</h4>';
-        altHeader.style.marginBottom = '12px';
-        altWrap.appendChild(altHeader);
+        const altTitle = doc.createElement('div');
+        altTitle.textContent = '备选开场白';
+        altTitle.style.cssText = 'font-size:12px;font-weight:600;color:var(--cm-text-sec);margin-top:4px;';
+        secGreeting.body.appendChild(altTitle);
 
         const altList = doc.createElement('div');
         altList.className = 'cm-edit-alt-list';
         altList.style.display = 'flex';
         altList.style.flexDirection = 'column';
         altList.style.gap = '12px';
-        altWrap.appendChild(altList);
+        secGreeting.body.appendChild(altList);
 
-        // 存储备选开场白的 inputs
         const altInputs = [];
 
         const renderAltItem = (text, index) => {
@@ -1926,7 +1963,7 @@ export class CharacterDetails {
             const num = doc.createElement('div');
             num.textContent = `#${index + 1}`;
             num.style.cssText = 'font-size:12px;color:var(--cm-text-sec);width:24px;flex-shrink:0;padding-top:6px;';
-            
+
             const textarea = doc.createElement('textarea');
             textarea.className = 'cm-input';
             textarea.value = text || '';
@@ -1941,10 +1978,8 @@ export class CharacterDetails {
             delBtn.disabled = !unlockCheck.checked;
             delBtn.onclick = () => {
                 item.remove();
-                // 从数组中移除
                 const idx = altInputs.indexOf(textarea);
                 if (idx > -1) altInputs.splice(idx, 1);
-                // 重新编号
                 updateAltNumbers();
             };
 
@@ -1961,11 +1996,9 @@ export class CharacterDetails {
             });
         };
 
-        // 初始化现有备选开场白
         const existingAlts = this.getCharProp('alternate_greetings') || [];
         existingAlts.forEach((g, i) => renderAltItem(g, i));
 
-        // 添加按钮
         const addAltBtn = doc.createElement('button');
         addAltBtn.className = 'cm-btn cm-btn-secondary';
         addAltBtn.innerHTML = '+ 添加备选开场白';
@@ -1975,23 +2008,194 @@ export class CharacterDetails {
         addAltBtn.onclick = () => {
             renderAltItem('', altInputs.length);
         };
-        altWrap.appendChild(addAltBtn);
+        secGreeting.body.appendChild(addAltBtn);
+        const secWorldHeader = secWorld.section.firstElementChild;
+        secWorldHeader.style.display = 'flex';
+        secWorldHeader.style.alignItems = 'center';
+        secWorldHeader.style.justifyContent = 'space-between';
 
-        form.appendChild(altWrap);
+        const lorebookCount = doc.createElement('span');
+        lorebookCount.style.cssText = 'font-size:12px;color:var(--cm-text-sec);font-weight:500;';
+        lorebookCount.textContent = '(0 ??)';
+        secWorldHeader.appendChild(lorebookCount);
+
+        const worldNameInput = inputs['character_book'];
+        worldNameInput.style.marginBottom = '10px';
+
+        const currentBookRaw = this.getCharProp('character_book');
+        const normalizeBookEntries = (book) => {
+            if (!book) return [];
+            if (Array.isArray(book)) return [...book];
+            if (typeof book === 'object') {
+                if (Array.isArray(book.entries)) return [...book.entries];
+                if (book.entries && typeof book.entries === 'object') return Object.values(book.entries);
+            }
+            return [];
+        };
+
+        const lorebookEntriesContainer = doc.createElement('div');
+        lorebookEntriesContainer.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
+        secWorld.body.appendChild(lorebookEntriesContainer);
+
+        const updateLorebookCount = () => {
+            const count = lorebookEntriesContainer.querySelectorAll('.cm-lorebook-entry-edit').length;
+            lorebookCount.textContent = `(${count} 条目)`;
+        };
+
+        const addLorebookEntryField = (entry = null, index = null) => {
+            const idx = index !== null ? index : lorebookEntriesContainer.children.length;
+            const name = entry?.comment || entry?.name || '';
+            const keys = entry?.keys || entry?.key || [];
+            const keyStr = Array.isArray(keys) ? keys.join(', ') : String(keys || '');
+            const secondaryKeys = entry?.secondary_keys || [];
+            const secondaryKeyStr = Array.isArray(secondaryKeys) ? secondaryKeys.join(', ') : String(secondaryKeys || '');
+            const content = entry?.content || '';
+            const enabled = entry?.enabled !== false && !entry?.disable;
+            const selective = entry?.selective || false;
+            const constant = entry?.constant || false;
+            const order = entry?.order ?? entry?.insertion_order ?? idx;
+            const priority = entry?.priority ?? 10;
+
+            const wrapper = doc.createElement('div');
+            wrapper.className = `cm-lorebook-entry-edit${enabled ? '' : ' cm-lorebook-entry-disabled'}`;
+            wrapper.style.cssText = 'display:flex;flex-direction:column;gap:8px;background:var(--cm-bg-ter);padding:10px;border-radius:6px;border:1px solid var(--cm-border);';
+            wrapper.innerHTML = `
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="text" class="cm-input cm-lorebook-name-input" placeholder="条目名称/备注" style="flex:1;font-weight:600;">
+                    <label class="cm-lorebook-toggle ${enabled ? 'enabled' : 'disabled'}" style="font-size:12px;cursor:pointer;white-space:nowrap;">
+                        <input type="checkbox" class="cm-lorebook-enabled-checkbox" ${enabled ? 'checked' : ''} style="display:none;">
+                        ${enabled ? '启用' : '停用'}
+                    </label>
+                    <button type="button" class="cm-btn cm-btn-danger cm-lorebook-delete-btn" style="padding:4px 8px;">${ICONS.trash}</button>
+                </div>
+                <input type="text" class="cm-input cm-lorebook-keys-input" placeholder="关键词（逗号分隔）">
+                <input type="text" class="cm-input cm-lorebook-secondary-keys-input" placeholder="次级关键词（可选）">
+                <textarea class="cm-input cm-lorebook-content-input" rows="3" style="resize:vertical;" placeholder="条目内容"></textarea>
+                <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                    <label style="font-size:12px;"><input type="checkbox" class="cm-lorebook-selective-checkbox" ${selective ? 'checked' : ''}> 选择性匹配</label>
+                    <label style="font-size:12px;"><input type="checkbox" class="cm-lorebook-constant-checkbox" ${constant ? 'checked' : ''}> 常驻条目</label>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:6px;">顺序 <input type="number" class="cm-input cm-lorebook-order-input" style="width:80px;padding:4px 6px;"></label>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:6px;">优先级 <input type="number" class="cm-input cm-lorebook-priority-input" style="width:80px;padding:4px 6px;"></label>
+                </div>
+            `;
+
+            lorebookEntriesContainer.appendChild(wrapper);
+            wrapper.querySelector('.cm-lorebook-name-input').value = name;
+            wrapper.querySelector('.cm-lorebook-keys-input').value = keyStr;
+            wrapper.querySelector('.cm-lorebook-secondary-keys-input').value = secondaryKeyStr;
+            wrapper.querySelector('.cm-lorebook-content-input').value = content;
+            wrapper.querySelector('.cm-lorebook-order-input').value = String(order);
+            wrapper.querySelector('.cm-lorebook-priority-input').value = String(priority);
+
+            const toggleLabel = wrapper.querySelector('.cm-lorebook-toggle');
+            toggleLabel.onclick = (e) => {
+                e.preventDefault();
+                const checkbox = wrapper.querySelector('.cm-lorebook-enabled-checkbox');
+                const next = !checkbox.checked;
+                checkbox.checked = next;
+                toggleLabel.className = `cm-lorebook-toggle ${next ? 'enabled' : 'disabled'}`;
+                toggleLabel.innerHTML = `<input type="checkbox" class="cm-lorebook-enabled-checkbox" ${next ? 'checked' : ''} style="display:none;">${next ? '启用' : '停用'}`;
+                wrapper.classList.toggle('cm-lorebook-entry-disabled', !next);
+            };
+
+            wrapper.querySelector('.cm-lorebook-delete-btn').onclick = () => {
+                wrapper.remove();
+                updateLorebookCount();
+            };
+
+            updateLorebookCount();
+        };
+
+        const addLorebookBtn = doc.createElement('button');
+        addLorebookBtn.className = 'cm-btn cm-btn-secondary';
+        addLorebookBtn.innerHTML = '+ 添加条目';
+        addLorebookBtn.style.width = '100%';
+        addLorebookBtn.style.marginTop = '10px';
+        addLorebookBtn.disabled = true;
+        addLorebookBtn.onclick = () => addLorebookEntryField();
+        secWorld.body.appendChild(addLorebookBtn);
+
+        const getCharacterBookFromEditor = () => {
+            const entries = [];
+            lorebookEntriesContainer.querySelectorAll('.cm-lorebook-entry-edit').forEach((el, idx) => {
+                const name = el.querySelector('.cm-lorebook-name-input')?.value.trim() || `条目${idx + 1}`;
+                const keys = (el.querySelector('.cm-lorebook-keys-input')?.value || '').split(',').map(k => k.trim()).filter(Boolean);
+                const secondaryKeys = (el.querySelector('.cm-lorebook-secondary-keys-input')?.value || '').split(',').map(k => k.trim()).filter(Boolean);
+                const content = el.querySelector('.cm-lorebook-content-input')?.value || '';
+                const enabled = el.querySelector('.cm-lorebook-enabled-checkbox')?.checked ?? true;
+                const selective = el.querySelector('.cm-lorebook-selective-checkbox')?.checked || false;
+                const constant = el.querySelector('.cm-lorebook-constant-checkbox')?.checked || false;
+                const order = parseInt(el.querySelector('.cm-lorebook-order-input')?.value, 10);
+                const priority = parseInt(el.querySelector('.cm-lorebook-priority-input')?.value, 10);
+
+                entries.push({
+                    keys,
+                    secondary_keys: secondaryKeys,
+                    content,
+                    comment: name,
+                    enabled,
+                    selective,
+                    constant,
+                    insertion_order: Number.isFinite(order) ? order : idx,
+                    order: Number.isFinite(order) ? order : idx,
+                    priority: Number.isFinite(priority) ? priority : 10,
+                    id: idx,
+                    position: 'before_char',
+                    case_sensitive: false,
+                    use_regex: false,
+                    extensions: {},
+                });
+            });
+
+            if (entries.length === 0) return null;
+            return {
+                name: (worldNameInput.value || '').trim(),
+                description: '',
+                scan_depth: 2,
+                token_budget: 512,
+                recursive_scanning: false,
+                entries,
+            };
+        };
+
+        const normalizeComparableBook = (book) => {
+            if (!book) return null;
+            const entries = normalizeBookEntries(book);
+            if (entries.length === 0) return null;
+            return entries.map((entry) => ({
+                keys: (entry.keys || entry.key || []).map(k => String(k || '').trim()).filter(Boolean),
+                secondary_keys: (entry.secondary_keys || []).map(k => String(k || '').trim()).filter(Boolean),
+                content: String(entry.content || '').replace(/\r\n/g, '\n').trim(),
+                comment: String(entry.comment || entry.name || '').replace(/\r\n/g, '\n').trim(),
+                enabled: entry.enabled !== false && !entry.disable,
+                selective: !!entry.selective,
+                constant: !!entry.constant,
+                order: entry.order ?? entry.insertion_order ?? 0,
+                priority: entry.priority ?? 10,
+            }));
+        };
+
+        normalizeBookEntries(currentBookRaw).forEach((entry, idx) => addLorebookEntryField(entry, idx));
+        updateLorebookCount();
 
         container.appendChild(form);
 
-        // 事件处理
         unlockCheck.onchange = () => {
             const isUnlocked = unlockCheck.checked;
             unlockText.innerHTML = isUnlocked ? `${ICONS.unlock} 编辑模式` : `${ICONS.lock} 解锁编辑`;
             unlockText.style.color = isUnlocked ? 'var(--cm-accent)' : 'inherit';
-            
+
             Object.values(inputs).forEach(inp => inp.disabled = !isUnlocked);
-            // 备选开场白控件
             altInputs.forEach(inp => inp.disabled = !isUnlocked);
             altList.querySelectorAll('button').forEach(btn => btn.disabled = !isUnlocked);
             addAltBtn.disabled = !isUnlocked;
+
+            addLorebookBtn.disabled = !isUnlocked;
+            lorebookEntriesContainer.querySelectorAll('input, textarea, button').forEach(el => el.disabled = !isUnlocked);
+            lorebookEntriesContainer.querySelectorAll('.cm-lorebook-toggle').forEach((toggle) => {
+                toggle.style.pointerEvents = isUnlocked ? '' : 'none';
+                toggle.style.opacity = isUnlocked ? '' : '0.5';
+            });
 
             saveBtn.disabled = !isUnlocked;
             saveBtn.style.opacity = isUnlocked ? '1' : '0.5';
@@ -1999,36 +2203,36 @@ export class CharacterDetails {
 
         saveBtn.onclick = async () => {
             if (!unlockCheck.checked) return;
-            
+
             const changes = {};
             let hasChanges = false;
 
             fields.forEach(f => {
-                let newVal = inputs[f.key].value.trim();
+                const newVal = inputs[f.key].value.trim();
                 let oldVal = this.getCharProp(f.key);
 
-                // 特殊处理数组
-                if (f.key === 'alternate_names') {
-                    const newArr = newVal ? newVal.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [];
-                    const oldArr = Array.isArray(oldVal) ? oldVal : [];
-                    // 简单比较数组
-                    if (JSON.stringify(newArr) !== JSON.stringify(oldArr)) {
-                        changes[f.key] = newArr;
-                        hasChanges = true;
-                    }
-                } else {
-                    if (newVal !== (oldVal || '')) {
-                        changes[f.key] = newVal;
-                        hasChanges = true;
-                    }
+                if (f.key === 'character_book') {
+                    oldVal = typeof oldVal === 'string' ? oldVal : (oldVal && typeof oldVal === 'object' ? String(oldVal.name || '') : '');
+                }
+
+                if (newVal !== (oldVal || '')) {
+                    changes[f.key] = newVal;
+                    hasChanges = true;
                 }
             });
 
-            // 处理备选开场白
             const newAlts = altInputs.map(inp => inp.value).filter(s => s.trim() !== '');
             const oldAlts = this.getCharProp('alternate_greetings') || [];
             if (JSON.stringify(newAlts) !== JSON.stringify(oldAlts)) {
                 changes['alternate_greetings'] = newAlts;
+                hasChanges = true;
+            }
+
+            const oldBookComparable = normalizeComparableBook(this.getCharProp('character_book'));
+            const newBook = getCharacterBookFromEditor();
+            const newBookComparable = normalizeComparableBook(newBook);
+            if (JSON.stringify(oldBookComparable) !== JSON.stringify(newBookComparable)) {
+                changes['character_book'] = newBook;
                 hasChanges = true;
             }
 
@@ -2041,31 +2245,37 @@ export class CharacterDetails {
                 await saveCharacterData(this.char.fileName, (data) => {
                     Object.assign(data, changes);
                 });
-                
-                // 更新本地对象
+
                 if (this.char.data) {
                     Object.assign(this.char.data, changes);
                 } else {
                     Object.assign(this.char, changes);
                 }
-                
-                notify('保存成功', 'success');
-                
-                // 刷新界面
-                this.renderDetailsTab(); // 刷新详情页
-                this.renderHeader(); // 刷新头部（如版本号）
-                renderView(); // 刷新列表
-                
-                // 重新锁定
+
+                this.renderDetailsTab();
+                if (typeof this.rebuildHeaderPreserveOrder === 'function') {
+                    this.rebuildHeaderPreserveOrder();
+                } else if (this.container) {
+                    const detailBody = this.container.querySelector('.cm-detail-body');
+                    const tabsNav = this.container.querySelector('.cm-tabs-nav');
+                    const oldHeader = this.container.querySelector('.cm-detail-header');
+                    if (oldHeader) oldHeader.remove();
+                    this.renderHeader();
+                    const newHeader = this.container.querySelector('.cm-detail-header');
+                    const anchor = tabsNav || detailBody;
+                    if (anchor && newHeader) this.container.insertBefore(newHeader, anchor);
+                }
+                renderView();
+
                 unlockCheck.checked = false;
                 unlockCheck.onchange();
+                notify('保存成功', 'success');
 
             } catch (e) {
                 notify('保存失败: ' + e.message, 'error');
             }
         };
     }
-
     renderTags(container) {
         container.innerHTML = '';
         const charTags = getCharTags(this.char.fileName);
@@ -2400,7 +2610,7 @@ function buildCharacterBookHTML(charData) {
     let html = '<div class="cm-adv-block">';
     html += '<div class="cm-adv-block-header cm-adv-toggle">';
     html += '<span class="cm-adv-toggle-icon">▼</span>';
-    html += '<span class="cm-adv-block-title">🌐 角色专属世界书</span>';
+    html += '<span class="cm-adv-block-title">🌐 角色世界书</span>';
     html += '<span class="cm-adv-block-badge">' + escapeHtml(bookName) + '</span>';
     html += '<span class="cm-adv-block-stats">' + enabledCount + ' 启用';
     if (disabledCount > 0) html += ' / ' + disabledCount + ' 禁用';
@@ -2601,3 +2811,4 @@ function buildTavernHelperHTML(charData) {
     html += '</div>'; // cm-adv-block
     return html;
 }
+

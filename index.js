@@ -6,7 +6,7 @@ export { createBaseDialog, showAlert, showConfirm, showDeleteConfirm };
 import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
 import { getCache, setCache, migrateFromLocalStorage } from './db.js';
-import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo, syncAllTags } from './data.js';
+import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo, syncAllTags, deleteChar } from './data.js';
 import { importTags } from './st-tags.js';
 import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
 import { showSettingsDialog } from './settings.js';
@@ -355,8 +355,9 @@ async function showUrlImportDialog() {
 
                             // 2. 注入 Note
                             if (note) {
-                                const oldNote = dataBlock.creator_notes || '';
-                                dataBlock.creator_notes = oldNote ? oldNote + '\n' + note : note;
+                                if (!dataBlock.extensions) dataBlock.extensions = {};
+                                const oldNote = dataBlock.extensions.st_character_manager_note || '';
+                                dataBlock.extensions.st_character_manager_note = oldNote ? oldNote + '\n' + note : note;
                                 dataModified = true;
                             }
 
@@ -2558,7 +2559,10 @@ function createModal() {
                 state.characters = state.characters.filter(c => c.fileName !== fileName);
                 findDuplicates(); updateStats(); renderTagSidebar();
                 notify('已删除', 'success');
-            } catch (err) { notify('删除失败', 'error'); }
+            } catch (err) {
+                console.error('删除角色失败:', err);
+                notify('删除失败', 'error');
+            }
             return;
         }
 
@@ -2841,7 +2845,9 @@ function createModal() {
                 });
                 state.characters = state.characters.filter(c => c.fileName !== fn);
                 ok++;
-            } catch (e) { }
+            } catch (e) {
+                console.error('批量删除角色失败:', e);
+            }
         }
 
         state.selectedCards.clear();

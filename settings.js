@@ -103,29 +103,52 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>宏替换颜色主题</span>
-                        <small>设置 {{char}} 和 {{user}} 的高亮颜色</small>
+                        <small>\u8bbe\u7f6e {{user}} \u548c {{char}} \u7684\u9ad8\u4eae\u989c\u8272</small>
                     </div>
                     <select id="cmSetMacroTheme" class="cm-select-input">
-                        <option value="dark1" ${settings.macroColorTheme === 'dark1' ? 'selected' : ''}>暗色1 (冷青 vs 暖橙)</option>
-                        <option value="dark2" ${settings.macroColorTheme === 'dark2' ? 'selected' : ''}>暗色2 (蓝色 vs 粉色)</option>
-                        <option value="dark3" ${settings.macroColorTheme === 'dark3' ? 'selected' : ''}>暗色3 (粉色 vs 蓝色)</option>
-                        <option value="dark4" ${settings.macroColorTheme === 'dark4' ? 'selected' : ''}>暗色4 (紫 vs 金)</option>
-                        <option value="dark5" ${settings.macroColorTheme === 'dark5' ? 'selected' : ''}>暗色5 (薄荷绿 vs 天蓝)</option>
-                        <option value="dark6" ${settings.macroColorTheme === 'dark6' ? 'selected' : ''}>暗色6 (青绿 vs 粉红)</option>
-                        <option value="light1" ${settings.macroColorTheme === 'light1' ? 'selected' : ''}>亮色1 (深青 vs 深橙)</option>
-                        <option value="light2" ${settings.macroColorTheme === 'light2' ? 'selected' : ''}>亮色2 (深紫 vs 深蓝)</option>
+                        <option value="dark1" ${settings.macroColorTheme === 'dark1' ? 'selected' : ''}>\u6697\u82721 (\u6696\u6a59 vs \u51b7\u9752)</option>
+                        <option value="dark2" ${settings.macroColorTheme === 'dark2' ? 'selected' : ''}>\u6697\u82722 (\u7c89\u8272 vs \u84dd\u8272)</option>
+                        <option value="dark3" ${settings.macroColorTheme === 'dark3' ? 'selected' : ''}>\u6697\u82723 (\u84dd\u8272 vs \u7c89\u8272)</option>
+                        <option value="dark4" ${settings.macroColorTheme === 'dark4' ? 'selected' : ''}>\u6697\u82724 (\u91d1\u8272 vs \u7d2b\u8272)</option>
+                        <option value="dark5" ${settings.macroColorTheme === 'dark5' ? 'selected' : ''}>\u6697\u82725 (\u5929\u84dd vs \u8584\u8377\u7eff)</option>
+                        <option value="dark6" ${settings.macroColorTheme === 'dark6' ? 'selected' : ''}>\u6697\u82726 (\u7c89\u7ea2 vs \u9752\u7eff)</option>
+                        <option value="light1" ${settings.macroColorTheme === 'light1' ? 'selected' : ''}>\u4eae\u82721 (\u6df1\u6a59 vs \u6df1\u9752)</option>
+                        <option value="light2" ${settings.macroColorTheme === 'light2' ? 'selected' : ''}>\u4eae\u82722 (\u6df1\u84dd vs \u6df1\u7d2b)</option>
                         <option value="custom" ${settings.macroColorTheme === 'custom' ? 'selected' : ''}>自定义</option>
                     </select>
                 </div>
                 
                 <div id="cmCustomMacroColorWrap" style="display:${settings.macroColorTheme === 'custom' ? 'block' : 'none'};padding:10px;background:var(--cm-bg-ter);border-radius:8px;margin-bottom:12px;">
                     <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                        <label style="font-size:12px;color:var(--cm-text-sec);width:60px;">{{user}}</label>
+                        <input type="color" id="cmSetCustomUserColor" value="${settings.customUserColor || '#FB923C'}" style="cursor:pointer;background:none;border:none;padding:0;width:30px;height:30px;">
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;">
                         <label style="font-size:12px;color:var(--cm-text-sec);width:60px;">{{char}}</label>
                         <input type="color" id="cmSetCustomCharColor" value="${settings.customCharColor || '#22D3EE'}" style="cursor:pointer;background:none;border:none;padding:0;width:30px;height:30px;">
                     </div>
-                    <div style="display:flex;gap:10px;align-items:center;">
-                        <label style="font-size:12px;color:var(--cm-text-sec);width:60px;">{{user}}</label>
-                        <input type="color" id="cmSetCustomUserColor" value="${settings.customUserColor || '#FB923C'}" style="cursor:pointer;background:none;border:none;padding:0;width:30px;height:30px;">
+                </div>
+
+                <div id="cmMacroPreviewCard" style="padding:12px;border:1px solid var(--cm-border);border-radius:10px;background:var(--cm-bg-sec);margin-bottom:12px;">
+                    <h3 style="margin:0 0 10px 0;font-size:13px;color:var(--cm-text);font-weight:600;">染色预览</h3>
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--cm-border);">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span id="cmPreviewUserSwatch" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#FB923C;"></span>
+                            <span style="font-size:12px;color:var(--cm-text);">{{user}}</span>
+                        </div>
+                        <span id="cmPreviewUserHex" style="font-size:12px;color:var(--cm-text-sec);">#FB923C</span>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--cm-border);">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span id="cmPreviewCharSwatch" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#22D3EE;"></span>
+                            <span style="font-size:12px;color:var(--cm-text);">{{char}}</span>
+                        </div>
+                        <span id="cmPreviewCharHex" style="font-size:12px;color:var(--cm-text-sec);">#22D3EE</span>
+                    </div>
+                    <div style="margin-top:10px;font-size:12px;line-height:1.7;color:var(--cm-text);">
+                        对话示例：<br>
+                        <span id="cmPreviewUserToken" style="font-weight:700;color:#FB923C;">{{user}}</span>：我想把占位符渲染成彩色。<br>
+                        <span id="cmPreviewCharToken" style="font-weight:700;color:#22D3EE;">{{char}}</span>：你好，今天想聊什么？
                     </div>
                 </div>
 
@@ -649,6 +672,38 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         // Macro Color Theme
         const macroThemeSelect = ov.querySelector('#cmSetMacroTheme');
         const customMacroWrap = ov.querySelector('#cmCustomMacroColorWrap');
+
+        const getMacroPreviewColors = (theme, customChar, customUser) => {
+            if (theme === 'custom') return { char: customChar || '#22D3EE', user: customUser || '#FB923C' };
+            const map = {
+                dark1: { char: '#22D3EE', user: '#FB923C' },
+                dark2: { char: '#60A5FA', user: '#F472B6' },
+                dark3: { char: '#F472B6', user: '#60A5FA' },
+                dark4: { char: '#A855F7', user: '#F59E0B' },
+                dark5: { char: '#34D399', user: '#60A5FA' },
+                dark6: { char: '#14B8A6', user: '#FB7185' },
+                light1: { char: '#0F766E', user: '#C2410C' },
+                light2: { char: '#6D28D9', user: '#1D4ED8' },
+            };
+            return map[theme] || map.dark1;
+        };
+
+        const updateMacroPreview = () => {
+            const colors = getMacroPreviewColors(state.settings.macroColorTheme || 'dark1', state.settings.customCharColor, state.settings.customUserColor);
+            const userSwatch = ov.querySelector('#cmPreviewUserSwatch');
+            const charSwatch = ov.querySelector('#cmPreviewCharSwatch');
+            const userHex = ov.querySelector('#cmPreviewUserHex');
+            const charHex = ov.querySelector('#cmPreviewCharHex');
+            const userToken = ov.querySelector('#cmPreviewUserToken');
+            const charToken = ov.querySelector('#cmPreviewCharToken');
+            if (userSwatch) userSwatch.style.background = colors.user;
+            if (charSwatch) charSwatch.style.background = colors.char;
+            if (userHex) userHex.textContent = (colors.user || '').toUpperCase();
+            if (charHex) charHex.textContent = (colors.char || '').toUpperCase();
+            if (userToken) userToken.style.color = colors.user;
+            if (charToken) charToken.style.color = colors.char;
+        };
+
         if (macroThemeSelect) {
             macroThemeSelect.onchange = (e) => {
                 state.settings.macroColorTheme = e.target.value;
@@ -656,6 +711,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 if (customMacroWrap) {
                     customMacroWrap.style.display = e.target.value === 'custom' ? 'block' : 'none';
                 }
+                updateMacroPreview();
                 renderView();
             };
         }
@@ -663,15 +719,19 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         const bindColor = (id, key) => {
             const el = ov.querySelector('#' + id);
             if (el) {
-                el.onchange = (e) => {
+                const handler = (e) => {
                     state.settings[key] = e.target.value;
                     saveSettings();
+                    updateMacroPreview();
                     renderView();
                 };
+                el.onchange = handler;
+                el.oninput = handler;
             }
         };
-        bindColor('cmSetCustomCharColor', 'customCharColor');
         bindColor('cmSetCustomUserColor', 'customUserColor');
+        bindColor('cmSetCustomCharColor', 'customCharColor');
+        updateMacroPreview();
 
         // Sync All Tags
         const syncAllTagsBtn = ov.querySelector('#cmSyncAllTagsBtn');
@@ -758,10 +818,10 @@ function showTranslationDisclaimer(_unused, onAccept, onReject) {
 
     const ov = document.createElement('div');
     ov.className = 'cm-disclaimer-overlay ' + (state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light');
-    ov.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);z-index:200000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+    ov.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;height:100dvh;min-height:100dvh;background:rgba(0,0,0,0.7);z-index:200000;display:flex;align-items:center;justify-content:center;padding:calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));box-sizing:border-box';
 
     ov.innerHTML = `
-        <div style="background:var(--cm-bg-sec);border-radius:16px;max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.3)">
+        <div style="background:var(--cm-bg-sec);border-radius:16px;max-width:560px;width:100%;max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 40px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.3)">
             <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--cm-border);flex-shrink:0">
                 <h3 style="margin:0;font-size:16px;color:var(--cm-text)">⚠️ 重要提示 / Important Notice</h3>
             </div>
