@@ -422,11 +422,15 @@ async function showUrlImportDialog() {
                                 if (addTagToChar(targetChar.avatar, tagId, true)) tagCount++;
                             }
                             if (tagCount > 0) notify(`已添加 ${tagCount} 个标签`, 'success');
-                            
-                            // 刷新界面以显示标签
-                            renderView();
-                            renderTagSidebar();
                         }
+
+                        // 尝试导入角色自带的标签 (如果存在)
+                        // 即使没有手动选择标签，角色卡本身可能自带标签，需要导入到 ST-CM
+                        await importTags(targetChar, { importSetting: 1 }); // 1 = ASK
+
+                        // 刷新界面以显示标签
+                        renderView();
+                        renderTagSidebar();
                     } else {
                         if (selectedTagIds.length > 0) {
                              console.warn('未找到新导入的角色，无法应用标签关联');

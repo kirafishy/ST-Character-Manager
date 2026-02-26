@@ -40,7 +40,7 @@ export function updateTag(tagId, name, color) {
     return false;
 }
 
-export function deleteTag(tagId, skipSync = false) {
+export function deleteTag(tagId, skipSync = false, markUnsynced = true) {
     const idx = state.tags.findIndex(t => t.id === tagId);
     if (idx > -1) {
         state.tags.splice(idx, 1);
@@ -57,9 +57,13 @@ export function deleteTag(tagId, skipSync = false) {
         if (affectedFiles.length > 0) {
             if (!skipSync && state.settings.autoSyncTags) {
                 affectedFiles.forEach(fileName => syncTagsToCard(fileName));
-            } else if (skipSync) {
+            } else if (skipSync && markUnsynced) {
                 state.hasUnsyncedTags = true;
                 setCache('hasUnsyncedTags', true);
+                
+                // 记录哪些卡片需要同步
+                if (!state.unsyncedCards) state.unsyncedCards = new Set();
+                affectedFiles.forEach(fileName => state.unsyncedCards.add(fileName));
             }
         }
         
@@ -74,23 +78,27 @@ export function getCharTags(fileName) {
     return ids.map(id => state.tags.find(t => t.id === id)).filter(Boolean);
 }
 
-export function addTagToChar(fileName, tagId, skipSync = false) {
+export function addTagToChar(fileName, tagId, skipSync = false, markUnsynced = true) {
     if (!state.tagMap[fileName]) state.tagMap[fileName] = [];
     if (!state.tagMap[fileName].includes(tagId)) {
         state.tagMap[fileName].push(tagId);
         saveTags();
         if (!skipSync && state.settings.autoSyncTags) {
             syncTagsToCard(fileName);
-        } else if (skipSync) {
+        } else if (skipSync && markUnsynced) {
             state.hasUnsyncedTags = true;
             setCache('hasUnsyncedTags', true);
+            
+            // 记录哪些卡片需要同步
+            if (!state.unsyncedCards) state.unsyncedCards = new Set();
+            state.unsyncedCards.add(fileName);
         }
         return true;
     }
     return false;
 }
 
-export function removeTagFromChar(fileName, tagId, skipSync = false) {
+export function removeTagFromChar(fileName, tagId, skipSync = false, markUnsynced = true) {
     const ids = state.tagMap[fileName];
     if (ids) {
         const idx = ids.indexOf(tagId);
@@ -99,9 +107,13 @@ export function removeTagFromChar(fileName, tagId, skipSync = false) {
             saveTags();
             if (!skipSync && state.settings.autoSyncTags) {
                 syncTagsToCard(fileName);
-            } else if (skipSync) {
+            } else if (skipSync && markUnsynced) {
                 state.hasUnsyncedTags = true;
                 setCache('hasUnsyncedTags', true);
+                
+                // 记录哪些卡片需要同步
+                if (!state.unsyncedCards) state.unsyncedCards = new Set();
+                state.unsyncedCards.add(fileName);
             }
             return true;
         }
@@ -265,9 +277,20 @@ export async function syncTagsToCard(fileName) {
  * @param {Function} onProgress - 进度回调 (current, total)
  */
 export async function syncAllTags(onProgress) {
-    const chars = state.characters;
+    // 如果有记录未同步的卡片，则只同步这些卡片
+    const targetFiles = (state.unsyncedCards && state.unsyncedCards.size > 0)
+        ? Array.from(state.unsyncedCards)
+        : state.characters.map(c => c.fileName);
+        
     let count = 0;
-    const total = chars.length;
+    const total = targetFiles.length;
+    
+    if (total === 0) {
+        state.hasUnsyncedTags = false;
+        setCache('hasUnsyncedTags', false);
+        if (state.unsyncedCards) state.unsyncedCards.clear();
+        return 0;
+    }
     
     const concurrency = 50;
     let currentIndex = 0;
@@ -275,8 +298,8 @@ export async function syncAllTags(onProgress) {
     const worker = async () => {
         while (currentIndex < total) {
             const i = currentIndex++;
-            const char = chars[i];
-            await syncTagsToCard(char.fileName);
+            const fileName = targetFiles[i];
+            await syncTagsToCard(fileName);
             count++;
             if (onProgress) onProgress(count, total);
         }
@@ -291,6 +314,7 @@ export async function syncAllTags(onProgress) {
     
     state.hasUnsyncedTags = false;
     setCache('hasUnsyncedTags', false);
+    if (state.unsyncedCards) state.unsyncedCards.clear();
     
     return count;
 }
