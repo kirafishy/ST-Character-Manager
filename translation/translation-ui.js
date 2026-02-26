@@ -8,6 +8,7 @@ import { writePngText } from './png-writer.js';
 import { t } from './i18n.js';
 import { scanAndFilterGlossary } from './glossary-scanner.js';
 import { detectMVU, analyzeMVUStructure, generateMVUProtectionPrompt, preprocessMVUContent, postprocessMVUContent } from './mvu-handler.js';
+import { showTranslationSettingsDialog } from '../settings.js';
 
 // 注入的外部依赖
 let _createBaseDialog = null;
@@ -295,6 +296,10 @@ function buildDialogHTML() {
                         🔍 ${t('btnScanGlossary')}
                     </button>
 
+                    <button id="cmTransSettingsBtn" class="cm-trans-btn cm-trans-btn-secondary">
+                        ⚙️ ${t('btnSettings')}
+                    </button>
+
                     <!-- 进度管理下拉菜单 -->
                     <div class="cm-trans-dropdown">
                         <button class="cm-trans-btn cm-trans-btn-warning">
@@ -558,7 +563,15 @@ function bindAllEvents(ov) {
     // 防截断模式
     const singleModeCb = ov.querySelector('#cmTransSingleMode');
     if (singleModeCb) {
-        singleModeCb.onchange = () => {
+        singleModeCb.onchange = async () => {
+            // 如果是开启防截断模式，需要确认
+            if (singleModeCb.checked) {
+                const confirmed = await _showConfirm(t('confirmAntiTruncation'));
+                if (!confirmed) {
+                    singleModeCb.checked = false;
+                    return;
+                }
+            }
             state.settings.singleGroupMode = singleModeCb.checked;
             saveSettings();
         };
@@ -600,6 +613,16 @@ function bindAllEvents(ov) {
     const scanGlossaryBtn = ov.querySelector('#cmTransScanGlossary');
     if (scanGlossaryBtn) {
         scanGlossaryBtn.onclick = () => doScanGlossary(ov);
+    }
+
+    // === 翻译设置 ===
+    const settingsBtn = ov.querySelector('#cmTransSettingsBtn');
+    if (settingsBtn) {
+        settingsBtn.onclick = () => {
+            showTranslationSettingsDialog(_createBaseDialog, _notify, () => {
+                service = new TranslationService(state.settings);
+            });
+        };
     }
 
     const glossaryToggle = ov.querySelector('#cmTransGlossaryToggle');

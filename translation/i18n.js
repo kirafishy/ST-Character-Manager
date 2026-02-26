@@ -25,6 +25,9 @@ export const i18n = {
         menuExportPNG: '🖼️ 导出 PNG',
         menuExportJSON: '📄 导出 JSON',
 
+        // 设置
+        btnSettings: '翻译设置',
+
         // 术语表扫描
         btnScanGlossary: '扫描专有名词',
         glossaryTitle: '专有名词术语表',
@@ -100,6 +103,7 @@ export const i18n = {
         confirmCloseTip: '建议先“保存进度”导出为JSON文件，以便稍后继续。',
         btnSaveProgressAndClose: '保存进度并关闭',
         btnDiscardAndClose: '放弃修改并关闭',
+        confirmAntiTruncation: '警告：开启防截断模式会显著增加翻译耗时和 API 成本（约增加 2-3 倍）。\n\n仅建议在翻译超长文本（如世界书、长背景故事）且经常遇到截断问题时开启。\n\n确定要开启吗？',
         
         // 设置相关
         settingSourceLang: '源语言',
@@ -107,6 +111,7 @@ export const i18n = {
         settingUILang: '界面语言',
         settingSystemPrompt: '翻译 System Prompt',
         settingResetPrompt: '恢复默认',
+        settingRetryCount: '失败重试次数',
 
         // 空状态
         emptyNoData: '没有可翻译的内容',
@@ -140,6 +145,9 @@ export const i18n = {
         menuImportAsNew: '📋 Import as New Card',
         menuExportPNG: '🖼️ Export PNG',
         menuExportJSON: '📄 Export JSON',
+
+        // 设置
+        btnSettings: 'Settings',
 
         // 术语表扫描
         btnScanGlossary: 'Scan Proper Nouns',
@@ -216,6 +224,7 @@ export const i18n = {
         confirmCloseTip: 'It is recommended to "Save Progress" to a JSON file first.',
         btnSaveProgressAndClose: 'Save Progress & Close',
         btnDiscardAndClose: 'Discard & Close',
+        confirmAntiTruncation: 'Warning: Enabling Anti-truncation mode will significantly increase translation time and API costs (approx. 2-3x).\n\nIt is only recommended when translating very long texts (like Lorebooks, long backgrounds) and frequently encountering truncation issues.\n\nAre you sure you want to enable it?',
         
         // 设置相关
         settingSourceLang: 'Source Language',
@@ -223,6 +232,7 @@ export const i18n = {
         settingUILang: 'UI Language',
         settingSystemPrompt: 'Translation System Prompt',
         settingResetPrompt: 'Reset to Default',
+        settingRetryCount: 'Retry Count on Failure',
 
         // 空状态
         emptyNoData: 'No translatable content',

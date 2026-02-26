@@ -212,117 +212,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
  
                  <!-- 翻译详细设置 (仅在启用时显示) -->
                  <div id="cmTransSettings" style="display:${settings.translationEnabled ? 'block' : 'none'};padding:10px;background:var(--cm-bg-ter);border-radius:8px;margin-top:10px">
-                     
-                     <!-- 语言设置 -->
-                     <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
-                         <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--cm-text)" data-tl-key="langSettings">🌐 ${settings.translationUILanguage === 'en' ? 'Language Settings' : '语言设置'}</div>
-                         <div class="cm-settings-lang-row">
-                             <div class="cm-settings-lang-col">
-                                 <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="sourceLang">${settings.translationUILanguage === 'en' ? 'Source Language' : '源语言'}</label>
-                                 <select id="cmSetSourceLang" class="cm-select-input" style="width:100%;height:30px;box-sizing:border-box">
-                                     <option value="auto" ${settings.sourceLanguage === 'auto' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? 'Auto Detect' : '自动检测 (Auto)'}</option>
-                                     <option value="en" ${settings.sourceLanguage === 'en' ? 'selected' : ''}>English</option>
-                                     <option value="ja" ${settings.sourceLanguage === 'ja' ? 'selected' : ''}>日本語</option>
-                                     <option value="ko" ${settings.sourceLanguage === 'ko' ? 'selected' : ''}>한국어</option>
-                                     <option value="zh-CN" ${settings.sourceLanguage === 'zh-CN' ? 'selected' : ''}>简体中文</option>
-                                     <option value="zh-TW" ${settings.sourceLanguage === 'zh-TW' ? 'selected' : ''}>繁體中文</option>
-                                 </select>
-                             </div>
-                             <div class="cm-settings-lang-col">
-                                 <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="targetLang">${settings.translationUILanguage === 'en' ? 'Target Language' : '目标语言'}</label>
-                                 <select id="cmSetTargetLang" class="cm-select-input" style="width:100%;height:30px;box-sizing:border-box">
-                                     <option value="zh-CN" ${settings.targetLanguage === 'zh-CN' ? 'selected' : ''}>简体中文</option>
-                                     <option value="zh-TW" ${settings.targetLanguage === 'zh-TW' ? 'selected' : ''}>繁體中文</option>
-                                     <option value="en" ${settings.targetLanguage === 'en' ? 'selected' : ''}>English</option>
-                                     <option value="ja" ${settings.targetLanguage === 'ja' ? 'selected' : ''}>日本語</option>
-                                     <option value="ko" ${settings.targetLanguage === 'ko' ? 'selected' : ''}>한국어</option>
-                                     <option value="custom" ${settings.targetLanguage === 'custom' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? '✏️ Custom...' : '✏️ 自定义...'}</option>
-                                 </select>
-                             </div>
-                             <div id="cmCustomTargetLangWrap" class="cm-settings-lang-custom" style="display:${settings.targetLanguage === 'custom' ? 'flex' : 'none'}">
-                                 <div style="width:100%">
-                                     <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)">${settings.translationUILanguage === 'en' ? 'Custom Language' : '自定义语言'}</label>
-                                     <input type="text" id="cmSetCustomTargetLang" class="cm-input" value="${escapeHtml(settings.customTargetLanguage || '')}"
-                                         placeholder="${settings.translationUILanguage === 'en' ? 'e.g. Thai' : '如：泰语'}"
-                                         style="width:100%;box-sizing:border-box;font-size:12px;height:30px">
-                                 </div>
-                             </div>
-                         </div>
-                     </div>
- 
-                     <!-- 界面语言 -->
-                     <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
-                         <div class="cm-setting-item" style="margin:0">
-                             <div class="cm-setting-label">
-                                 <span style="font-size:12px" data-tl-key="uiLang">${settings.translationUILanguage === 'en' ? 'UI Language' : '翻译界面语言'}</span>
-                                 <small data-tl-key="uiLangDesc">${settings.translationUILanguage === 'en' ? 'Only affects the translation module UI' : '仅影响翻译模块的界面显示'}</small>
-                             </div>
-                             <select id="cmSetTransUILang" class="cm-select-input" style="max-width:120px">
-                                 <option value="zh-CN" ${settings.translationUILanguage === 'zh-CN' ? 'selected' : ''}>中文</option>
-                                 <option value="en" ${settings.translationUILanguage === 'en' ? 'selected' : ''}>English</option>
-                             </select>
-                         </div>
-                     </div>
- 
-                     <!-- API 设置 -->
-                     <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
-                         <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
-                             <div class="cm-setting-label">
-                                 <span style="font-size:12px" data-tl-key="apiProtocol">${settings.translationUILanguage === 'en' ? 'API Protocol' : 'API 协议'}</span>
-                                 <small data-tl-key="apiProtocolDesc">${settings.translationUILanguage === 'en' ? 'Select the API type for translation' : '选择翻译使用的 API 类型'}</small>
-                             </div>
-                             <select id="cmSetTransApi" class="cm-select-input">
-                                 <option value="openai" ${settings.translationApi === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
-                                 <option value="tavern" ${settings.translationApi === 'tavern' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? 'Tavern Native (Experimental)' : '酒馆原生 (实验性)'}</option>
-                             </select>
-                         </div>
-
-                         <!-- Debug Mode Switch -->
-                         <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
-                             <div class="cm-setting-label">
-                                 <span style="font-size:12px">Debug Mode</span>
-                                 <small>${settings.translationUILanguage === 'en' ? 'Output raw API requests/responses to console' : '在控制台输出原始 API 请求和响应信息'}</small>
-                             </div>
-                             <label class="cm-switch" style="transform:scale(0.8);margin-right:-5px">
-                                 <input type="checkbox" id="cmSetDebugMode" ${settings.debugMode ? 'checked' : ''}>
-                                 <span class="cm-slider"></span>
-                             </label>
-                         </div>
- 
-                         <div id="cmSetOpenaiConfig" style="display:${settings.translationApi === 'openai' ? 'block' : 'none'}">
-                             <div style="margin-bottom:8px">
-                                 <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)">API Base URL</label>
-                                 <input type="text" id="cmSetOpenaiUrl" class="cm-input" value="${settings.openaiBaseUrl || ''}" placeholder="https://api.openai.com/v1" style="width:100%;box-sizing:border-box">
-                             </div>
-                             <div style="margin-bottom:8px">
-                                 <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)">API Key</label>
-                                 <input type="password" id="cmSetOpenaiKey" class="cm-input" value="${settings.openaiApiKey || ''}" placeholder="sk-..." style="width:100%;box-sizing:border-box">
-                             </div>
-                             <div style="margin-bottom:8px">
-                                 <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="model">${settings.translationUILanguage === 'en' ? 'Model' : '模型'}</label>
-                                 <div style="display:flex;gap:6px;align-items:center">
-                                     <select id="cmSetOpenaiModel" class="cm-select-input" style="flex:1;min-width:0">
-                                         ${settings.openaiModel ? '<option value="' + settings.openaiModel + '" selected>' + settings.openaiModel + '</option>' : '<option value="">' + (settings.translationUILanguage === 'en' ? 'Connect first to get model list' : '请先连接获取模型列表') + '</option>'}
-                                     </select>
-                                     <button id="cmSetFetchModels" class="cm-btn cm-btn-primary" style="flex-shrink:0;font-size:12px;padding:6px 12px;white-space:nowrap">${settings.translationUILanguage === 'en' ? '🔗 Connect' : '🔗 连接'}</button>
-                                 </div>
-                                 <div id="cmSetModelStatus" style="font-size:11px;margin-top:4px;color:var(--cm-text-sec)"></div>
-                             </div>
-                         </div>
-                     </div>
- 
-                     <!-- 前置 System Prompt -->
-                     <div>
-                         <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--cm-text)" data-tl-key="sysPromptTitle">📝 ${settings.translationUILanguage === 'en' ? 'Translation System Prompt' : '翻译 System Prompt'}</div>
-                         <div style="font-size:11px;color:var(--cm-text-sec);margin-bottom:6px" data-tl-key="sysPromptDesc">${settings.translationUILanguage === 'en' ? 'System prompt sent to AI during translation, guiding translation behavior and style' : '翻译时发送给 AI 的系统提示词，指导翻译行为和风格'}</div>
-                         <textarea id="cmSetTransSysPrompt" style="width:100%;box-sizing:border-box;min-height:120px;resize:vertical;
-                             background:var(--cm-input-bg);color:var(--cm-text);border:1px solid var(--cm-border);
-                             border-radius:6px;padding:8px;font-size:12px;line-height:1.5;font-family:inherit"
-                             placeholder="${settings.translationUILanguage === 'en' ? 'Enter translation system prompt...' : '输入翻译系统提示词...'}">${escapeHtml(settings.translationSystemPrompt || '')}</textarea>
-                         <div style="display:flex;justify-content:flex-end;margin-top:4px">
-                             <button id="cmSetResetSysPrompt" class="cm-btn cm-btn-secondary" style="font-size:11px;padding:3px 8px">${settings.translationUILanguage === 'en' ? 'Reset Default' : '恢复默认'}</button>
-                         </div>
-                     </div>
+                     ${getTranslationSettingsHTML(settings)}
                  </div>
             </div>
 
@@ -463,163 +353,12 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
             };
         }
 
-        // 语言设置绑定
-        const bindLangSelect = (id, key) => {
-            const el = ov.querySelector('#' + id);
-            if (el) {
-                el.onchange = (e) => {
-                    state.settings[key] = e.target.value;
-                    saveSettings();
-                };
-            }
-        };
-        bindLangSelect('cmSetSourceLang', 'sourceLanguage');
-
-        // 目标语言 — 包含自定义选项逻辑
-        const targetLangSelect = ov.querySelector('#cmSetTargetLang');
-        const customTargetWrap = ov.querySelector('#cmCustomTargetLangWrap');
-        const customTargetInput = ov.querySelector('#cmSetCustomTargetLang');
-        if (targetLangSelect) {
-            targetLangSelect.onchange = (e) => {
-                state.settings.targetLanguage = e.target.value;
-                saveSettings();
-                if (customTargetWrap) {
-                    customTargetWrap.style.display = e.target.value === 'custom' ? 'flex' : 'none';
-                }
-            };
-        }
-        if (customTargetInput) {
-            customTargetInput.onchange = (e) => {
-                state.settings.customTargetLanguage = e.target.value.trim();
-                saveSettings();
-            };
-        }
-
-        // UI 语言切换 — 切换后重新打开设置界面以刷新标签
-        const transUILangSelect = ov.querySelector('#cmSetTransUILang');
-        if (transUILangSelect) {
-            transUILangSelect.onchange = (e) => {
-                state.settings.translationUILanguage = e.target.value;
-                saveSettings();
-                // 重新打开设置界面以刷新翻译设置区域的语言
-                ov.remove();
-                showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm });
-            };
-        }
-
-        // System Prompt 绑定
-        const sysPromptInput = ov.querySelector('#cmSetTransSysPrompt');
-        if (sysPromptInput) {
-            sysPromptInput.onchange = () => {
-                state.settings.translationSystemPrompt = sysPromptInput.value;
-                saveSettings();
-            };
-        }
-
-        // 恢复默认 System Prompt
-        const resetSysPromptBtn = ov.querySelector('#cmSetResetSysPrompt');
-        if (resetSysPromptBtn) {
-            resetSysPromptBtn.onclick = () => {
-                state.settings.translationSystemPrompt = defaultSettings.translationSystemPrompt;
-                saveSettings();
-                if (sysPromptInput) sysPromptInput.value = defaultSettings.translationSystemPrompt;
-                notify('System Prompt 已恢复默认', 'success');
-            };
-        }
-
-        const transApiSelect = ov.querySelector('#cmSetTransApi');
-        const openaiConfig = ov.querySelector('#cmSetOpenaiConfig');
-        if (transApiSelect && openaiConfig) {
-            transApiSelect.onchange = (e) => {
-                state.settings.translationApi = e.target.value;
-                saveSettings();
-                openaiConfig.style.display = e.target.value === 'openai' ? 'block' : 'none';
-            };
-        }
-
-        const bindInput = (id, key) => {
-            const el = ov.querySelector('#' + id);
-            if (el) {
-                el.onchange = (e) => {
-                    state.settings[key] = e.target.value;
-                    saveSettings();
-                };
-            }
-        };
-
-        bindInput('cmSetOpenaiUrl', 'openaiBaseUrl');
-        bindInput('cmSetOpenaiKey', 'openaiApiKey');
-
-        // 模型下拉列表变化
-        const modelSelect = ov.querySelector('#cmSetOpenaiModel');
-        if (modelSelect) {
-            modelSelect.onchange = (e) => {
-                state.settings.openaiModel = e.target.value;
-                saveSettings();
-            };
-        }
-
-        // 连接按钮 - 获取模型列表
-        const fetchModelsBtn = ov.querySelector('#cmSetFetchModels');
-        if (fetchModelsBtn) {
-            fetchModelsBtn.onclick = async () => {
-                const urlInput = ov.querySelector('#cmSetOpenaiUrl');
-                const keyInput = ov.querySelector('#cmSetOpenaiKey');
-                const statusEl = ov.querySelector('#cmSetModelStatus');
-                const modelSel = ov.querySelector('#cmSetOpenaiModel');
-                
-                const baseUrl = (urlInput?.value || 'https://api.openai.com/v1').replace(/\/$/, '');
-                const apiKey = keyInput?.value || '';
-
-                if (!apiKey) {
-                    if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444">❌ 请先填写 API Key</span>';
-                    return;
-                }
-
-                fetchModelsBtn.disabled = true;
-                fetchModelsBtn.textContent = '⏳ 连接中...';
-                if (statusEl) statusEl.textContent = '正在获取模型列表...';
-
-                try {
-                    const res = await fetch(baseUrl + '/models', {
-                        headers: { 'Authorization': 'Bearer ' + apiKey }
-                    });
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    const data = await res.json();
-                    
-                    let models = [];
-                    if (data.data && Array.isArray(data.data)) {
-                        models = data.data.map(m => m.id).sort();
-                    } else if (Array.isArray(data)) {
-                        models = data.map(m => m.id || m).sort();
-                    }
-
-                    if (models.length === 0) throw new Error('未获取到模型列表');
-
-                    // 填充下拉列表
-                    if (modelSel) {
-                        modelSel.innerHTML = models.map(m =>
-                            '<option value="' + m + '"' + (m === state.settings.openaiModel ? ' selected' : '') + '>' + m + '</option>'
-                        ).join('');
-                        
-                        // 如果当前选中的模型不在列表中，选择第一个
-                        if (!models.includes(state.settings.openaiModel) && models.length > 0) {
-                            state.settings.openaiModel = models[0];
-                            modelSel.value = models[0];
-                            saveSettings();
-                        }
-                    }
-
-                    if (statusEl) statusEl.innerHTML = '<span style="color:#10b981">✅ 已获取 ' + models.length + ' 个模型</span>';
-                } catch (e) {
-                    console.error('[Settings] Fetch models error:', e);
-                    if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444">❌ 连接失败: ' + e.message + '</span>';
-                } finally {
-                    fetchModelsBtn.disabled = false;
-                    fetchModelsBtn.textContent = '🔗 连接';
-                }
-            };
-        }
+        // 绑定翻译设置事件
+        bindTranslationSettingsEvents(ov, () => {
+            // 重新打开设置界面以刷新翻译设置区域的语言
+            ov.remove();
+            showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm });
+        }, notify);
 
         // Theme Toggle
         const themeBtn = ov.querySelector('#cmSetThemeBtn');
@@ -799,6 +538,351 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 }
             };
         }
+    });
+}
+
+// ========== 翻译设置独立模块 ==========
+
+/**
+ * 获取翻译设置的 HTML 内容
+ * @param {object} settings - 当前设置对象
+ * @returns {string} HTML 字符串
+ */
+function getTranslationSettingsHTML(settings) {
+    return `
+        <!-- 语言设置 -->
+        <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
+            <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--cm-text)" data-tl-key="langSettings">🌐 ${settings.translationUILanguage === 'en' ? 'Language Settings' : '语言设置'}</div>
+            <div class="cm-settings-lang-row">
+                <div class="cm-settings-lang-col">
+                    <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="sourceLang">${settings.translationUILanguage === 'en' ? 'Source Language' : '源语言'}</label>
+                    <select id="cmSetSourceLang" class="cm-select-input" style="width:100%;height:30px;box-sizing:border-box">
+                        <option value="auto" ${settings.sourceLanguage === 'auto' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? 'Auto Detect' : '自动检测 (Auto)'}</option>
+                        <option value="en" ${settings.sourceLanguage === 'en' ? 'selected' : ''}>English</option>
+                        <option value="ja" ${settings.sourceLanguage === 'ja' ? 'selected' : ''}>日本語</option>
+                        <option value="ko" ${settings.sourceLanguage === 'ko' ? 'selected' : ''}>한국어</option>
+                        <option value="zh-CN" ${settings.sourceLanguage === 'zh-CN' ? 'selected' : ''}>简体中文</option>
+                        <option value="zh-TW" ${settings.sourceLanguage === 'zh-TW' ? 'selected' : ''}>繁體中文</option>
+                    </select>
+                </div>
+                <div class="cm-settings-lang-col">
+                    <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="targetLang">${settings.translationUILanguage === 'en' ? 'Target Language' : '目标语言'}</label>
+                    <select id="cmSetTargetLang" class="cm-select-input" style="width:100%;height:30px;box-sizing:border-box">
+                        <option value="zh-CN" ${settings.targetLanguage === 'zh-CN' ? 'selected' : ''}>简体中文</option>
+                        <option value="zh-TW" ${settings.targetLanguage === 'zh-TW' ? 'selected' : ''}>繁體中文</option>
+                        <option value="en" ${settings.targetLanguage === 'en' ? 'selected' : ''}>English</option>
+                        <option value="ja" ${settings.targetLanguage === 'ja' ? 'selected' : ''}>日本語</option>
+                        <option value="ko" ${settings.targetLanguage === 'ko' ? 'selected' : ''}>한국어</option>
+                        <option value="custom" ${settings.targetLanguage === 'custom' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? '✏️ Custom...' : '✏️ 自定义...'}</option>
+                    </select>
+                </div>
+                <div id="cmCustomTargetLangWrap" class="cm-settings-lang-custom" style="display:${settings.targetLanguage === 'custom' ? 'flex' : 'none'}">
+                    <div style="width:100%">
+                        <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--cm-text-sec)">${settings.translationUILanguage === 'en' ? 'Custom Language' : '自定义语言'}</label>
+                        <input type="text" id="cmSetCustomTargetLang" class="cm-input" value="${escapeHtml(settings.customTargetLanguage || '')}"
+                            placeholder="${settings.translationUILanguage === 'en' ? 'e.g. Thai' : '如：泰语'}"
+                            style="width:100%;box-sizing:border-box;font-size:12px;height:30px">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 界面语言 -->
+        <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
+            <div class="cm-setting-item" style="margin:0">
+                <div class="cm-setting-label">
+                    <span style="font-size:12px" data-tl-key="uiLang">${settings.translationUILanguage === 'en' ? 'UI Language' : '翻译界面语言'}</span>
+                    <small data-tl-key="uiLangDesc">${settings.translationUILanguage === 'en' ? 'Only affects the translation module UI' : '仅影响翻译模块的界面显示'}</small>
+                </div>
+                <select id="cmSetTransUILang" class="cm-select-input" style="max-width:120px">
+                    <option value="zh-CN" ${settings.translationUILanguage === 'zh-CN' ? 'selected' : ''}>中文</option>
+                    <option value="en" ${settings.translationUILanguage === 'en' ? 'selected' : ''}>English</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- API 设置 -->
+        <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
+            <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                <div class="cm-setting-label">
+                    <span style="font-size:12px" data-tl-key="apiProtocol">${settings.translationUILanguage === 'en' ? 'API Protocol' : 'API 协议'}</span>
+                    <small data-tl-key="apiProtocolDesc">${settings.translationUILanguage === 'en' ? 'Select the API type for translation' : '选择翻译使用的 API 类型'}</small>
+                </div>
+                <select id="cmSetTransApi" class="cm-select-input">
+                    <option value="openai" ${settings.translationApi === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
+                    <option value="tavern" ${settings.translationApi === 'tavern' ? 'selected' : ''}>${settings.translationUILanguage === 'en' ? 'Tavern Native (Experimental)' : '酒馆原生 (实验性)'}</option>
+                </select>
+            </div>
+
+            <!-- Debug Mode Switch -->
+            <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                <div class="cm-setting-label">
+                    <span style="font-size:12px">Debug Mode</span>
+                    <small>${settings.translationUILanguage === 'en' ? 'Output raw API requests/responses to console' : '在控制台输出原始 API 请求和响应信息'}</small>
+                </div>
+                <label class="cm-switch" style="transform:scale(0.8);margin-right:-5px">
+                    <input type="checkbox" id="cmSetDebugMode" ${settings.debugMode ? 'checked' : ''}>
+                    <span class="cm-slider"></span>
+                </label>
+            </div>
+
+            <!-- Retry Count -->
+            <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                <div class="cm-setting-label">
+                    <span style="font-size:12px" data-tl-key="settingRetryCount">${settings.translationUILanguage === 'en' ? 'Retry Count on Failure' : '失败重试次数'}</span>
+                    <small>${settings.translationUILanguage === 'en' ? 'Number of times to retry when translation fails (e.g. 429 errors)' : '翻译失败时（如 429 错误）自动重试的次数'}</small>
+                </div>
+                <input type="number" id="cmSetRetryCount" class="cm-input" value="${settings.retryCount || 0}" min="0" max="10" style="width:60px;box-sizing:border-box;text-align:center">
+            </div>
+
+            <div id="cmSetOpenaiConfig" style="display:${settings.translationApi === 'openai' ? 'block' : 'none'}">
+                <div style="margin-bottom:8px">
+                    <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)">API Base URL</label>
+                    <input type="text" id="cmSetOpenaiUrl" class="cm-input" value="${settings.openaiBaseUrl || ''}" placeholder="https://api.openai.com/v1" style="width:100%;box-sizing:border-box">
+                </div>
+                <div style="margin-bottom:8px">
+                    <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)">API Key</label>
+                    <input type="password" id="cmSetOpenaiKey" class="cm-input" value="${settings.openaiApiKey || ''}" placeholder="sk-..." style="width:100%;box-sizing:border-box">
+                </div>
+                <div style="margin-bottom:8px">
+                    <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--cm-text-sec)" data-tl-key="model">${settings.translationUILanguage === 'en' ? 'Model' : '模型'}</label>
+                    <div style="display:flex;gap:6px;align-items:center">
+                        <select id="cmSetOpenaiModel" class="cm-select-input" style="flex:1;min-width:0">
+                            ${settings.openaiModel ? '<option value="' + settings.openaiModel + '" selected>' + settings.openaiModel + '</option>' : '<option value="">' + (settings.translationUILanguage === 'en' ? 'Connect first to get model list' : '请先连接获取模型列表') + '</option>'}
+                        </select>
+                        <button id="cmSetFetchModels" class="cm-btn cm-btn-primary" style="flex-shrink:0;font-size:12px;padding:6px 12px;white-space:nowrap">${settings.translationUILanguage === 'en' ? '🔗 Connect' : '🔗 连接'}</button>
+                    </div>
+                    <div id="cmSetModelStatus" style="font-size:11px;margin-top:4px;color:var(--cm-text-sec)"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 前置 System Prompt -->
+        <div>
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--cm-text)" data-tl-key="sysPromptTitle">📝 ${settings.translationUILanguage === 'en' ? 'Translation System Prompt' : '翻译 System Prompt'}</div>
+            <div style="font-size:11px;color:var(--cm-text-sec);margin-bottom:6px" data-tl-key="sysPromptDesc">${settings.translationUILanguage === 'en' ? 'System prompt sent to AI during translation, guiding translation behavior and style' : '翻译时发送给 AI 的系统提示词，指导翻译行为和风格'}</div>
+            <textarea id="cmSetTransSysPrompt" style="width:100%;box-sizing:border-box;min-height:120px;resize:vertical;
+                background:var(--cm-input-bg);color:var(--cm-text);border:1px solid var(--cm-border);
+                border-radius:6px;padding:8px;font-size:12px;line-height:1.5;font-family:inherit"
+                placeholder="${settings.translationUILanguage === 'en' ? 'Enter translation system prompt...' : '输入翻译系统提示词...'}">${escapeHtml(settings.translationSystemPrompt || '')}</textarea>
+            <div style="display:flex;justify-content:flex-end;margin-top:4px">
+                <button id="cmSetResetSysPrompt" class="cm-btn cm-btn-secondary" style="font-size:11px;padding:3px 8px">${settings.translationUILanguage === 'en' ? 'Reset Default' : '恢复默认'}</button>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * 绑定翻译设置的事件
+ * @param {HTMLElement} ov - 包含设置元素的容器
+ * @param {Function} onUILangChange - UI 语言改变时的回调
+ * @param {Function} notify - 通知函数
+ */
+function bindTranslationSettingsEvents(ov, onUILangChange, notify) {
+    // 语言设置绑定
+    const bindLangSelect = (id, key) => {
+        const el = ov.querySelector('#' + id);
+        if (el) {
+            el.onchange = (e) => {
+                state.settings[key] = e.target.value;
+                saveSettings();
+            };
+        }
+    };
+    bindLangSelect('cmSetSourceLang', 'sourceLanguage');
+
+    // 目标语言 — 包含自定义选项逻辑
+    const targetLangSelect = ov.querySelector('#cmSetTargetLang');
+    const customTargetWrap = ov.querySelector('#cmCustomTargetLangWrap');
+    const customTargetInput = ov.querySelector('#cmSetCustomTargetLang');
+    if (targetLangSelect) {
+        targetLangSelect.onchange = (e) => {
+            state.settings.targetLanguage = e.target.value;
+            saveSettings();
+            if (customTargetWrap) {
+                customTargetWrap.style.display = e.target.value === 'custom' ? 'flex' : 'none';
+            }
+        };
+    }
+    if (customTargetInput) {
+        customTargetInput.onchange = (e) => {
+            state.settings.customTargetLanguage = e.target.value.trim();
+            saveSettings();
+        };
+    }
+
+    // UI 语言切换
+    const transUILangSelect = ov.querySelector('#cmSetTransUILang');
+    if (transUILangSelect) {
+        transUILangSelect.onchange = (e) => {
+            state.settings.translationUILanguage = e.target.value;
+            saveSettings();
+            if (onUILangChange) onUILangChange();
+        };
+    }
+
+    // System Prompt 绑定
+    const sysPromptInput = ov.querySelector('#cmSetTransSysPrompt');
+    if (sysPromptInput) {
+        sysPromptInput.onchange = () => {
+            state.settings.translationSystemPrompt = sysPromptInput.value;
+            saveSettings();
+        };
+    }
+
+    // 恢复默认 System Prompt
+    const resetSysPromptBtn = ov.querySelector('#cmSetResetSysPrompt');
+    if (resetSysPromptBtn) {
+        resetSysPromptBtn.onclick = () => {
+            state.settings.translationSystemPrompt = defaultSettings.translationSystemPrompt;
+            saveSettings();
+            if (sysPromptInput) sysPromptInput.value = defaultSettings.translationSystemPrompt;
+            if (notify) notify('System Prompt 已恢复默认', 'success');
+        };
+    }
+
+    const transApiSelect = ov.querySelector('#cmSetTransApi');
+    const openaiConfig = ov.querySelector('#cmSetOpenaiConfig');
+    if (transApiSelect && openaiConfig) {
+        transApiSelect.onchange = (e) => {
+            state.settings.translationApi = e.target.value;
+            saveSettings();
+            openaiConfig.style.display = e.target.value === 'openai' ? 'block' : 'none';
+        };
+    }
+
+    const bindInput = (id, key) => {
+        const el = ov.querySelector('#' + id);
+        if (el) {
+            el.onchange = (e) => {
+                state.settings[key] = e.target.value;
+                saveSettings();
+            };
+        }
+    };
+
+    bindInput('cmSetOpenaiUrl', 'openaiBaseUrl');
+    bindInput('cmSetOpenaiKey', 'openaiApiKey');
+
+    // 重试次数
+    const retryCountInput = ov.querySelector('#cmSetRetryCount');
+    if (retryCountInput) {
+        retryCountInput.onchange = (e) => {
+            let val = parseInt(e.target.value, 10);
+            if (isNaN(val) || val < 0) val = 0;
+            if (val > 10) val = 10;
+            e.target.value = val;
+            state.settings.retryCount = val;
+            saveSettings();
+        };
+    }
+
+    // 模型下拉列表变化
+    const modelSelect = ov.querySelector('#cmSetOpenaiModel');
+    if (modelSelect) {
+        modelSelect.onchange = (e) => {
+            state.settings.openaiModel = e.target.value;
+            saveSettings();
+        };
+    }
+
+    // 连接按钮 - 获取模型列表
+    const fetchModelsBtn = ov.querySelector('#cmSetFetchModels');
+    if (fetchModelsBtn) {
+        fetchModelsBtn.onclick = async () => {
+            const urlInput = ov.querySelector('#cmSetOpenaiUrl');
+            const keyInput = ov.querySelector('#cmSetOpenaiKey');
+            const statusEl = ov.querySelector('#cmSetModelStatus');
+            const modelSel = ov.querySelector('#cmSetOpenaiModel');
+            
+            const baseUrl = (urlInput?.value || 'https://api.openai.com/v1').replace(/\/$/, '');
+            const apiKey = keyInput?.value || '';
+
+            if (!apiKey) {
+                if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444">❌ 请先填写 API Key</span>';
+                return;
+            }
+
+            fetchModelsBtn.disabled = true;
+            fetchModelsBtn.textContent = '⏳ 连接中...';
+            if (statusEl) statusEl.textContent = '正在获取模型列表...';
+
+            try {
+                const res = await fetch(baseUrl + '/models', {
+                    headers: { 'Authorization': 'Bearer ' + apiKey }
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                
+                let models = [];
+                if (data.data && Array.isArray(data.data)) {
+                    models = data.data.map(m => m.id).sort();
+                } else if (Array.isArray(data)) {
+                    models = data.map(m => m.id || m).sort();
+                }
+
+                if (models.length === 0) throw new Error('未获取到模型列表');
+
+                // 填充下拉列表
+                if (modelSel) {
+                    modelSel.innerHTML = models.map(m =>
+                        '<option value="' + m + '"' + (m === state.settings.openaiModel ? ' selected' : '') + '>' + m + '</option>'
+                    ).join('');
+                    
+                    // 如果当前选中的模型不在列表中，选择第一个
+                    if (!models.includes(state.settings.openaiModel) && models.length > 0) {
+                        state.settings.openaiModel = models[0];
+                        modelSel.value = models[0];
+                        saveSettings();
+                    }
+                }
+
+                if (statusEl) statusEl.innerHTML = '<span style="color:#10b981">✅ 已获取 ' + models.length + ' 个模型</span>';
+            } catch (e) {
+                console.error('[Settings] Fetch models error:', e);
+                if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444">❌ 连接失败: ' + e.message + '</span>';
+            } finally {
+                fetchModelsBtn.disabled = false;
+                fetchModelsBtn.textContent = '🔗 连接';
+            }
+        };
+    }
+}
+
+/**
+ * 独立显示翻译设置弹窗
+ * @param {Function} createBaseDialog - 创建弹窗的函数
+ * @param {Function} notify - 通知函数
+ * @param {Function} onSettingsChanged - 设置改变时的回调（可选）
+ */
+export function showTranslationSettingsDialog(createBaseDialog, notify, onSettingsChanged) {
+    const settings = state.settings;
+    
+    const content = `
+        <div class="cm-settings-container" style="padding: 10px 0;">
+            <div id="cmTransSettings" style="padding:10px;background:var(--cm-bg-ter);border-radius:8px;">
+                ${getTranslationSettingsHTML(settings)}
+            </div>
+        </div>
+    `;
+
+    createBaseDialog('⚙️ 翻译设置', content, [
+        {
+            text: '关闭',
+            cls: 'cm-btn-primary',
+            onClick: (ov, close) => {
+                saveSettings();
+                if (onSettingsChanged) onSettingsChanged();
+                close();
+            }
+        }
+    ], (ov) => {
+        bindTranslationSettingsEvents(ov, () => {
+            // UI 语言改变时，重新打开弹窗以刷新文本
+            ov.remove();
+            showTranslationSettingsDialog(createBaseDialog, notify, onSettingsChanged);
+            if (onSettingsChanged) onSettingsChanged();
+        }, notify);
     });
 }
 

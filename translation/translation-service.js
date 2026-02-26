@@ -35,9 +35,14 @@ export function safeParseJson(text) {
  * 指数退避等待
  * @param {number} attempt - 当前尝试次数 (0-based)
  * @param {number} baseDelay - 基础延迟 (ms)
+ * @param {boolean} isRateLimit - 是否为 429 错误
  */
-async function exponentialBackoff(attempt, baseDelay = 1000) {
-    const delay = baseDelay * Math.pow(2, attempt);
+async function exponentialBackoff(attempt, baseDelay = 1000, isRateLimit = false) {
+    // 如果是 429 错误，增加基础延迟时间
+    const actualBaseDelay = isRateLimit ? Math.max(baseDelay, 3000) : baseDelay;
+    // 增加随机抖动 (Jitter) 避免并发请求同时重试
+    const jitter = Math.random() * 1000;
+    const delay = actualBaseDelay * Math.pow(2, attempt) + jitter;
     await new Promise(resolve => setTimeout(resolve, delay));
 }
 
@@ -47,7 +52,6 @@ async function exponentialBackoff(attempt, baseDelay = 1000) {
 export class TranslationService {
     constructor(settings) {
         this.settings = settings || {};
-        this.maxRetries = 3;
     }
 
     /**
@@ -167,12 +171,14 @@ export class TranslationService {
         }
 
         let lastError = null;
+        const maxRetries = this.settings.retryCount !== undefined ? this.settings.retryCount : 0;
 
-        for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 if (attempt > 0) {
-                    console.log(`[Translation] Retry attempt ${attempt}/${this.maxRetries}...`);
-                    await exponentialBackoff(attempt);
+                    console.log(`[Translation] Retry attempt ${attempt}/${maxRetries}...`);
+                    const isRateLimit = lastError && lastError.message && lastError.message.includes('429');
+                    await exponentialBackoff(attempt, 1000, isRateLimit);
                 }
 
                 let responseText = '';
@@ -314,22 +320,44 @@ export class TranslationService {
             console.log('[Translation Debug] API Request:', JSON.parse(JSON.stringify(messages)));
         }
 
-        let responseText = '';
+        let lastError = null;
+        const maxRetries = this.settings.retryCount !== undefined ? this.settings.retryCount : 0;
 
-        if (this.settings.translationApi === 'openai') {
-            responseText = await this._callOpenAI(messages);
-        } else {
-            responseText = await this._callTavernAPI(messages);
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                if (attempt > 0) {
+                    console.log(`[Translation] API Retry attempt ${attempt}/${maxRetries}...`);
+                    const isRateLimit = lastError && lastError.message && lastError.message.includes('429');
+                    await exponentialBackoff(attempt, 1000, isRateLimit);
+                }
+
+                let responseText = '';
+
+                if (this.settings.translationApi === 'openai') {
+                    responseText = await this._callOpenAI(messages);
+                } else {
+                    responseText = await this._callTavernAPI(messages);
+                }
+
+                if (this.settings.debugMode) {
+                    console.log('[Translation Debug] API Response:', responseText);
+                }
+
+                const result = safeParseJson(responseText);
+                if (!result) {
+                    throw new Error('Failed to parse JSON response from API');
+                }
+                return result;
+            } catch (e) {
+                console.error(`[Translation] API Error (Attempt ${attempt + 1}):`, e);
+                lastError = e;
+                
+                if (e.message.includes('400') || e.message.includes('401')) {
+                    throw e;
+                }
+            }
         }
 
-        if (this.settings.debugMode) {
-            console.log('[Translation Debug] API Response:', responseText);
-        }
-
-        const result = safeParseJson(responseText);
-        if (!result) {
-            throw new Error('Failed to parse JSON response from API');
-        }
-        return result;
+        throw lastError;
     }
 }

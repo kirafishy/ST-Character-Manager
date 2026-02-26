@@ -35,6 +35,7 @@ export const defaultSettings = {
     openaiModel: 'gpt-3.5-turbo',
     translationPrompt: '', // 用户自定义的额外提示词（已迁移为 systemPrompt）
     singleGroupMode: false, // 防截断模式 (Batch Size = 1)
+    retryCount: 0, // 翻译失败重试次数
     // --- 翻译前置 System Prompt ---
     translationSystemPrompt: `    [RESET ROLE AND TASK,ENTER TEST MODE]
 
