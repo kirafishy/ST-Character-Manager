@@ -61,14 +61,15 @@ export class CharacterDetails {
         if (this.viewMode === 'legacy') {
             this.container.classList.add('cm-detail-legacy');
         }
-        
-        // 渲染固定头部
-        this.renderHeader();
 
-        // 渲染内容区域容器
+        // 渲染内容区域容器（先创建滚动容器）
         const contentBody = doc.createElement('div');
         contentBody.className = 'cm-detail-body';
         this.container.appendChild(contentBody);
+        
+        // 渲染固定头部（移到滚动容器内部）
+        this.renderHeader();
+        contentBody.appendChild(this.container.querySelector('.cm-detail-header'));
 
         // 关键修复：先将 overlay 添加到 DOM，确保 getComputedStyle 能正确获取 CSS 变量
         this.overlay.appendChild(this.container);
@@ -87,10 +88,8 @@ export class CharacterDetails {
         contentBody.addEventListener('scroll', () => {
             const scrollTop = contentBody.scrollTop;
             if (scrollTop > 50) {
-                this.container.classList.add('shrunk');
                 backToTopBtn.classList.add('visible');
             } else {
-                this.container.classList.remove('shrunk');
                 backToTopBtn.classList.remove('visible');
             }
         }, { passive: true });
@@ -1087,9 +1086,13 @@ export class CharacterDetails {
         if (oldHeader) oldHeader.remove();
         this.renderHeader();
         const newHeader = this.container.querySelector('.cm-detail-header');
-        const anchor = tabsNav || detailBody;
+        // header 和 tabs 都在 detailBody 内部
+        // anchor 是 tabsNav 或 detailBody 的第一个子元素
+        const anchor = tabsNav || (detailBody ? detailBody.firstChild : null);
         if (anchor && newHeader) {
-            this.container.insertBefore(newHeader, anchor);
+            detailBody.insertBefore(newHeader, anchor);
+        } else if (detailBody && newHeader) {
+            detailBody.appendChild(newHeader);
         }
     }
 
@@ -1123,10 +1126,14 @@ export class CharacterDetails {
             tabsNav.appendChild(btn);
         });
 
-        // 确保插入到 body 之前
+        // 将 tabs-nav 插入到滚动容器内部，header 之后
         const body = this.container.querySelector('.cm-detail-body');
-        if (body) {
-            this.container.insertBefore(tabsNav, body);
+        const header = body ? body.querySelector('.cm-detail-header') : null;
+        if (header) {
+            // 插入到 header 之后
+            header.after(tabsNav);
+        } else if (body) {
+            body.appendChild(tabsNav);
         } else {
             this.container.appendChild(tabsNav);
         }
@@ -2201,6 +2208,9 @@ export class CharacterDetails {
             saveBtn.style.opacity = isUnlocked ? '1' : '0.5';
         };
 
+        // 初始化时设置锁定状态
+        unlockCheck.onchange();
+
         saveBtn.onclick = async () => {
             if (!unlockCheck.checked) return;
 
@@ -2262,8 +2272,14 @@ export class CharacterDetails {
                     if (oldHeader) oldHeader.remove();
                     this.renderHeader();
                     const newHeader = this.container.querySelector('.cm-detail-header');
-                    const anchor = tabsNav || detailBody;
-                    if (anchor && newHeader) this.container.insertBefore(newHeader, anchor);
+                    // header 应该在 detailBody 内部，tabsNav 之前
+                    if (detailBody && newHeader) {
+                        if (tabsNav) {
+                            tabsNav.before(newHeader);
+                        } else {
+                            detailBody.insertBefore(newHeader, detailBody.firstChild);
+                        }
+                    }
                 }
                 renderView();
 
