@@ -8,6 +8,7 @@ import { ICONS } from './constants.js';
 import { escapeHtml, formatSize, notify, parsePNG, formatRichText } from './utils.js';
 import { createBaseDialog, showConfirm, showDeleteConfirm } from './ui-utils.js';
 import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion, deleteChatFile } from './data.js';
+import { getCmManager, migrateToCmManager } from './st-tags.js';
 import { authFetch } from './api.js';
 import { renderView, renderTagSidebar, updateCreatorComment, closeModal } from './index.js';
 import { getGalleryItems, showGallery, renderGallery } from './gallery.js';
@@ -298,9 +299,9 @@ export class CharacterDetails {
         
         const commentContent = doc.createElement('div');
         commentContent.className = 'cm-markdown-body';
-        commentContent.style.cssText = `padding:0;${maxHeightStyle}background:var(--cm-bg);`;
+        commentContent.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
         
-        this.renderSecureContent(commentContent, this.renderMarkdown(char.creator_notes || char.creatorcomment || '(无)'));
+        commentContent.innerHTML = this.renderMarkdown(char.creator_notes || char.creatorcomment || '(无)');
         
         commentSection.appendChild(commentHeader);
         commentSection.appendChild(commentContent);
@@ -320,8 +321,9 @@ export class CharacterDetails {
         noteContent.className = 'cm-markdown-body';
         noteContent.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
         
-        // 获取备注
-        const userNote = (char.extensions && char.extensions.st_character_manager_note) || '';
+        // 获取备注（优先使用 cm_manager.note，兼容旧字段）
+        const cm = getCmManager(char);
+        const userNote = cm.note !== undefined ? cm.note : (char.extensions && char.extensions.st_character_manager_note) || '';
         noteContent.innerHTML = this.renderMarkdown(userNote || '(无)');
         
         noteSection.appendChild(noteHeader);
@@ -335,16 +337,20 @@ export class CharacterDetails {
                 textarea.className = 'cm-input';
                 textarea.style.height = '100px';
                 textarea.style.resize = 'vertical';
-                textarea.value = (char.extensions && char.extensions.st_character_manager_note) || '';
+                textarea.value = userNote;
                 noteContent.replaceWith(textarea);
                 const btn = noteHeader.querySelector('#cmEditNoteBtn');
                 btn.innerHTML = '💾';
                 btn.onclick = async () => {
                     const val = textarea.value.trim();
-                    // 保存备注
+                    // 保存备注到 cm_manager.note
                     await saveCharacterData(char.fileName, (data) => {
-                        if (!data.extensions) data.extensions = {};
-                        data.extensions.st_character_manager_note = val;
+                        const dataCm = getCmManager({ data });
+                        dataCm.note = val;
+                        // 清理旧字段
+                        if (data.extensions && data.extensions.st_character_manager_note !== undefined) {
+                            delete data.extensions.st_character_manager_note;
+                        }
                     });
                     
                     // 刷新显示
@@ -1202,9 +1208,9 @@ export class CharacterDetails {
         
         const commentContent = doc.createElement('div');
         commentContent.className = 'cm-markdown-body';
-        commentContent.style.cssText = `padding:0;${maxHeightStyle}background:var(--cm-bg);`;
+        commentContent.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
         
-        this.renderSecureContent(commentContent, this.renderMarkdown(char.creator_notes || char.creatorcomment || '(无)'));
+        commentContent.innerHTML = this.renderMarkdown(char.creator_notes || char.creatorcomment || '(无)');
         
         commentSection.appendChild(commentHeader);
         commentSection.appendChild(commentContent);
@@ -1224,8 +1230,9 @@ export class CharacterDetails {
         noteContent.className = 'cm-markdown-body';
         noteContent.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
         
-        // 获取备注
-        const userNote = (char.extensions && char.extensions.st_character_manager_note) || '';
+        // 获取备注（优先使用 cm_manager.note，兼容旧字段）
+        const cm = getCmManager(char);
+        const userNote = cm.note !== undefined ? cm.note : (char.extensions && char.extensions.st_character_manager_note) || '';
         noteContent.innerHTML = this.renderMarkdown(userNote || '(无)');
         
         noteSection.appendChild(noteHeader);
@@ -1239,16 +1246,20 @@ export class CharacterDetails {
                 textarea.className = 'cm-input';
                 textarea.style.height = '100px';
                 textarea.style.resize = 'vertical';
-                textarea.value = (char.extensions && char.extensions.st_character_manager_note) || '';
+                textarea.value = userNote;
                 noteContent.replaceWith(textarea);
                 const btn = noteHeader.querySelector('#cmEditNoteBtn');
                 btn.innerHTML = '💾';
                 btn.onclick = async () => {
                     const val = textarea.value.trim();
-                    // 保存备注
+                    // 保存备注到 cm_manager.note
                     await saveCharacterData(char.fileName, (data) => {
-                        if (!data.extensions) data.extensions = {};
-                        data.extensions.st_character_manager_note = val;
+                        const dataCm = getCmManager({ data });
+                        dataCm.note = val;
+                        // 清理旧字段
+                        if (data.extensions && data.extensions.st_character_manager_note !== undefined) {
+                            delete data.extensions.st_character_manager_note;
+                        }
                     });
                     
                     // 刷新显示
@@ -1456,261 +1467,13 @@ export class CharacterDetails {
      * 净化 CSS 内容，移除危险属性
      * 移植自 SillyTavern-CharacterLibrary
      */
-    sanitizeCreatorNotesCSS(content) {
-        const dangerousPatterns = [
-            /position\s*:\s*(fixed|sticky)/gi,
-            /z-index\s*:\s*(\d{4,}|[5-9]\d{2})/gi,
-            /-moz-binding\s*:/gi,
-            /behavior\s*:/gi,
-            /expression\s*\(/gi,
-            /@import\s+(?!url\s*\()/gi,
-            /javascript\s*:/gi,
-            /vbscript\s*:/gi,
-        ];
-        
-        let sanitized = content;
-        dangerousPatterns.forEach(pattern => {
-            sanitized = sanitized.replace(pattern, '/* blocked */ ');
-        });
-        return sanitized;
-    }
 
-    /**
-     * 获取 iframe 基础样式
-     * 移植自 SillyTavern-CharacterLibrary 并适配当前主题变量
-     */
-    getCreatorNotesBaseStyles(cssVars) {
-        return `
-            <style>
-                :root { ${cssVars} }
-                * { box-sizing: border-box; }
-                html { margin: 0; padding: 0; }
-                body {
-                    margin: 0;
-                    padding: 10px;
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    color: var(--cm-text);
-                    background: transparent;
-                    line-height: 1.5;
-                    overflow-wrap: break-word;
-                    word-wrap: break-word;
-                    font-size: 14px;
-                    overflow-y: hidden;
-                }
-                #content-wrapper {
-                    display: block;
-                    width: 100%;
-                }
-                
-                img, video, canvas, svg {
-                    max-width: 100% !important;
-                    height: auto !important;
-                    display: block;
-                    margin: 10px auto;
-                    border-radius: 8px;
-                }
-                
-                a { color: var(--cm-accent-text); text-decoration: none; }
-                a:hover { text-decoration: underline; }
-                
-                h1, h2, h3, h4, h5, h6 { color: var(--cm-accent); margin-top: 1em; margin-bottom: 0.5em; }
-                h1 { font-size: 1.6em; }
-                h2 { font-size: 1.4em; }
-                
-                strong, b { color: var(--cm-text); font-weight: bold; }
-                em, i { font-style: italic; }
-                
-                p { margin: 0 0 0.8em 0; }
-                
-                blockquote {
-                    margin: 10px 0;
-                    padding: 10px 15px;
-                    border-left: 3px solid var(--cm-accent);
-                    background: var(--cm-bg-sec);
-                    border-radius: 0 8px 8px 0;
-                }
-                
-                pre {
-                    background: var(--cm-bg-ter);
-                    padding: 10px;
-                    border-radius: 6px;
-                    overflow-x: auto;
-                    white-space: pre-wrap;
-                    word-wrap: break-word;
-                }
-                
-                code {
-                    background: var(--cm-bg-ter);
-                    padding: 2px 6px;
-                    border-radius: 4px;
-                    font-family: 'Consolas', 'Monaco', monospace;
-                }
-                
-                table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin: 10px 0;
-                    background: var(--cm-bg-sec);
-                    border-radius: 8px;
-                    overflow: hidden;
-                }
-                td, th {
-                    padding: 8px 12px;
-                    border: 1px solid var(--cm-border);
-                }
-                th {
-                    background: var(--cm-bg-ter);
-                    color: var(--cm-accent);
-                }
-                
-                hr {
-                    border: none;
-                    border-top: 1px solid var(--cm-border);
-                    margin: 15px 0;
-                }
-                
-                ul, ol { padding-left: 25px; margin: 8px 0; }
-                li { margin: 4px 0; }
-
-                /* Neutralize dangerous positioning from user CSS */
-                [style*="position: fixed"], [style*="position:fixed"],
-                [style*="position: sticky"], [style*="position:sticky"] {
-                    position: static !important;
-                }
-                [style*="z-index"] {
-                    z-index: auto !important;
-                }
-                
-                ::-webkit-scrollbar { width: 6px; height: 6px; }
-                ::-webkit-scrollbar-track { background: transparent; }
-                ::-webkit-scrollbar-thumb { background: var(--cm-border); border-radius: 3px; }
-            </style>
-        `;
-    }
-
-    renderSecureContent(container, htmlContent, maxHeightStyle = '') {
-        const iframe = doc.createElement('iframe');
-        iframe.sandbox = 'allow-same-origin allow-popups allow-popups-to-escape-sandbox';
-        iframe.style.cssText = `width:100%;border:none;background:transparent;overflow:hidden;display:block;`;
-        iframe.scrolling = 'no';
-        
-        // 提取当前主题的 CSS 变量
-        let containerStyle = null;
-        if (this.container && this.container.isConnected) {
-            containerStyle = getComputedStyle(this.container);
-        } else if (this.overlay && this.overlay.isConnected) {
-            containerStyle = getComputedStyle(this.overlay);
-        } else {
-            const temp = doc.createElement('div');
-            temp.className = state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light';
-            temp.style.display = 'none';
-            doc.body.appendChild(temp);
-            containerStyle = getComputedStyle(temp);
-            setTimeout(() => temp.remove(), 0);
-        }
-        
-        const rootStyle = getComputedStyle(doc.documentElement);
-        
-        const getVar = (name) => {
-            let val = containerStyle.getPropertyValue(name);
-            if (!val || val.trim() === '') {
-                val = rootStyle.getPropertyValue(name);
-            }
-            if (!val || val.trim() === '') {
-                const fallbackMap = {
-                    '--cm-text': '#cccccc',
-                    '--cm-bg': '#1e1e1e',
-                    '--cm-bg-sec': '#252526',
-                    '--cm-bg-ter': '#2d2d30',
-                    '--cm-border': '#3e3e42',
-                    '--cm-accent': '#094771',
-                    '--cm-accent-text': '#fff',
-                    '--cm-text-sec': '#858585',
-                    '--cm-input-bg': '#3c3c3c',
-                    '--cm-hover': '#37373d'
-                };
-                val = fallbackMap[name];
-            }
-            return val ? `${name}: ${val};` : '';
-        };
-
-        const cssVars = [
-            '--cm-bg', '--cm-bg-sec', '--cm-bg-ter',
-            '--cm-text', '--cm-text-sec',
-            '--cm-border', '--cm-accent', '--cm-accent-text',
-            '--cm-input-bg', '--cm-hover'
-        ].map(getVar).join('');
-
-        // 净化 CSS 和 HTML
-        let safeHtmlContent = (htmlContent || '').replace(/^(\s*<\/div>)+/i, '');
-        safeHtmlContent = this.sanitizeCreatorNotesCSS(safeHtmlContent);
-
-        const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; img-src * data: blob:; media-src * data: blob:; font-src * data: blob:; script-src 'none'; object-src 'none'; style-src 'self' 'unsafe-inline';">`;
-        const styles = this.getCreatorNotesBaseStyles(cssVars);
-
-        const srcDoc = `<!DOCTYPE html><html><head><meta charset="UTF-8">${csp}${styles}</head><body><div id="content-wrapper">${safeHtmlContent}</div></body></html>`;
-        
-        iframe.srcdoc = srcDoc;
-        
-        // 外部控制的高度调整逻辑 - 移植自 library.js
-        const updateHeight = () => {
-            try {
-                const doc = iframe.contentDocument;
-                const wrapper = doc ? doc.getElementById('content-wrapper') : null;
-                
-                if (!doc || !wrapper) return;
-
-                const rect = wrapper.getBoundingClientRect();
-                // 增加一点 padding 缓冲
-                const targetHeight = Math.ceil(rect.height) + 20;
-                
-                if (Math.abs(iframe.offsetHeight - targetHeight) > 3) {
-                    iframe.style.height = targetHeight + 'px';
-                }
-            } catch (e) {
-                console.warn('[ST-CM] updateHeight error:', e);
-            }
-        };
-
-        iframe.onload = () => {
-            updateHeight();
-            
-            try {
-                const doc = iframe.contentDocument;
-                if (doc && doc.body) {
-                    // 监听内容变化
-                    const observer = new ResizeObserver(() => {
-                        requestAnimationFrame(updateHeight);
-                    });
-                    
-                    const wrapper = doc.getElementById('content-wrapper');
-                    if (wrapper) observer.observe(wrapper);
-                    
-                    // 监听图片加载
-                    doc.querySelectorAll('img').forEach(img => {
-                        if (!img.complete) {
-                            img.addEventListener('load', updateHeight);
-                            img.addEventListener('error', updateHeight);
-                        }
-                    });
-                    
-                    // 初始多次测量，应对 CSS 加载延迟
-                    setTimeout(updateHeight, 50);
-                    setTimeout(updateHeight, 150);
-                    setTimeout(updateHeight, 400);
-                }
-            } catch (e) {
-                console.warn('[ST-CM] iframe observer error:', e);
-            }
-        };
-
-        container.innerHTML = '';
-        container.appendChild(iframe);
-    }
 
     renderMarkdown(text) {
         if (!text) return '';
-        return formatRichText(text, this.char?.name || '');
+        // 检测是否包含 HTML 标签，决定是否保留 HTML
+        const hasHtml = /<\/?[a-z][\s\S]*>/i.test(text);
+        return formatRichText(text, this.char?.name || '', hasHtml);
     }
 
     renderMarkdownField(container, label, value) {
@@ -1725,13 +1488,26 @@ export class CharacterDetails {
         
         const contentEl = doc.createElement('div');
         contentEl.className = 'cm-markdown-body';
+        contentEl.innerHTML = this.renderMarkdown(value);
         
         const isExpand = state.settings.detailContentMode === 'expand';
         const maxHeightStyle = isExpand ? 'max-height:none;overflow-y:visible;' : 'max-height:400px;overflow-y:auto;';
         
-        contentEl.style.cssText = `background:var(--cm-bg-ter);border-radius:6px;border:1px solid var(--cm-border);${maxHeightStyle}overflow-x:hidden;`;
+        contentEl.style.cssText = `font-size:14px;color:var(--cm-text);line-height:1.5;background:var(--cm-bg-ter);padding:10px;border-radius:6px;border:1px solid var(--cm-border);${maxHeightStyle}overflow-x:hidden;word-wrap:break-word;`;
         
-        this.renderSecureContent(contentEl, this.renderMarkdown(value));
+        // 确保链接在新标签页打开
+        contentEl.querySelectorAll('a').forEach(a => {
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.style.color = 'var(--cm-accent-text)';
+        });
+
+        // 限制图片最大宽度
+        contentEl.querySelectorAll('img').forEach(img => {
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            img.style.borderRadius = '4px';
+        });
 
         wrapper.appendChild(labelEl);
         wrapper.appendChild(contentEl);
@@ -2312,9 +2088,9 @@ export class CharacterDetails {
             const removeBtn = doc.createElement('span');
             removeBtn.className = 'cm-char-tag-remove';
             removeBtn.textContent = '×';
-            removeBtn.onclick = (e) => {
+            removeBtn.onclick = async (e) => {
                 e.stopPropagation();
-                removeTagFromChar(this.char.fileName, tag.id);
+                await removeTagFromChar(this.char.fileName, tag.id);
                 this.renderTags(container); // 重新渲染标签区域
                 renderTagSidebar();
                 renderView();
@@ -2523,11 +2299,11 @@ function showTagSelector(char, tagsContainer, detailOverlay, onUpdate) {
                     '<span>' + escapeHtml(tag.name) + '</span>' +
                     (isSelected ? '<span class="cm-tag-check">✓</span>' : '');
 
-                item.onclick = function () {
+                item.onclick = async function () {
                     if (item.classList.contains('selected')) {
-                        removeTagFromChar(char.fileName, tag.id);
+                        await removeTagFromChar(char.fileName, tag.id);
                     } else {
-                        addTagToChar(char.fileName, tag.id);
+                        await addTagToChar(char.fileName, tag.id);
                     }
                     renderListItems();
                     if (onUpdate) onUpdate();
@@ -2551,16 +2327,16 @@ function showTagSelector(char, tagsContainer, detailOverlay, onUpdate) {
             const quickInput = quickCreate.querySelector('input');
             const quickBtn = quickCreate.querySelector('button');
 
-            const handleCreate = (forceName) => {
+            const handleCreate = async (forceName) => {
                 const val = (forceName || quickInput.value).trim();
                 if (val) {
                     const existingTag = state.tags.find(t => t.name === val);
                     if (existingTag) {
-                        addTagToChar(char.fileName, existingTag.id);
+                        await addTagToChar(char.fileName, existingTag.id);
                         notify('已添加已有标签: ' + val, 'success');
                     } else {
                         const newTag = createTag(val, DEFAULT_TAG_COLOR);
-                        addTagToChar(char.fileName, newTag.id);
+                        await addTagToChar(char.fileName, newTag.id);
                         notify('已创建并添加标签', 'success');
                     }
                     if (onUpdate) onUpdate();

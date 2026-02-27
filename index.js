@@ -1,4 +1,5 @@
 import { ICONS, COLORS } from './constants.js';
+import manifest from './manifest.json' with { type: 'json' };
 import { doc, parentWin, getSTContext, getSTCharacters } from './context.js';
 import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip, notify, parsePNG } from './utils.js';
 import { createBaseDialog, showAlert, showConfirm, showDeleteConfirm } from './ui-utils.js';
@@ -7,14 +8,14 @@ import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
 import { getCache, setCache, migrateFromLocalStorage } from './db.js';
 import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo, syncAllTags, deleteChar } from './data.js';
-import { importTags } from './st-tags.js';
+import { importTags, needsTagImport, batchImportTags, migrateToCmManager, migrateAndSaveCmManager, getCmManager } from './st-tags.js';
 import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
 import { showSettingsDialog } from './settings.js';
 import { initTranslationUI, openTranslationDialog } from './translation/translation-ui.js';
 import { writePngText } from './translation/png-writer.js';
 import { CharacterDetails, showDetail } from './ui-details.js';
 
-console.log('=== 角色卡管理器 小鱼改版 v1.0 启动 ===');
+console.log(`=== 角色卡管理器 小鱼改版 v${manifest.version} 启动 ===`);
 
 const MODAL_ID = 'charManagerModal';
 const STYLE_ID = 'charManagerStylesV97';
@@ -154,7 +155,9 @@ async function doActualImport(files, remainingInQueue) {
 
         if (char) {
             try {
-                await importTags(char);
+                // 迁移旧配置并导入标签
+                await migrateAndSaveCmManager(char);
+                await importTags(char, { skipSave: false, checkCmManager: true });
             } catch (e) {
                 console.warn('标签导入失败:', fileName, e);
             }
@@ -353,11 +356,12 @@ async function showUrlImportDialog() {
                                 dataModified = true;
                             }
 
-                            // 2. 注入 Note
+                            // 2. 注入 Note (写入 cm_manager.note)
                             if (note) {
                                 if (!dataBlock.extensions) dataBlock.extensions = {};
-                                const oldNote = dataBlock.extensions.st_character_manager_note || '';
-                                dataBlock.extensions.st_character_manager_note = oldNote ? oldNote + '\n' + note : note;
+                                if (!dataBlock.extensions.cm_manager) dataBlock.extensions.cm_manager = {};
+                                const oldNote = dataBlock.extensions.cm_manager.note || '';
+                                dataBlock.extensions.cm_manager.note = oldNote ? oldNote + '\n' + note : note;
                                 dataModified = true;
                             }
 
@@ -419,14 +423,15 @@ async function showUrlImportDialog() {
                         if (selectedTagIds.length > 0) {
                             let tagCount = 0;
                             for (const tagId of selectedTagIds) {
-                                if (addTagToChar(targetChar.avatar, tagId, true)) tagCount++;
+                                if (await addTagToChar(targetChar.avatar, tagId, true)) tagCount++;
                             }
                             if (tagCount > 0) notify(`已添加 ${tagCount} 个标签`, 'success');
                         }
 
                         // 尝试导入角色自带的标签 (如果存在)
                         // 即使没有手动选择标签，角色卡本身可能自带标签，需要导入到 ST-CM
-                        await importTags(targetChar, { importSetting: 1 }); // 1 = ASK
+                        await migrateAndSaveCmManager(targetChar);
+                        await importTags(targetChar, { skipSave: false, checkCmManager: true });
 
                         // 刷新界面以显示标签
                         renderView();
@@ -973,6 +978,9 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
             }
         }
 
+        // 加载最新的标签数据
+        loadTags();
+
         const cacheMap = new Map();
         state.characters.forEach(c => cacheMap.set(c.fileName, c));
 
@@ -1011,14 +1019,20 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
 
                 cached.version = stC.character_version || data.character_version || cached.version || '';
 
-                // 尝试从原生对象同步 Tag (解决跨设备同步问题)
-                await importTags(stC, { importSetting: 3, skipSave: true });
+                // 迁移旧的扩展配置到 cm_manager（如有迁移则保存）
+                await migrateAndSaveCmManager(stC);
+
+                // 同步 Tag（使用 cm_manager.tags 或检查是否需要导入）
+                await importTags(stC, { skipSave: true, checkCmManager: true });
 
                 newList.push(cached);
             } else {
                 toFetch.push(stC);
             }
         }
+
+        // 收集需要标签导入确认的角色
+        const charsNeedTagImport = [];
 
         if (toFetch.length > 0) {
             console.debug('[CharManager] New/Modified cards to fetch:', toFetch.length);
@@ -1036,13 +1050,27 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                 const results = await Promise.all(chunk.map(c => getCharacterData(c.avatar, c)));
                 for (const fresh of results) {
                     if (!fresh.error) {
-                        // 自动导入标签 (importSetting: 3 = ALL, skipSave: true)
-                        await importTags(fresh, { importSetting: 3, skipSave: true });
+                        // 迁移旧的扩展配置到 cm_manager（如有迁移则保存）
+                        await migrateAndSaveCmManager(fresh);
+                        
+                        // 检查是否需要标签导入确认
+                        if (needsTagImport(fresh)) {
+                            charsNeedTagImport.push(fresh);
+                        } else {
+                            // 已有 cm_manager.tags 或无标签，直接导入
+                            await importTags(fresh, { skipSave: true, checkCmManager: true });
+                        }
+                        
                         newList.push(fresh);
                         newCount++;
                     }
                 }
             }
+        }
+
+        // 批量处理需要标签导入确认的角色
+        if (charsNeedTagImport.length > 0) {
+            await batchImportTags(charsNeedTagImport, { skipSave: true });
         }
 
         if (forceFull) updateProgressBar(100, '扫描完成！', '即将刷新列表...');
@@ -1999,21 +2027,29 @@ function showBatchTagDialog() {
         [
             { text: '取消', id: 'cmBatchCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => close() },
             {
-                text: '移除', id: 'cmBatchRemove', cls: 'cm-btn-danger', onClick: (ov, close) => {
+                text: '移除', id: 'cmBatchRemove', cls: 'cm-btn-danger', onClick: async (ov, close) => {
                     const tagIds = Array.from(listContainer.querySelectorAll('input:checked')).map(cb => cb.value);
                     if (tagIds.length === 0) { notify('请选择标签', 'warning'); return; }
                     let count = 0;
-                    state.selectedCards.forEach(fileName => { tagIds.forEach(tagId => { if (removeTagFromChar(fileName, tagId, true)) count++; }); });
+                    for (const fileName of state.selectedCards) {
+                        for (const tagId of tagIds) {
+                            if (await removeTagFromChar(fileName, tagId, true)) count++;
+                        }
+                    }
                     renderTagSidebar(); renderView(); notify('已移除 ' + count + ' 个标签', 'success');
                     close();
                 }
             },
             {
-                text: '添加', id: 'cmBatchApply', cls: 'cm-btn-primary', onClick: (ov, close) => {
+                text: '添加', id: 'cmBatchApply', cls: 'cm-btn-primary', onClick: async (ov, close) => {
                     const tagIds = Array.from(listContainer.querySelectorAll('input:checked')).map(cb => cb.value);
                     if (tagIds.length === 0) { notify('请选择标签', 'warning'); return; }
                     let count = 0;
-                    state.selectedCards.forEach(fileName => { tagIds.forEach(tagId => { if (addTagToChar(fileName, tagId, true)) count++; }); });
+                    for (const fileName of state.selectedCards) {
+                        for (const tagId of tagIds) {
+                            if (await addTagToChar(fileName, tagId, true)) count++;
+                        }
+                    }
                     renderTagSidebar(); renderView(); notify('已添加 ' + count + ' 个标签', 'success');
                     close();
                 }
@@ -2628,56 +2664,8 @@ function createModal() {
                 const fileName = card.dataset.file;
                 const char = state.characters.find(c => c.fileName === fileName);
                 
-                // Double Click Action check (actually this is single click logic in click handler)
-                // Wait, this is click handler. Do we want to support double click settings?
-                // The current code does single click -> showDetail.
-                // If I want "Double Click Action", I need to distinguish click vs dblclick.
-                // But the user requested "Double click card action".
-                // Currently line 3232 calls `showDetail(char)`.
-                
                 if (char) {
-                    if (state.settings.doubleClickAction === 'chat') {
-                        // Logic for chat?
-                        // Actually, if settings say "Double Click = Chat", then Single Click should probably just Select or do nothing?
-                        // Or maybe the setting is "Click Action"?
-                        // Standard UI: Click = Select, Double Click = Open.
-                        // Current UI: Click = Open Detail (if not batch mode).
-                        
-                        // Let's assume the setting "Double Click Action" implies we might want to change behavior.
-                        // But here we are in `onclick`.
-                        // If I implement double click, I need to handle `dblclick` event separately.
-                        // And delay single click?
-                        
-                        // For now, let's keep it simple. If "doubleClickAction" is 'chat',
-                        // we might want to change what clicking does?
-                        // "Double click" usually implies 2 clicks.
-                        // The current code doesn't seem to have dblclick listener.
-                        // It uses `onclick`.
-                        
-                        // If I want to strictly support double click, I need to add `ondblclick` and manage timers.
-                        // Given complexity, maybe I should just interpret the setting as "Click Action" for now?
-                        // Or add dblclick listener.
-                        
-                        // Let's Stick to the plan: Just modify this block to respect the setting IF it was "Click Action".
-                        // But the setting is named "Double Click".
-                        // If the user insisted on "Double Click", I should add dblclick handler.
-                        // However, `cm-card` elements are dynamic.
-                        // The event listener is on `cmBody` (delegated).
-                        
-                        // Let's just default to showDetail for now on click.
-                        // If I want to support 'chat' on click/dblclick, I'd need more complex logic.
-                        // Let's skip modifying this part for now to avoid breaking click behavior,
-                        // unless I'm sure I want to change single click behavior.
-                        
-                        // Wait, if I change the setting name to "Click Action" it would be easier.
-                        // But I already wrote "Double Click" in settings.js.
-                        // Let's assume for now `showDetail` is the way.
-                        // I will NOT modify this block for now to be safe.
-                        
-                        showDetail(char);
-                    } else {
-                        showDetail(char);
-                    }
+                    showDetail(char);
                 }
                 state.lastSelectedIndex = parseInt(card.dataset.index);
             }
@@ -3062,7 +3050,7 @@ async function init() {
         setTimeout(() => scan(), 1000);
     }
     
-    log('角色卡管理器 小鱼改版 v1.0 已加载');
+    log(`角色卡管理器 小鱼改版 v${manifest.version} 已加载`);
 }
 
 setTimeout(init, 500);

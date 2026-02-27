@@ -5,6 +5,21 @@ import { COLORS } from './constants.js';
 import { authFetch } from './api.js';
 import { setCache } from './db.js';
 
+/**
+ * 比较两个数组是否相等（浅比较）
+ * @param {Array} a - 数组 a
+ * @param {Array} b - 数组 b
+ * @returns {boolean}
+ */
+function arraysEqual(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+}
+
 export function loadTags() {
     const ctx = getSTContext();
     if (ctx) {
@@ -78,18 +93,24 @@ export function getCharTags(fileName) {
     return ids.map(id => state.tags.find(t => t.id === id)).filter(Boolean);
 }
 
-export function addTagToChar(fileName, tagId, skipSync = false, markUnsynced = true) {
+export async function addTagToChar(fileName, tagId, skipSync = false, markUnsynced = true) {
     if (!state.tagMap[fileName]) state.tagMap[fileName] = [];
     if (!state.tagMap[fileName].includes(tagId)) {
         state.tagMap[fileName].push(tagId);
         saveTags();
+        
+        // 始终保存 cm_manager.tags 到文件
+        const tagNames = getCharTags(fileName).map(t => t.name);
+        await saveCmManagerTagsToCard(fileName, tagNames);
+        
+        // 如果开启自动同步到 data.tags，则同步
         if (!skipSync && state.settings.autoSyncTags) {
-            syncTagsToCard(fileName);
-        } else if (skipSync && markUnsynced) {
+            await syncTagsToCard(fileName);
+        } else if (markUnsynced) {
             state.hasUnsyncedTags = true;
             setCache('hasUnsyncedTags', true);
             
-            // 记录哪些卡片需要同步
+            // 记录哪些卡片需要同步到 data.tags
             if (!state.unsyncedCards) state.unsyncedCards = new Set();
             state.unsyncedCards.add(fileName);
         }
@@ -98,20 +119,26 @@ export function addTagToChar(fileName, tagId, skipSync = false, markUnsynced = t
     return false;
 }
 
-export function removeTagFromChar(fileName, tagId, skipSync = false, markUnsynced = true) {
+export async function removeTagFromChar(fileName, tagId, skipSync = false, markUnsynced = true) {
     const ids = state.tagMap[fileName];
     if (ids) {
         const idx = ids.indexOf(tagId);
         if (idx > -1) {
             ids.splice(idx, 1);
             saveTags();
+            
+            // 始终保存 cm_manager.tags 到文件
+            const tagNames = getCharTags(fileName).map(t => t.name);
+            await saveCmManagerTagsToCard(fileName, tagNames);
+            
+            // 如果开启自动同步到 data.tags，则同步
             if (!skipSync && state.settings.autoSyncTags) {
-                syncTagsToCard(fileName);
-            } else if (skipSync && markUnsynced) {
+                await syncTagsToCard(fileName);
+            } else if (markUnsynced) {
                 state.hasUnsyncedTags = true;
                 setCache('hasUnsyncedTags', true);
                 
-                // 记录哪些卡片需要同步
+                // 记录哪些卡片需要同步到 data.tags
                 if (!state.unsyncedCards) state.unsyncedCards = new Set();
                 state.unsyncedCards.add(fileName);
             }
@@ -119,6 +146,21 @@ export function removeTagFromChar(fileName, tagId, skipSync = false, markUnsynce
         }
     }
     return false;
+}
+
+/**
+ * 保存 cm_manager.tags 到角色卡文件
+ * @param {string} fileName - 角色文件名
+ * @param {string[]} tagNames - 标签名称数组
+ */
+async function saveCmManagerTagsToCard(fileName, tagNames) {
+    await saveCharacterData(fileName, (data) => {
+        if (!data.extensions) data.extensions = {};
+        if (!data.extensions.cm_manager) {
+            data.extensions.cm_manager = {};
+        }
+        data.extensions.cm_manager.tags = tagNames;
+    });
 }
 
 /**
@@ -227,7 +269,7 @@ export async function syncTagsToCard(fileName) {
         
         const existingCardTags = Array.isArray(targetObj.tags) ? targetObj.tags : [];
         
-        // 获取所有插件已知 Tag 名称 (用于识别哪些是“受管”的)
+        // 获取所有插件已知 Tag 名称 (用于识别哪些是"受管"的)
         // 逻辑：如果卡片里的 Tag 在插件已知列表中，说明它受插件管理 -> 使用插件当前设置覆盖 (即如果插件里没选，就删掉)
         // 如果卡片里的 Tag 不在插件已知列表中，说明是外部 Tag -> 保留
         const allPluginTagNames = state.tags.map(t => t.name.toLowerCase());
@@ -240,18 +282,44 @@ export async function syncTagsToCard(fileName) {
         // 使用 Set 去重
         const finalTags = [...new Set([...preservedTags, ...currentPluginTags])];
         
+        // 获取现有的 cm_manager.tags
+        const existingCmManagerTags = targetObj.extensions?.cm_manager?.tags || null;
+        
+        // 检查是否有变化（tags 或 cm_manager.tags）
+        const tagsChanged = !arraysEqual(existingCardTags.sort(), finalTags.sort());
+        const cmTagsChanged = !arraysEqual(existingCmManagerTags?.sort() || [], currentPluginTags.sort());
+        
+        // 如果没有任何变化，跳过写入以避免修改文件时间
+        if (!tagsChanged && !cmTagsChanged) {
+            console.log('[TagSync] No changes for', fileName, '- skipping write');
+            return;
+        }
+
         targetObj.tags = finalTags;
 
-        // 4. 保存回文件
+        // 4. 同步 cm_manager.tags 到角色卡
+        // 确保 extensions 结构存在
+        if (!targetObj.extensions) targetObj.extensions = {};
+        if (!targetObj.extensions.cm_manager) {
+            targetObj.extensions.cm_manager = {};
+        }
+        // 更新 cm_manager.tags 为当前插件的标签
+        targetObj.extensions.cm_manager.tags = currentPluginTags;
+
+        // 5. 保存回文件
         // 使用 merge-attributes 接口进行局部更新，避免全量覆盖导致的数据丢失或 400 错误
         const payload = { avatar: fileName };
         
         if (fullData.data && (fullData.spec === 'chara_card_v3' || fullData.data.name)) {
-            // V2/V3: 更新 data.tags
-            payload.data = { tags: finalTags };
+            // V2/V3: 更新 data.tags 和 data.extensions
+            payload.data = {
+                tags: finalTags,
+                extensions: targetObj.extensions
+            };
         } else {
-            // V1: 更新 tags
+            // V1: 更新 tags 和 extensions
             payload.tags = finalTags;
+            payload.extensions = targetObj.extensions;
         }
 
         console.log('[TagSync] Sending merge payload for', fileName, payload);

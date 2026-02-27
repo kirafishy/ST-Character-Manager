@@ -2,6 +2,7 @@ import { state, saveSettings, defaultSettings } from './state.js';
 import { ICONS } from './constants.js';
 import { escapeHtml } from './utils.js';
 import { syncAllTags } from './data.js';
+import manifest from './manifest.json' with { type: 'json' };
 
 export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm, showProgressBar, updateProgressBar, hideProgressBar }) {
     const settings = state.settings;
@@ -129,6 +130,28 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </div>
                 </div>
 
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>引号内容颜色主题</span>
+                        <small>设置中文和英文引号内内容的高亮颜色</small>
+                    </div>
+                    <select id="cmSetQuoteTheme" class="cm-select-input">
+                        <option value="purple" ${settings.quoteColorTheme === 'purple' ? 'selected' : ''}>紫色 (默认)</option>
+                        <option value="blue" ${settings.quoteColorTheme === 'blue' ? 'selected' : ''}>蓝色</option>
+                        <option value="green" ${settings.quoteColorTheme === 'green' ? 'selected' : ''}>绿色</option>
+                        <option value="orange" ${settings.quoteColorTheme === 'orange' ? 'selected' : ''}>橙色</option>
+                        <option value="pink" ${settings.quoteColorTheme === 'pink' ? 'selected' : ''}>粉色</option>
+                        <option value="custom" ${settings.quoteColorTheme === 'custom' ? 'selected' : ''}>自定义</option>
+                    </select>
+                </div>
+                
+                <div id="cmCustomQuoteColorWrap" style="display:${settings.quoteColorTheme === 'custom' ? 'block' : 'none'};padding:10px;background:var(--cm-bg-ter);border-radius:8px;margin-bottom:12px;">
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <label style="font-size:12px;color:var(--cm-text-sec);width:60px;">引号</label>
+                        <input type="color" id="cmSetCustomQuoteColor" value="${settings.customQuoteColor || '#8B5CF6'}" style="cursor:pointer;background:none;border:none;padding:0;width:30px;height:30px;">
+                    </div>
+                </div>
+
                 <div id="cmMacroPreviewCard" style="padding:12px;border:1px solid var(--cm-border);border-radius:10px;background:var(--cm-bg-sec);margin-bottom:12px;">
                     <h3 style="margin:0 0 10px 0;font-size:13px;color:var(--cm-text);font-weight:600;">染色预览</h3>
                     <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--cm-border);">
@@ -148,7 +171,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     <div style="margin-top:10px;font-size:12px;line-height:1.7;color:var(--cm-text);">
                         对话示例：<br>
                         <span id="cmPreviewUserToken" style="font-weight:700;color:#FB923C;">{{user}}</span>：我想把占位符渲染成彩色。<br>
-                        <span id="cmPreviewCharToken" style="font-weight:700;color:#22D3EE;">{{char}}</span>：你好，今天想聊什么？
+                        <span id="cmPreviewCharToken" style="font-weight:700;color:#22D3EE;">{{char}}</span>：<span id="cmPreviewQuoteToken" style="color:#8B5CF6;">"你好，今天想聊什么？"</span><br>
+                        <span id="cmPreviewUserToken2" style="font-weight:700;color:#FB923C;">{{user}}</span>：<span id="cmPreviewQuoteToken2" style="color:#8B5CF6;">「嗯……让我想想」</span>好吧，那就开始吧！
                     </div>
                 </div>
 
@@ -176,17 +200,6 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </label>
                 </div>
 
-                <div class="cm-setting-item">
-                    <div class="cm-setting-label">
-                        <span>双击卡片动作</span>
-                        <small>鼠标左键双击卡片时的行为</small>
-                    </div>
-                    <select id="cmSetDbClick" class="cm-select-input">
-                        <option value="detail" ${settings.doubleClickAction === 'detail' ? 'selected' : ''}>查看详情 (默认)</option>
-                        <option value="chat" ${settings.doubleClickAction === 'chat' ? 'selected' : ''}>启动聊天</option>
-                    </select>
-                </div>
-                
                  <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>默认排序方式</span>
@@ -198,7 +211,36 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <option value="name_asc" ${settings.defaultSort === 'name_asc' ? 'selected' : ''}>🔤 名称 (A-Z)</option>
                     </select>
                 </div>
+            </div>
 
+            <!-- 标签设置 -->
+            <div class="cm-settings-group">
+                <h4 class="cm-settings-title">${ICONS.tag || '🏷️'} 标签设置</h4>
+                
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>同步标签到 data.tags</span>
+                        <small>修改标签时同步写入角色卡的 data.tags 字段，影响酒馆原生和其他插件的标签读取</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetAutoSyncTags" ${settings.autoSyncTags ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>全量同步标签到 data.tags</span>
+                        <small>将插件标签写入所有角色卡的 data.tags 字段</small>
+                    </div>
+                    <button id="cmSyncAllTagsBtn" class="cm-btn cm-btn-secondary">立即同步</button>
+                </div>
+            </div>
+
+            <!-- 翻译设置 -->
+            <div class="cm-settings-group">
+                <h4 class="cm-settings-title">${ICONS.translate || '🌐'} 翻译设置</h4>
+                
                  <div class="cm-setting-item">
                      <div class="cm-setting-label">
                          <span>角色卡翻译</span>
@@ -220,25 +262,6 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
             <div class="cm-settings-group">
                 <h4 class="cm-settings-title">${ICONS.database || '💾'} 数据与存储</h4>
                 
-                <div class="cm-setting-item">
-                    <div class="cm-setting-label">
-                        <span>自动同步标签</span>
-                        <small>修改标签时自动写入角色卡文件</small>
-                    </div>
-                    <label class="cm-switch">
-                        <input type="checkbox" id="cmSetAutoSyncTags" ${settings.autoSyncTags ? 'checked' : ''}>
-                        <span class="cm-slider"></span>
-                    </label>
-                </div>
-
-                <div class="cm-setting-item">
-                    <div class="cm-setting-label">
-                        <span>全量同步标签</span>
-                        <small>将插件标签写入所有角色卡文件</small>
-                    </div>
-                    <button id="cmSyncAllTagsBtn" class="cm-btn cm-btn-secondary">立即同步</button>
-                </div>
-
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>清除索引缓存</span>
@@ -273,7 +296,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     <div class="cm-about-item">
                         <span class="cm-about-role">三改作者</span>
                         <span class="cm-about-name">Kirafishy</span>
-                        <small class="cm-about-note">角色卡管理器 小鱼改版 v1.1</small>
+                        <small class="cm-about-note">角色卡管理器 小鱼改版 v${manifest.version}</small>
                     </div>
                 </div>
             </div>
@@ -404,7 +427,6 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 };
             }
         };
-        bindSelect('cmSetDbClick', 'doubleClickAction');
         bindSelect('cmSetDefSort', 'defaultSort');
         bindSelect('cmSetDetailMode', 'detailContentMode');
 
@@ -427,20 +449,39 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
             return map[theme] || map.dark1;
         };
 
+        const getQuotePreviewColor = (quoteTheme, customQuote) => {
+            if (quoteTheme === 'custom') return customQuote || '#8B5CF6';
+            const map = {
+                purple: '#8B5CF6',
+                blue: '#3B82F6',
+                green: '#10B981',
+                orange: '#F59E0B',
+                pink: '#EC4899'
+            };
+            return map[quoteTheme] || map.purple;
+        };
+
         const updateMacroPreview = () => {
             const colors = getMacroPreviewColors(state.settings.macroColorTheme || 'dark1', state.settings.customCharColor, state.settings.customUserColor);
+            const quoteColor = getQuotePreviewColor(state.settings.quoteColorTheme || 'purple', state.settings.customQuoteColor);
             const userSwatch = ov.querySelector('#cmPreviewUserSwatch');
             const charSwatch = ov.querySelector('#cmPreviewCharSwatch');
             const userHex = ov.querySelector('#cmPreviewUserHex');
             const charHex = ov.querySelector('#cmPreviewCharHex');
             const userToken = ov.querySelector('#cmPreviewUserToken');
             const charToken = ov.querySelector('#cmPreviewCharToken');
+            const quoteToken = ov.querySelector('#cmPreviewQuoteToken');
+            const quoteToken2 = ov.querySelector('#cmPreviewQuoteToken2');
+            const userToken2 = ov.querySelector('#cmPreviewUserToken2');
             if (userSwatch) userSwatch.style.background = colors.user;
             if (charSwatch) charSwatch.style.background = colors.char;
             if (userHex) userHex.textContent = (colors.user || '').toUpperCase();
             if (charHex) charHex.textContent = (colors.char || '').toUpperCase();
             if (userToken) userToken.style.color = colors.user;
             if (charToken) charToken.style.color = colors.char;
+            if (userToken2) userToken2.style.color = colors.user;
+            if (quoteToken) quoteToken.style.color = quoteColor;
+            if (quoteToken2) quoteToken2.style.color = quoteColor;
         };
 
         if (macroThemeSelect) {
@@ -449,6 +490,22 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 saveSettings();
                 if (customMacroWrap) {
                     customMacroWrap.style.display = e.target.value === 'custom' ? 'block' : 'none';
+                }
+                updateMacroPreview();
+                renderView();
+            };
+        }
+        
+        // 引号主题选择事件处理
+        const quoteThemeSelect = ov.querySelector('#cmSetQuoteTheme');
+        const customQuoteWrap = ov.querySelector('#cmCustomQuoteColorWrap');
+        
+        if (quoteThemeSelect) {
+            quoteThemeSelect.onchange = (e) => {
+                state.settings.quoteColorTheme = e.target.value;
+                saveSettings();
+                if (customQuoteWrap) {
+                    customQuoteWrap.style.display = e.target.value === 'custom' ? 'block' : 'none';
                 }
                 updateMacroPreview();
                 renderView();
@@ -470,6 +527,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         };
         bindColor('cmSetCustomUserColor', 'customUserColor');
         bindColor('cmSetCustomCharColor', 'customCharColor');
+        bindColor('cmSetCustomQuoteColor', 'customQuoteColor');
         updateMacroPreview();
 
         // Sync All Tags
@@ -883,7 +941,7 @@ export function showTranslationSettingsDialog(createBaseDialog, notify, onSettin
             showTranslationSettingsDialog(createBaseDialog, notify, onSettingsChanged);
             if (onSettingsChanged) onSettingsChanged();
         }, notify);
-    });
+    }, { stack: true });
 }
 
 // ========== 版权提示与免责声明弹窗 ==========

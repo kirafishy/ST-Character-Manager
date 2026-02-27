@@ -19,13 +19,14 @@ export const defaultSettings = {
     showCardHoverButtons: true, // 显示卡片 Hover 按钮
     showCardNote: true,         // 显示卡片注释/备注
     autoScan: true,
-    autoSyncTags: false, // 自动同步 Tag 到角色卡
-    doubleClickAction: 'detail', // 'detail' | 'chat'
+    autoSyncTags: false, // 同步标签到 data.tags 字段（影响酒馆原生和其他插件）
     defaultSort: 'date_desc',
     detailContentMode: 'scroll', // 详情页内容显示模式: 'scroll' | 'expand'
     macroColorTheme: 'dark1', // 预设主题
     customCharColor: '#22D3EE',
     customUserColor: '#FB923C',
+    quoteColorTheme: 'purple', // 引号颜色预设主题
+    customQuoteColor: '#8B5CF6', // 自定义引号颜色
     translationEnabled: false, // 角色卡翻译功能开关
     debugMode: false, // 调试模式
     // --- Translation Settings ---

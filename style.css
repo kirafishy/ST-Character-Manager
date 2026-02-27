@@ -1225,6 +1225,142 @@ body.cm-resizing * {
     flex: 1
 }
 
+/* 标签导入弹窗样式 */
+.cm-tag-import-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.cm-tag-import-hint {
+    font-size: 13px;
+    color: var(--cm-text-sec);
+    line-height: 1.5;
+    padding: 12px;
+    background: var(--cm-bg-ter);
+    border-radius: 6px;
+    border: 1px solid var(--cm-border);
+}
+
+.cm-tag-import-section h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: var(--cm-text);
+}
+
+.cm-tag-import-section h4 small {
+    color: var(--cm-text-sec);
+    font-weight: normal;
+}
+
+.cm-tag-import-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 32px;
+    padding: 8px;
+    background: var(--cm-bg);
+    border-radius: 6px;
+    border: 1px solid var(--cm-border);
+}
+
+.cm-tag-import-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px 4px 4px;
+    background: var(--cm-bg-sec);
+    border: 1px solid var(--cm-border);
+    border-radius: 16px;
+    font-size: 13px;
+    transition: all 0.2s ease;
+}
+
+.cm-tag-import-badge:hover {
+    background: var(--cm-hover);
+}
+
+.cm-tag-import-badge.cm-tag-import-new {
+    border-style: dashed;
+}
+
+.cm-tag-import-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.cm-tag-import-name {
+    color: var(--cm-text);
+}
+
+.cm-tag-import-remove {
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: var(--cm-hover);
+    color: var(--cm-text-sec);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    margin-left: 2px;
+}
+
+.cm-tag-import-remove:hover {
+    background: #ef4444;
+    color: #fff;
+}
+
+.cm-tag-import-remove:disabled {
+    cursor: default;
+    background: var(--cm-bg-ter);
+    color: var(--cm-text-sec);
+}
+
+/* 批量标签策略弹窗 */
+.cm-batch-strategy-content {
+    padding: 10px 0;
+}
+
+.cm-batch-strategy-hint {
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    color: var(--cm-text);
+}
+
+.cm-batch-strategy-hint strong {
+    color: var(--cm-accent-text);
+    font-size: 16px;
+}
+
+.cm-batch-strategy-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.cm-batch-strategy-btn {
+    padding: 14px 16px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+@media (max-width: 400px) {
+    .cm-batch-strategy-options {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* Settings Language Row Layout */
 .cm-settings-lang-row {
     display: flex;
