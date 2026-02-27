@@ -886,17 +886,68 @@ export async function getCharHistoryCount(char) {
     return history.length;
 }
 
-export async function deleteChatFile(chatId) {
+export async function deleteChatFile(chatId, avatarUrl = null) {
     try {
+        console.log('尝试删除聊天记录:', chatId, '头像URL:', avatarUrl);
+        
+        // 准备请求体，使用后端API期望的参数
+        const requestBody = {
+            chatfile: chatId  // 使用正确的参数名，与SillyTavern原生代码一致
+        };
+        
+        // 如果提供了avatarUrl，也添加到请求体中
+        if (avatarUrl) {
+            requestBody.avatar_url = avatarUrl;
+        }
+        
         const r = await authFetch('/api/chats/delete', {
             method: 'POST',
-            body: JSON.stringify({ chat_file: chatId })
+            body: JSON.stringify(requestBody),
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
-        if (!r.ok) throw new Error('删除失败');
+        
+        console.log('删除请求响应状态:', r.status);
+        
+        // 检查响应状态并输出详细错误信息
+        if (!r.ok) {
+            let errorMsg = `HTTP ${r.status}`;
+            try {
+                // 尝试获取错误响应的文本内容
+                errorMsg = await r.text();
+            } catch (textErr) {
+                console.warn('无法获取错误响应文本:', textErr);
+            }
+            
+            console.error(`删除聊天记录失败: ${r.status} - ${errorMsg}`);
+            throw new Error(`删除失败: ${r.status} - ${errorMsg}`);
+        }
+        
+        // 尝试解析响应，如果成功删除通常会返回一些确认信息
+        try {
+            const response = await r.json();
+            console.log('删除聊天记录响应:', response);
+        } catch (parseErr) {
+            // 如果响应不是JSON格式，也认为是成功的（有些API会返回空响应）
+            console.log('删除聊天记录成功（无详细响应）');
+        }
+        
+        // 触发聊天删除事件，通知SillyTavern UI更新
+        try {
+            const chatName = chatId.replace('.jsonl', '');
+            if (typeof parentWin.eventSource !== 'undefined' && typeof parentWin.event_types !== 'undefined') {
+                await parentWin.eventSource.emit(parentWin.event_types.CHAT_DELETED, chatName);
+            }
+        } catch (eventErr) {
+            console.warn('发送聊天删除事件失败:', eventErr);
+        }
+        
         return true;
     } catch (e) {
-        console.error(e);
-        return false;
+        console.error('删除聊天记录时发生错误:', e);
+        // 重新抛出错误，让调用者知道具体错误
+        throw e;
     }
 }
 
@@ -969,7 +1020,11 @@ export async function deleteChar(char, { deleteChats = false, deleteWi = false }
                 const chats = await getCharChatHistory(charObj);
                 for (const chat of chats) {
                     if (chat.file_name) {
-                        await deleteChatFile(chat.file_name);
+                        try {
+                            await deleteChatFile(chat.file_name, fileName);
+                        } catch (chatDelErr) {
+                            console.error('[CharManager] Failed to delete chat:', chat.file_name, chatDelErr);
+                        }
                     }
                 }
             } catch (e) {

@@ -1424,7 +1424,7 @@ export class CharacterDetails {
                     e.stopPropagation();
                     if (await showConfirm(`确定删除聊天记录 "${chatName}" 吗？`)) {
                         try {
-                            const success = await deleteChatFile(h.file_name);
+                            const success = await deleteChatFile(h.file_name, this.char.fileName);
                             if (success) {
                                 item.remove();
                                 notify('聊天记录已删除', 'success');
@@ -1433,10 +1433,9 @@ export class CharacterDetails {
                                     const el = this.container.querySelector('#cm-detail-chat-count');
                                     if (el) el.innerHTML = '💬 ' + count;
                                 });
-                            } else {
-                                notify('删除失败', 'error');
                             }
                         } catch (err) {
+                            console.error('删除聊天记录失败:', err);
                             notify('删除失败: ' + err.message, 'error');
                         }
                     }
