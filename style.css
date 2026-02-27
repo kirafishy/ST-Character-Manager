@@ -1,3 +1,14 @@
+/*
+ * z-index 层级规范
+ * =================
+ * 900000+   : 系统级 (Toast、强制覆盖层)
+ * 800000+   : 阻断级 (免责声明、全局 Loading)
+ * 700000+   : 弹窗级 (确认对话框、图片预览、详情页、批量操作)
+ * 600000+   : 页面级 (主界面容器)
+ * 1000-9999 : 组件级 (下拉菜单、工具提示)
+ * 1-999     : 基础级 (内部元素、按钮、徽章)
+ */
+
 .cm-theme-dark {
     --cm-bg: #1e1e1e;
     --cm-bg-sec: #252526;
@@ -80,7 +91,7 @@
     position: fixed;
     bottom: 20px;
     right: 20px;
-    z-index: 2147483000;
+    z-index: 900000; /* 系统级: Toast 进度条 */
     pointer-events: none;
     display: flex;
     justify-content: flex-end;
@@ -190,7 +201,7 @@
 #charManagerModal {
     display: none;
     position: fixed;
-    z-index: 99999;
+    z-index: 600000; /* 页面级: 主界面容器 */
     left: 0;
     top: 0;
     width: 100vw;
@@ -264,7 +275,7 @@
     border: 1px solid var(--cm-border);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    z-index: 1001;
+    z-index: 1000; /* 组件级: 自动完成下拉框 */
     overflow: hidden;
     margin-top: 8px;
     animation: cmFadeIn 0.2s ease
@@ -597,7 +608,7 @@
     background: transparent;
     cursor: col-resize;
     flex-shrink: 0;
-    z-index: 10;
+    z-index: 10; /* 基础级: 分类展开图标 */
     margin-left: -6px;
     transition: background 0.2s
 }
@@ -647,7 +658,7 @@ body.cm-resizing * {
 .cm-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    z-index: 2;
+    z-index: 2; /* 基础级: 内部元素 */
 }
 
 .cm-card.cm-sel {
@@ -741,7 +752,7 @@ body.cm-resizing * {
     right: 6px;
     display: flex;
     gap: 4px;
-    z-index: 10;
+    z-index: 10; /* 基础级: 卡片悬停操作栏 */
     opacity: 0;
     transition: opacity 0.2s;
     pointer-events: auto;
@@ -788,7 +799,7 @@ body.cm-resizing * {
 
 .cm-card-info {
     position: relative;
-    z-index: 5;
+    z-index: 5; /* 基础级: 卡片信息层 */
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
     margin-top: auto;
 }
@@ -1002,7 +1013,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: var(--cm-overlay);
-    z-index: 100010;
+    z-index: 700010; /* 弹窗级: 批量操作遮罩 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1404,7 +1415,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: var(--cm-overlay);
-    z-index: 100005;
+    z-index: 700020; /* 弹窗级: 确认对话框 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1512,7 +1523,7 @@ body.cm-resizing * {
     height: 100dvh;
     min-height: 100dvh;
     background: var(--cm-overlay);
-    z-index: 100000;
+    z-index: 700000; /* 弹窗级: 详情页遮罩 */
     overflow-y: auto;
     -webkit-overflow-scrolling: touch
 }
@@ -1569,7 +1580,7 @@ body.cm-resizing * {
     height: 34px;
     border-radius: 8px;
     cursor: pointer;
-    z-index: 20;
+    z-index: 20; /* 基础级: 标签删除按钮 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1631,7 +1642,7 @@ body.cm-resizing * {
     justify-content: center;
     cursor: pointer;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    z-index: 10
+    z-index: 10 /* 基础级: 徽章计数器 */
 }
 
 .cm-cam-btn:hover {
@@ -1948,7 +1959,7 @@ body.cm-resizing * {
     background: var(--cm-bg-sec);
     border: 1px solid var(--cm-border);
     border-radius: 0 0 8px 8px;
-    z-index: 20;
+    z-index: 20; /* 基础级: 自动完成列表 */
     max-height: 200px;
     overflow-y: auto;
     display: none;
@@ -2430,7 +2441,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: var(--cm-overlay);
-    z-index: 100002;
+    z-index: 700030; /* 弹窗级: 导入进度遮罩 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2580,7 +2591,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: rgba(0, 0, 0, 0.95);
-    z-index: 100003;
+    z-index: 700040; /* 弹窗级: 图片预览遮罩 */
     display: flex;
     flex-direction: column;
 }
@@ -2820,7 +2831,7 @@ body.cm-resizing * {
         width: auto;
         bottom: auto;
         top: 100px;
-        z-index: 2147483647;
+        z-index: 900001; /* 系统级: 强制覆盖层 */
     }
 
     .cm-progress-box {
@@ -3812,7 +3823,7 @@ input:checked + .cm-slider:before {
     position: absolute;
     top: 100%;
     left: 0;
-    z-index: 100020;
+    z-index: 700100; /* 弹窗级: 下拉菜单 */
     min-width: 180px;
     padding-top: 4px;
     background: transparent;
@@ -3894,7 +3905,7 @@ input:checked + .cm-slider:before {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 100050;
+    z-index: 800000; /* 阻断级: Loading 动画 */
     border-radius: 12px;
     backdrop-filter: blur(4px);
 }
@@ -4592,7 +4603,7 @@ body.hide-card-note .cm-note {
     color: #2563eb;
     font-weight: bold;
     pointer-events: none;
-    z-index: 10;
+    z-index: 10; /* 基础级: 装饰性元素 */
 }
 
 /* Gallery Lightbox Thumbnails */
@@ -4663,7 +4674,7 @@ body.hide-card-note .cm-note {
     opacity: 0;
     pointer-events: none;
     transition: all 0.3s ease;
-    z-index: 100;
+    z-index: 100; /* 组件级: 浮动操作按钮 */
     border: 1px solid var(--cm-accent);
 }
 

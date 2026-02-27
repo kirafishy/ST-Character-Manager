@@ -468,7 +468,7 @@ function showTagPicker(currentIds, onConfirm) {
     const overlay = doc.createElement('div');
     overlay.className = 'cm-tag-editor-overlay';
     // 强制样式以确保覆盖在最上层 (Avoid conflict with base dialog)
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:2147483647;display:flex;justify-content:center;align-items:center;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:900001;display:flex;justify-content:center;align-items:center;'; /* 系统级: 强制覆盖层 */
 
     // 2. Create Dialog Box
     const dialog = doc.createElement('div');
@@ -2210,7 +2210,7 @@ function showRandomModeMenu(targetBtn) {
     const rect = targetBtn.getBoundingClientRect();
     const menu = doc.createElement('div');
     menu.className = 'cm-random-menu ' + (state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light');
-    menu.style.cssText = 'position:fixed;top:' + (rect.bottom + 5) + 'px;left:' + (rect.left - 100) + 'px;background:var(--cm-bg-sec);border:1px solid var(--cm-border);border-radius:8px;z-index:100005;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.2);';
+    menu.style.cssText = 'position:fixed;top:' + (rect.bottom + 5) + 'px;left:' + (rect.left - 100) + 'px;background:var(--cm-bg-sec);border:1px solid var(--cm-border);border-radius:8px;z-index:700100;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.2);'; /* 弹窗级: 下拉菜单 */
 
     if (parseInt(menu.style.left) < 10) menu.style.left = '10px';
 

@@ -170,9 +170,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </div>
                     <div style="margin-top:10px;font-size:12px;line-height:1.7;color:var(--cm-text);">
                         对话示例：<br>
-                        <span id="cmPreviewUserToken" style="font-weight:700;color:#FB923C;">{{user}}</span>：我想把占位符渲染成彩色。<br>
                         <span id="cmPreviewCharToken" style="font-weight:700;color:#22D3EE;">{{char}}</span>：<span id="cmPreviewQuoteToken" style="color:#8B5CF6;">"你好，今天想聊什么？"</span><br>
-                        <span id="cmPreviewUserToken2" style="font-weight:700;color:#FB923C;">{{user}}</span>：<span id="cmPreviewQuoteToken2" style="color:#8B5CF6;">「嗯……让我想想」</span>好吧，那就开始吧！
+                        <span id="cmPreviewUserToken2" style="font-weight:700;color:#FB923C;">{{user}}</span>：<span id="cmPreviewQuoteToken2" style="color:#8B5CF6;">「嗯……让我想想」</span>你陷入了沉思。
                     </div>
                 </div>
 
@@ -960,7 +959,7 @@ function showTranslationDisclaimer(_unused, onAccept, onReject) {
 
     const ov = document.createElement('div');
     ov.className = 'cm-disclaimer-overlay ' + (state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light');
-    ov.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;height:100dvh;min-height:100dvh;background:rgba(0,0,0,0.7);z-index:200000;display:flex;align-items:center;justify-content:center;padding:calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));box-sizing:border-box';
+    ov.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;height:100dvh;min-height:100dvh;background:rgba(0,0,0,0.7);z-index:800100;display:flex;align-items:center;justify-content:center;padding:calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));box-sizing:border-box'; /* 阻断级: 免责声明弹窗 */
 
     ov.innerHTML = `
         <div style="background:var(--cm-bg-sec);border-radius:16px;max-width:560px;width:100%;max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 40px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.3)">
