@@ -6,7 +6,7 @@ import { createBaseDialog, showAlert, showConfirm, showDeleteConfirm } from './u
 export { createBaseDialog, showAlert, showConfirm, showDeleteConfirm };
 import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
-import { getCache, setCache, migrateFromLocalStorage } from './db.js';
+import { getCache, setCache, clearCache, migrateFromLocalStorage } from './db.js';
 import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo, syncAllTags, deleteChar } from './data.js';
 import { importTags, needsTagImport, batchImportTags, migrateToCmManager, migrateAndSaveCmManager, getCmManager } from './st-tags.js';
 import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
@@ -817,6 +817,13 @@ async function getCharacterList() {
     throw new Error('数据格式错误');
 }
 
+/**
+ * 获取角色卡数据（从服务器获取并解析 PNG 元数据）
+ * @param {string} fn - 角色文件名
+ * @param {Object} stMeta - SillyTavern 内存中的角色元数据对象
+ * @param {boolean} [bypassCache=false] - 是否绕过缓存强制从服务器重新获取
+ * @returns {Promise<Object>} 角色数据对象，包含基础信息和解析后的扩展数据
+ */
 async function getCharacterData(fn, stMeta, bypassCache = false) {
     const isFav = stMeta ? (!!stMeta.fav || (stMeta.data && stMeta.data.extensions && !!stMeta.data.extensions.fav)) : false;
     const charBook = stMeta ? (stMeta.character_book || (stMeta.data && stMeta.data.character_book) || '') : '';
@@ -1077,8 +1084,8 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                     updateProgressBar(progress, `正在扫描... ${i}/${toFetch.length}`, `当前批次: ${chunk.length} 个`);
                 }
 
-                // 并发抓取
-                const results = await Promise.all(chunk.map(c => getCharacterData(c.avatar, c)));
+                // 并发抓取（全量扫描时强制绕过缓存）
+                const results = await Promise.all(chunk.map(c => getCharacterData(c.avatar, c, forceFull)));
                 for (const fresh of results) {
                     if (!fresh.error) {
                         // 迁移旧的扩展配置到 cm_manager（如有迁移则保存）
@@ -3147,10 +3154,42 @@ async function init() {
     // 异步加载缓存数据
     try {
         let chars = await getCache('characters');
-        // 如果 IndexedDB 为空，尝试从 LocalStorage 迁移旧数据
+        let migratedFromOldCache = false;
+        
+        // 如果 IndexedDB 的 characters 键为空，尝试从旧数据迁移
         if (!chars || !Array.isArray(chars) || chars.length === 0) {
-            const migrated = await migrateFromLocalStorage('cm_char_cache');
-            if (migrated) chars = migrated;
+            // 优先尝试从 IndexedDB 的 cm_char_cache 迁移（旧版键名）
+            const oldCache = await getCache('cm_char_cache');
+            if (oldCache && Array.isArray(oldCache) && oldCache.length > 0) {
+                chars = oldCache;
+                // 迁移到新键名
+                await setCache('characters', chars);
+                await clearCache('cm_char_cache');
+                migratedFromOldCache = true;
+                log('已从 IndexedDB cm_char_cache 迁移到 characters');
+            } else {
+                // 尝试从 LocalStorage 迁移更早的旧数据
+                const migrated = await migrateFromLocalStorage('cm_char_cache');
+                if (migrated && Array.isArray(migrated) && migrated.length > 0) {
+                    chars = migrated;
+                    // 迁移到新键名，避免仅存在旧键导致的重启后数据丢失窗口
+                    await setCache('characters', chars);
+                    await clearCache('cm_char_cache');
+                    migratedFromOldCache = true;
+                    log('已从 LocalStorage cm_char_cache 迁移到 characters');
+                }
+            }
+        }
+        
+        // 清理 IndexedDB 中可能遗留的旧键（当 chars 已有数据但旧键未被清理时）
+        if (!migratedFromOldCache) {
+            try {
+                const oldIndexedDBCache = await getCache('cm_char_cache');
+                if (oldIndexedDBCache) {
+                    await clearCache('cm_char_cache');
+                    log('已清理 IndexedDB 遗留键 cm_char_cache');
+                }
+            } catch (e) { /* 忽略清理错误 */ }
         }
 
         if (chars && Array.isArray(chars)) {

@@ -2,6 +2,8 @@ import { state, saveSettings, defaultSettings } from './state.js';
 import { ICONS } from './constants.js';
 import { escapeHtml } from './utils.js';
 import { syncAllTags } from './data.js';
+import { clearAllCache } from './db.js';
+import { galleryCountCache } from './gallery.js';
 import manifest from './manifest.json' with { type: 'json' };
 
 export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm, showProgressBar, updateProgressBar, hideProgressBar }) {
@@ -608,16 +610,22 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         
                         try {
                             const { batchImportDataTags } = await import('./st-tags.js');
-                            const count = await batchImportDataTags(strategy, (current, total) => {
+                            const stats = await batchImportDataTags(strategy, (current, total, statsObj) => {
                                 // batchImportTagsBtn.textContent = `导入中... ${current}/${total}`;
                                 if (updateProgressBar) {
                                     const progress = Math.round((current / total) * 100);
-                                    updateProgressBar(progress, `正在导入标签... ${current}/${total}`, `当前进度: ${progress}%`);
+                                    const subText = statsObj
+                                        ? `更新: ${statsObj.updated} | 跳过: ${statsObj.skipped} | 回源: ${statsObj.fetched} | 新建: ${statsObj.created}`
+                                        : `当前进度: ${progress}%`;
+                                    updateProgressBar(progress, `正在导入标签... ${current}/${total}`, subText);
                                 }
                             });
                             if (updateProgressBar) updateProgressBar(100, '导入完成！', '正在刷新界面...');
                             await new Promise(r => setTimeout(r, 800));
-                            notify(`成功处理了 ${count} 个角色的标签`, 'success');
+                            
+                            // 显示详细统计结果
+                            const resultMsg = `导入完成：更新 ${stats.updated} | 跳过 ${stats.skipped} | 回源 ${stats.fetched} | 新建标签 ${stats.created}${stats.errors > 0 ? ` | 错误 ${stats.errors}` : ''}`;
+                            notify(resultMsg, stats.errors > 0 ? 'warning' : 'success');
                             
                             // 刷新界面
                             renderView();
@@ -643,12 +651,28 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         if (clearCacheBtn) {
             clearCacheBtn.onclick = async () => {
                 if (await showConfirm('确定要清除所有缓存数据吗？\n下次打开时将重新构建索引。')) {
-                    localStorage.removeItem('cm_char_cache');
-                    localStorage.removeItem('cm_gallery_count_cache');
+                    // 清除 IndexedDB 中的所有缓存 (characters, cm_char_cache, hasUnsyncedTags 等)
+                    const clearedKeys = await clearAllCache();
+                    
+                    // 清除 LocalStorage 中的遗留键
+                    const localStorageKeys = [
+                        'cm_char_cache',
+                        'cm_gallery_count_cache',
+                        'cm_hasUnsyncedTags'
+                    ];
+                    localStorageKeys.forEach(key => localStorage.removeItem(key));
+                    
+                    // 重置状态
                     state.characters = [];
                     state.renderedCount = 0;
+                    state.hasUnsyncedTags = false;
+                    if (state.unsyncedCards) state.unsyncedCards.clear();
+                    
+                    // 重置画廊计数缓存（使用顶部静态导入）
+                    Object.keys(galleryCountCache).forEach(key => delete galleryCountCache[key]);
+                    
                     renderView();
-                    notify('缓存已清除', 'success');
+                    notify(`缓存已清除 (IndexedDB: ${clearedKeys.length} 项, LocalStorage: ${localStorageKeys.length} 项)`, 'success');
                 }
             };
         }

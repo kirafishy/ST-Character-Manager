@@ -1,8 +1,9 @@
 import { getSTContext, doc } from './context.js';
 import { state } from './state.js';
 import { createTag, addTagToChar, saveTags, saveCharacterData, syncCmManagerTagsToSTMemory } from './data.js';
-import { log, escapeHtml } from './utils.js';
+import { log, escapeHtml, parsePNG } from './utils.js';
 import { Z_INDEX } from './constants.js';
+import { authFetch } from './api.js';
 
 const IMPORT_EXLCUDED_TAGS = ['ROOT', 'TAVERN'];
 const ANTI_TROLL_MAX_TAGS = 50;
@@ -430,24 +431,90 @@ export async function batchImportTags(characters, { skipSave = false } = {}) {
 }
 
 /**
+ * 从服务器获取角色的真实标签数据（回源读取）
+ * @param {string} fileName - 角色文件名
+ * @returns {Promise<string[]>} 标签名称数组
+ */
+async function fetchRealTagsFromServer(fileName) {
+    try {
+        // 使用模板字符串提高 URL 构造可读性
+        const url = `/characters/${encodeURIComponent(fileName)}?t=${Date.now()}`;
+        const r = await authFetch(url);
+        if (!r.ok) return [];
+        const buf = await r.arrayBuffer();
+        const p = await parsePNG(buf);
+        if (!p) return [];
+        
+        const data = p.data || p;
+        // 优先检查 cm_manager.tags（仅接受数组）
+        if (Array.isArray(data.extensions?.cm_manager?.tags)) {
+            return data.extensions.cm_manager.tags;
+        }
+        // 否则返回 data.tags
+        return Array.isArray(data.tags) ? data.tags : [];
+    } catch (e) {
+        console.warn(`[ST-Tags] 回源读取标签失败 ${fileName}:`, e);
+        return [];
+    }
+}
+
+/**
+ * 检查两个标签数组内容是否相同（忽略顺序，正确处理重复元素）
+ * @param {string[]} arr1 - 第一个数组
+ * @param {string[]} arr2 - 第二个数组
+ * @returns {boolean} 是否相同
+ */
+function areTagsEqual(arr1, arr2) {
+    if (arr1.length !== arr2.length) return false;
+    // 排序后逐项比较，确保重复元素语义正确
+    const sorted1 = [...arr1].sort();
+    const sorted2 = [...arr2].sort();
+    for (let i = 0; i < sorted1.length; i++) {
+        if (sorted1[i] !== sorted2[i]) return false;
+    }
+    return true;
+}
+
+/**
  * 批量从 data.tags 导入标签到插件管理 (手动触发)
  * @param {string} strategy - 导入策略 ('merge' | 'overwrite' | 'skip')
- * @param {Function} onProgress - 进度回调 (current, total)
- * @returns {Promise<number>} 处理的角色数量
+ * @param {Function} onProgress - 进度回调 (current, total, stats)
+ * @returns {Promise<{updated: number, skipped: number, fetched: number, created: number, errors: number}>} 详细统计结果
  */
 export async function batchImportDataTags(strategy, onProgress) {
     const characters = state.characters;
-    let count = 0;
     const total = characters.length;
+    
+    // 详细统计
+    const stats = {
+        updated: 0,      // 成功更新的角色数
+        skipped: 0,      // 跳过的角色数（无标签或无需更新）
+        fetched: 0,      // 回源读取的角色数
+        created: 0,      // 新创建的标签数
+        errors: 0        // 错误数
+    };
     
     for (let i = 0; i < total; i++) {
         const char = characters[i];
         const fileName = char.fileName || char.avatar;
-        const rawTags = getRawTags(char);
-        const importTagsList = filterTags(rawTags);
+        let rawTags = getRawTags(char);
+        let importTagsList = filterTags(rawTags);
+        
+        // 【回源兜底】如果缓存中 tags 为空，尝试从服务器获取真实数据
+        // 使用更精确的条件判断：检查 cm_manager.tags 是否为数组
+        const cmManagerTags = char.data?.extensions?.cm_manager?.tags;
+        if (importTagsList.length === 0 && !Array.isArray(cmManagerTags)) {
+            const realTags = await fetchRealTagsFromServer(fileName);
+            if (realTags.length > 0) {
+                importTagsList = filterTags(realTags);
+                stats.fetched++;
+                log(`[ST-Tags] 回源获取到标签: ${fileName} -> ${importTagsList.join(', ')}`);
+            }
+        }
         
         if (importTagsList.length === 0) {
-            if (onProgress) onProgress(i + 1, total);
+            stats.skipped++;
+            if (onProgress) onProgress(i + 1, total, stats);
             continue;
         }
 
@@ -462,6 +529,8 @@ export async function batchImportDataTags(strategy, onProgress) {
             if (currentPluginTags.length === 0) {
                 newPluginTags = importTagsList;
                 shouldUpdate = true;
+            } else {
+                stats.skipped++;
             }
         } else if (strategy === 'overwrite') {
             // 覆盖：完全使用 data.tags
@@ -470,47 +539,50 @@ export async function batchImportDataTags(strategy, onProgress) {
         } else {
             // 合并：保留现有，追加新的 (去重)
             newPluginTags = [...new Set([...currentPluginTags, ...importTagsList])];
-            // 检查是否有变化
-            if (newPluginTags.length !== currentPluginTags.length) {
-                shouldUpdate = true;
-            } else {
-                // 长度相同也可能内容不同，简单检查一下
-                const sortedCurrent = [...currentPluginTags].sort();
-                const sortedNew = [...newPluginTags].sort();
-                if (JSON.stringify(sortedCurrent) !== JSON.stringify(sortedNew)) {
-                    shouldUpdate = true;
-                }
+            // 使用 Set 比较检查是否有变化，效率更高
+            shouldUpdate = !areTagsEqual(currentPluginTags, newPluginTags);
+            if (!shouldUpdate) {
+                stats.skipped++;
             }
         }
 
         if (shouldUpdate) {
-            cm.tags = newPluginTags;
-            // 保存到文件
+            // 先保存到文件，成功后再修改内存状态，避免持久化失败导致状态不一致
             if (fileName) {
                 try {
                     await saveCmManagerTags(fileName, newPluginTags);
                 } catch (e) {
                     console.warn(`[ST-Tags] Failed to save tags for ${fileName}:`, e);
+                    stats.errors++;
+                    // 持久化失败时跳过后续应用，避免统计与真实落盘状态不一致
+                    if (onProgress) onProgress(i + 1, total, stats);
+                    continue;
                 }
             }
+            
+            // 持久化成功后，再更新内存状态
+            cm.tags = newPluginTags;
             
             // 同步更新酒馆内存中的角色对象，防止快速刷新时被旧数据覆盖
             syncCmManagerTagsToSTMemory(fileName, newPluginTags);
             
             // 应用到插件系统 (创建 Tag 对象并关联)
             const { existingTags, newTags } = categorizeTags(newPluginTags, fileName, false); // filterAssigned=false，因为我们要完全替换
+            // 统计新创建的标签数
+            stats.created += newTags.length;
             // replace=true 以确保完全匹配新的列表
             await applyTags(fileName, [...existingTags, ...newTags], true, true);
-            count++;
+            stats.updated++;
         }
 
-        if (onProgress) onProgress(i + 1, total);
+        if (onProgress) onProgress(i + 1, total, stats);
     }
     
     // 最后统一保存一次 tags.json
     saveTags();
     
-    return count;
+    log(`[ST-Tags] 批量导入完成: 更新 ${stats.updated}, 跳过 ${stats.skipped}, 回源 ${stats.fetched}, 新建标签 ${stats.created}, 错误 ${stats.errors}`);
+    return stats;
 }
 
 /**
