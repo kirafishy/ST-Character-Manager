@@ -1141,12 +1141,23 @@ async function doOverwriteOriginal(ov) {
         if (newCharData.character_book) charData.character_book = newCharData.character_book;
 
         // 使用通用更新函数
+        // 注意：需要构建包含翻译后数据的完整 cardData，确保 cm_manager.tags 被正确保存
+        const translatedFullData = JSON.parse(JSON.stringify(fullData));
+        const translatedTarget = translatedFullData.data || translatedFullData;
+        // 合并翻译后的数据到 fullData
+        Object.assign(translatedTarget, charData);
+        // 确保 extensions.cm_manager.tags 被保留（翻译后的标签）
+        if (newCharData.extensions?.cm_manager) {
+            if (!translatedTarget.extensions) translatedTarget.extensions = {};
+            translatedTarget.extensions.cm_manager = newCharData.extensions.cm_manager;
+        }
+        
         await _updateCharacter(currentChar.fileName, charData, null, {
             cleanOldWorldInfo: true,
             preserveSourceLink: true,
             refreshUI: false, // 翻译界面无需刷新主列表UI，最后统一刷新
             notifySuccess: false,
-            fullCardData: fullData
+            fullCardData: translatedFullData
         });
         
         // 使用单卡刷新，只刷新当前角色（高效）
@@ -1177,12 +1188,9 @@ async function doImportAsNew(ov) {
 
         const fullCardData = buildTranslatedCharData();
         
-        // 导入新卡时，清除 cm_manager.tags 以触发标签选择弹窗
-        // 这样用户可以选择是否导入翻译后的标签
-        const dataBlock = fullCardData.data || fullCardData;
-        if (dataBlock.extensions?.cm_manager) {
-            delete dataBlock.extensions.cm_manager.tags;
-        }
+        // 导入新卡时，保留 cm_manager.tags（翻译后的标签）
+        // 这样 importTags 会直接使用翻译后的标签，无需弹窗确认
+        // 注意：不再删除 cm_manager.tags，让标签直接导入
         
         const jsonStr = JSON.stringify(fullCardData);
         
