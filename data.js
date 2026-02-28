@@ -210,6 +210,64 @@ export function syncCmManagerTagsToSTMemory(fileName, tagNames) {
 }
 
 /**
+ * 同步更新酒馆内存中角色对象的完整数据
+ * @param {string} fileName - 角色文件名
+ * @param {object} newCharData - 新的角色数据
+ */
+function syncCharDataToMemory(fileName, newCharData) {
+    // 辅助函数：更新单个角色对象
+    const updateCharObject = (charObj) => {
+        if (!charObj) return;
+        
+        // 更新基础字段
+        if (newCharData.name) charObj.name = newCharData.name;
+        if (newCharData.description !== undefined) charObj.description = newCharData.description;
+        if (newCharData.personality !== undefined) charObj.personality = newCharData.personality;
+        if (newCharData.scenario !== undefined) charObj.scenario = newCharData.scenario;
+        if (newCharData.first_mes !== undefined) charObj.first_mes = newCharData.first_mes;
+        if (newCharData.mes_example !== undefined) charObj.mes_example = newCharData.mes_example;
+        if (newCharData.tags) charObj.tags = newCharData.tags;
+        
+        // creator_notes 映射到 creatorcomment (酒馆原生字段名)
+        if (newCharData.creator_notes !== undefined) charObj.creatorcomment = newCharData.creator_notes;
+        
+        // 更新 extensions 字段（包括 system_prompt, post_history_instructions, cm_manager 等）
+        if (newCharData.system_prompt !== undefined ||
+            newCharData.post_history_instructions !== undefined ||
+            newCharData.extensions) {
+            if (!charObj.data) charObj.data = {};
+            if (!charObj.data.extensions) charObj.data.extensions = {};
+            
+            // system_prompt 和 post_history_instructions 存储在 extensions 中
+            if (newCharData.system_prompt !== undefined) {
+                charObj.data.extensions.system_prompt = newCharData.system_prompt;
+            }
+            if (newCharData.post_history_instructions !== undefined) {
+                charObj.data.extensions.post_history_instructions = newCharData.post_history_instructions;
+            }
+            
+            // 同步其他 extensions（包括 cm_manager）
+            if (newCharData.extensions) {
+                Object.assign(charObj.data.extensions, newCharData.extensions);
+            }
+        }
+    };
+    
+    // 更新 parentWin.characters
+    if (parentWin.characters && Array.isArray(parentWin.characters)) {
+        const stChar = parentWin.characters.find(c => c.avatar === fileName);
+        updateCharObject(stChar);
+    }
+    
+    // 更新 ctx.characters
+    const ctx = getSTContext();
+    if (ctx && ctx.characters) {
+        const ctxChar = ctx.characters.find(c => c.avatar === fileName);
+        updateCharObject(ctxChar);
+    }
+}
+
+/**
  * 将当前插件中的 Tag 同步写入到角色卡文件的 data.tags 字段
  * @param {string} fileName - 角色卡文件名
  */
@@ -773,6 +831,9 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
     // 8. 更新本地状态
     Object.assign(char, newCharData);
     char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
+    
+    // 9. 同步更新酒馆内存中的角色数据，防止刷新时被旧数据覆盖
+    syncCharDataToMemory(fileName, newCharData);
     
     if (notifySuccess) notify('角色更新成功', 'success');
     return true;

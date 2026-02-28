@@ -1150,8 +1150,9 @@ async function doOverwriteOriginal(ov) {
         });
         
         // 使用单卡刷新，只刷新当前角色（高效）
+        // useSavedTags: true 表示使用翻译后保存的 cm_manager.tags
         if (_refreshSingleCard) {
-            await _refreshSingleCard(currentChar.fileName);
+            await _refreshSingleCard(currentChar.fileName, { useSavedTags: true });
         }
 
         isDirty = false;
@@ -1175,6 +1176,14 @@ async function doImportAsNew(ov) {
         showOperationLoading(ov, t('notifyImporting') || '正在导入新卡...');
 
         const fullCardData = buildTranslatedCharData();
+        
+        // 导入新卡时，清除 cm_manager.tags 以触发标签选择弹窗
+        // 这样用户可以选择是否导入翻译后的标签
+        const dataBlock = fullCardData.data || fullCardData;
+        if (dataBlock.extensions?.cm_manager) {
+            delete dataBlock.extensions.cm_manager.tags;
+        }
+        
         const jsonStr = JSON.stringify(fullCardData);
         
         const rawName = getTranslatedName();

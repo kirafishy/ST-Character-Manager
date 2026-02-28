@@ -1143,8 +1143,9 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
  * @param {object} [options] - 选项
  * @param {boolean} [options.refreshUI=true] - 是否刷新 UI
  * @param {boolean} [options.refreshDetails=true] - 是否刷新详情页
+ * @param {boolean} [options.useSavedTags=false] - 是否使用已保存的标签（true: 使用 cm_manager.tags，适用于翻译后刷新；false: 从 data.tags 重新加载）
  */
-async function refreshSingleCard(fileName, { refreshUI = true, refreshDetails = true } = {}) {
+async function refreshSingleCard(fileName, { refreshUI = true, refreshDetails = true, useSavedTags = false } = {}) {
     try {
         // 1. 从酒馆获取最新数据
         if (parentWin.getCharacters && typeof parentWin.getCharacters === 'function') {
@@ -1169,9 +1170,10 @@ async function refreshSingleCard(fileName, { refreshUI = true, refreshDetails = 
         
         // 3. 迁移和导入标签
         await migrateAndSaveCmManager(freshData);
-        // 在刷新单卡时，强制跳过 cm_manager 检查，以确保从 data.tags 重新加载最新状态
-        // 修复：传递正确的参数名 checkCmManager 而不是 checkCmManager
-        await importTags(freshData, { skipSave: false, checkCmManager: false });
+        // 根据 useSavedTags 参数决定是否使用已保存的标签
+        // useSavedTags=true: 使用 cm_manager.tags（适用于翻译后刷新，保留翻译后的标签）
+        // useSavedTags=false: 从 data.tags 重新加载（适用于一般刷新）
+        await importTags(freshData, { skipSave: false, checkCmManager: useSavedTags });
         saveTags(); // 强制保存标签状态
         
         // 4. 更新本地缓存
