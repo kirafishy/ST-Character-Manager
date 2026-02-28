@@ -316,16 +316,8 @@ export async function importTags(character, { importSetting = null, skipSave = f
         return;
     }
     
-    // Determine import setting
-    let setting = importSetting;
-    if (!setting) {
-        // Try to get from power_user
-        if (ctx.powerUserSettings && ctx.powerUserSettings.tag_import_setting !== undefined) {
-            setting = ctx.powerUserSettings.tag_import_setting;
-        } else {
-            setting = tag_import_setting.ASK;
-        }
-    }
+    // 强制使用 ASK 策略（忽略 powerUserSettings）
+    let setting = tag_import_setting.ASK;
 
     let tagsToApply = [];
 
