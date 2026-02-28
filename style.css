@@ -23,6 +23,29 @@
     --cm-overlay: rgba(0, 0, 0, 0.85);
     --cm-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
     --cm-accent-bg: #094771;
+    --cm-z-index-base: 1;
+    --cm-z-index-badge: 10;
+    --cm-z-index-card-hover-action: 10;
+    --cm-z-index-card-info: 5;
+    --cm-z-index-resizer: 10;
+    --cm-z-index-component-autocomplete: 1000;
+    --cm-z-index-modal-tag-editor: 700010;
+    --cm-z-index-modal-confirm: 700020;
+    --cm-z-index-modal-detail: 700000;
+    --cm-z-index-modal-cropper: 700020;
+    --cm-z-index-modal-import-progress: 700030;
+    --cm-z-index-modal-image-preview: 700040;
+    --cm-z-index-modal-dropdown: 700100;
+    --cm-z-index-modal-loading: 800000;
+    --cm-z-index-overlay-main: 600000;
+    --cm-z-index-toast-progress: 900000;
+    --cm-z-index-floating-button: 100;
+    --cm-z-index-decorative-element: 10;
+    --cm-z-index-tag-close-button: 20;
+    --cm-z-index-system-force-overlay: 900001;
+    --cm-z-index-dynamic-overlay-max: 2147483645;
+    --cm-z-index-translation-overlay: 2147483646;
+    --cm-z-index-import-tag-overlay: 2147483647;
     --cm-accent-text: #fff;
     --cm-btn-sec-bg: transparent;
     --cm-btn-sec-text: #cccccc;
@@ -43,6 +66,29 @@
     --cm-overlay: rgba(0, 0, 0, 0.6);
     --cm-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     --cm-accent-bg: #e6f7ff;
+    --cm-z-index-base: 1;
+    --cm-z-index-badge: 10;
+    --cm-z-index-card-hover-action: 10;
+    --cm-z-index-card-info: 5;
+    --cm-z-index-resizer: 10;
+    --cm-z-index-component-autocomplete: 1000;
+    --cm-z-index-modal-tag-editor: 700010;
+    --cm-z-index-modal-confirm: 700020;
+    --cm-z-index-modal-detail: 700000;
+    --cm-z-index-modal-cropper: 700020;
+    --cm-z-index-modal-import-progress: 700030;
+    --cm-z-index-modal-image-preview: 700040;
+    --cm-z-index-modal-dropdown: 700100;
+    --cm-z-index-modal-loading: 800000;
+    --cm-z-index-overlay-main: 600000;
+    --cm-z-index-toast-progress: 900000;
+    --cm-z-index-floating-button: 100;
+    --cm-z-index-decorative-element: 10;
+    --cm-z-index-tag-close-button: 20;
+    --cm-z-index-system-force-overlay: 900001;
+    --cm-z-index-dynamic-overlay-max: 2147483645;
+    --cm-z-index-translation-overlay: 2147483646;
+    --cm-z-index-import-tag-overlay: 2147483647;
     --cm-accent-text: #1890ff;
     --cm-btn-sec-bg: transparent;
     --cm-btn-sec-text: #333;
@@ -91,7 +137,7 @@
     position: fixed;
     bottom: 20px;
     right: 20px;
-    z-index: 900000; /* 系统级: Toast 进度条 */
+    z-index: var(--cm-z-index-toast-progress, 900000); /* 系统级: Toast 进度条 */
     pointer-events: none;
     display: flex;
     justify-content: flex-end;
@@ -201,7 +247,7 @@
 #charManagerModal {
     display: none;
     position: fixed;
-    z-index: 600000; /* 页面级: 主界面容器 */
+    z-index: var(--cm-z-index-overlay-main, 600000); /* 页面级: 主界面容器 */
     left: 0;
     top: 0;
     width: 100vw;
@@ -275,7 +321,7 @@
     border: 1px solid var(--cm-border);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    z-index: 1000; /* 组件级: 自动完成下拉框 */
+    z-index: var(--cm-z-index-component-autocomplete, 1000); /* 组件级: 自动完成下拉框 */
     overflow: hidden;
     margin-top: 8px;
     animation: cmFadeIn 0.2s ease
@@ -608,7 +654,7 @@
     background: transparent;
     cursor: col-resize;
     flex-shrink: 0;
-    z-index: 10; /* 基础级: 分类展开图标 */
+    z-index: var(--cm-z-index-resizer, 10); /* 基础级: 分类展开图标 */
     margin-left: -6px;
     transition: background 0.2s
 }
@@ -658,7 +704,7 @@ body.cm-resizing * {
 .cm-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    z-index: 2; /* 基础级: 内部元素 */
+    z-index: var(--cm-z-index-base, 2); /* 基础级: 内部元素 */
 }
 
 .cm-card.cm-sel {
@@ -752,7 +798,7 @@ body.cm-resizing * {
     right: 6px;
     display: flex;
     gap: 4px;
-    z-index: 10; /* 基础级: 卡片悬停操作栏 */
+    z-index: var(--cm-z-index-card-hover-action, 10); /* 基础级: 卡片悬停操作栏 */
     opacity: 0;
     transition: opacity 0.2s;
     pointer-events: auto;
@@ -799,7 +845,7 @@ body.cm-resizing * {
 
 .cm-card-info {
     position: relative;
-    z-index: 5; /* 基础级: 卡片信息层 */
+    z-index: var(--cm-z-index-card-info, 5); /* 基础级: 卡片信息层 */
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
     margin-top: auto;
 }
@@ -1013,7 +1059,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: var(--cm-overlay);
-    z-index: 700010; /* 弹窗级: 批量操作遮罩 */
+    z-index: var(--cm-z-index-modal-tag-editor, 700010); /* 弹窗级: 批量操作遮罩 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1415,7 +1461,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: var(--cm-overlay);
-    z-index: 700020; /* 弹窗级: 确认对话框 */
+    z-index: var(--cm-z-index-modal-confirm, 700020); /* 弹窗级: 确认对话框 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1523,7 +1569,7 @@ body.cm-resizing * {
     height: 100dvh;
     min-height: 100dvh;
     background: var(--cm-overlay);
-    z-index: 700000; /* 弹窗级: 详情页遮罩 */
+    z-index: var(--cm-z-index-modal-detail, 700000); /* 弹窗级: 详情页遮罩 */
     overflow-y: auto;
     -webkit-overflow-scrolling: touch
 }
@@ -1580,7 +1626,7 @@ body.cm-resizing * {
     height: 34px;
     border-radius: 8px;
     cursor: pointer;
-    z-index: 20; /* 基础级: 标签删除按钮 */
+    z-index: var(--cm-z-index-tag-close-button, 20); /* 基础级: 标签删除按钮 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1642,7 +1688,7 @@ body.cm-resizing * {
     justify-content: center;
     cursor: pointer;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    z-index: 10 /* 基础级: 徽章计数器 */
+    z-index: var(--cm-z-index-badge, 10); /* 基础级: 徽章计数器 */
 }
 
 .cm-cam-btn:hover {
@@ -1959,7 +2005,7 @@ body.cm-resizing * {
     background: var(--cm-bg-sec);
     border: 1px solid var(--cm-border);
     border-radius: 0 0 8px 8px;
-    z-index: 20; /* 基础级: 自动完成列表 */
+    z-index: var(--cm-z-index-tag-close-button, 20); /* 基础级: 自动完成列表 */
     max-height: 200px;
     overflow-y: auto;
     display: none;
@@ -2441,7 +2487,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: var(--cm-overlay);
-    z-index: 700030; /* 弹窗级: 导入进度遮罩 */
+    z-index: var(--cm-z-index-modal-import-progress, 700030); /* 弹窗级: 导入进度遮罩 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2591,7 +2637,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: rgba(0, 0, 0, 0.95);
-    z-index: 700040; /* 弹窗级: 图片预览遮罩 */
+    z-index: var(--cm-z-index-modal-image-preview, 700040); /* 弹窗级: 图片预览遮罩 */
     display: flex;
     flex-direction: column;
 }
@@ -2831,7 +2877,7 @@ body.cm-resizing * {
         width: auto;
         bottom: auto;
         top: 100px;
-        z-index: 900001; /* 系统级: 强制覆盖层 */
+        z-index: var(--cm-z-index-system-force-overlay, 900001); /* 系统级: 强制覆盖层 */
     }
 
     .cm-progress-box {
@@ -3823,7 +3869,7 @@ input:checked + .cm-slider:before {
     position: absolute;
     top: 100%;
     left: 0;
-    z-index: 700100; /* 弹窗级: 下拉菜单 */
+    z-index: var(--cm-z-index-modal-dropdown, 700100); /* 弹窗级: 下拉菜单 */
     min-width: 180px;
     padding-top: 4px;
     background: transparent;
@@ -3905,7 +3951,7 @@ input:checked + .cm-slider:before {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 800000; /* 阻断级: Loading 动画 */
+    z-index: var(--cm-z-index-modal-loading, 800000); /* 阻断级: Loading 动画 */
     border-radius: 12px;
     backdrop-filter: blur(4px);
 }
@@ -4603,7 +4649,7 @@ body.hide-card-note .cm-note {
     color: #2563eb;
     font-weight: bold;
     pointer-events: none;
-    z-index: 10; /* 基础级: 装饰性元素 */
+    z-index: var(--cm-z-index-decorative-element, 10); /* 基础级: 装饰性元素 */
 }
 
 /* Gallery Lightbox Thumbnails */
@@ -4674,7 +4720,7 @@ body.hide-card-note .cm-note {
     opacity: 0;
     pointer-events: none;
     transition: all 0.3s ease;
-    z-index: 100; /* 组件级: 浮动操作按钮 */
+    z-index: var(--cm-z-index-floating-button, 100); /* 组件级: 浮动操作按钮 */
     border: 1px solid var(--cm-accent);
 }
 

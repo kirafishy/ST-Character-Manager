@@ -959,7 +959,7 @@ function showTranslationDisclaimer(_unused, onAccept, onReject) {
 
     const ov = document.createElement('div');
     ov.className = 'cm-disclaimer-overlay ' + (state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light');
-    ov.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;height:100dvh;min-height:100dvh;background:rgba(0,0,0,0.7);z-index:800100;display:flex;align-items:center;justify-content:center;padding:calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));box-sizing:border-box'; /* 阻断级: 免责声明弹窗 */
+    ov.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;height:100dvh;min-height:100dvh;background:rgba(0,0,0,0.7);z-index:' + Z_INDEX.MODAL_LOADING + ';display:flex;align-items:center;justify-content:center;padding:calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));box-sizing:border-box'; /* 阻断级: 免责声明弹窗 */
 
     ov.innerHTML = `
         <div style="background:var(--cm-bg-sec);border-radius:16px;max-width:560px;width:100%;max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 40px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.3)">

@@ -2,6 +2,7 @@ import { getSTContext } from './context.js';
 import { state } from './state.js';
 import { createTag, addTagToChar, saveTags, saveCharacterData } from './data.js';
 import { log, escapeHtml } from './utils.js';
+import { Z_INDEX } from './constants.js';
 
 const IMPORT_EXLCUDED_TAGS = ['ROOT', 'TAVERN'];
 const ANTI_TROLL_MAX_TAGS = 50;
@@ -404,7 +405,7 @@ async function showBatchTagStrategyPopup(count) {
     return new Promise(resolve => {
         const overlay = document.createElement('div');
         overlay.className = state.isDarkMode ? 'cm-tag-editor-overlay cm-theme-dark' : 'cm-tag-editor-overlay cm-theme-light';
-        overlay.style.zIndex = '2147483000';
+        overlay.style.zIndex = String(Z_INDEX.DYNAMIC_OVERLAY_MAX);
 
         overlay.innerHTML = `
             <div class="cm-tag-editor" style="max-width: 420px;">
@@ -471,7 +472,7 @@ async function showTagImportPopup(character, existingTags, newTags) {
         // 创建遮罩层
         const overlay = document.createElement('div');
         overlay.className = state.isDarkMode ? 'cm-tag-editor-overlay cm-theme-dark' : 'cm-tag-editor-overlay cm-theme-light';
-        overlay.style.zIndex = '2147483000';
+        overlay.style.zIndex = String(Z_INDEX.IMPORT_TAG_OVERLAY);
 
         // 构建弹窗内容
         let bodyHtml = `

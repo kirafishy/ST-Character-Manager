@@ -4,7 +4,7 @@
  */
 import { doc, parentWin, getSTContext, getSTCharacters } from './context.js';
 import { state } from './state.js';
-import { ICONS } from './constants.js';
+import { ICONS, Z_INDEX } from './constants.js';
 import { escapeHtml, formatSize, notify, parsePNG, formatRichText } from './utils.js';
 import { createBaseDialog, showConfirm, showDeleteConfirm } from './ui-utils.js';
 import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion, deleteChatFile } from './data.js';
@@ -618,7 +618,7 @@ export class CharacterDetails {
         copyBtn.className = 'cm-icon-btn';
         copyBtn.innerHTML = ICONS.copy || '📋';
         copyBtn.title = '复制当前内容';
-        copyBtn.style.cssText = 'position:absolute;top:16px;right:16px;z-index:10;padding:8px;background:var(--cm-bg-sec);border:1px solid var(--cm-border);border-radius:4px;cursor:pointer;opacity:0.8;transition:opacity 0.2s;';
+        copyBtn.style.cssText = 'position:absolute;top:16px;right:16px;z-index:' + Z_INDEX.BADGE + ';padding:8px;background:var(--cm-bg-sec);border:1px solid var(--cm-border);border-radius:4px;cursor:pointer;opacity:0.8;transition:opacity 0.2s;';
         copyBtn.onmouseover = () => copyBtn.style.opacity = '1';
         copyBtn.onmouseout = () => copyBtn.style.opacity = '0.8';
         copyBtn.onclick = () => {

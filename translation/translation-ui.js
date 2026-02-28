@@ -9,6 +9,7 @@ import { t } from './i18n.js';
 import { scanAndFilterGlossary } from './glossary-scanner.js';
 import { detectMVU, analyzeMVUStructure, generateMVUProtectionPrompt, preprocessMVUContent, postprocessMVUContent } from './mvu-handler.js';
 import { showTranslationSettingsDialog } from '../settings.js';
+import { Z_INDEX } from '../constants.js';
 
 // 注入的外部依赖
 let _createBaseDialog = null;
@@ -1158,7 +1159,7 @@ function showOperationLoading(ov, message) {
     overlay.style.left = '0';
     overlay.style.width = '100%';
     overlay.style.height = '100%';
-    overlay.style.zIndex = '2147483647'; // 确保在所有层级之上
+    overlay.style.zIndex = String(Z_INDEX.TRANSLATION_OVERLAY); // 确保在所有层级之上
     overlay.innerHTML = `
         <div class="cm-trans-operation-loading-content">
             <div class="cm-trans-operation-spinner"></div>
