@@ -60,9 +60,22 @@ export function extractTranslatableData(charData) {
         });
     }
 
-    // 4. Tags — 合并为一条统一翻译（用逗号分隔）
-    if (Array.isArray(data.tags)) {
-        const validTags = data.tags.filter(tag => typeof tag === 'string' && tag.trim());
+    // 4. Tags — 优先读取 extensions.cm_manager.tags，为空则读取 data.tags
+    // extensions.cm_manager.tags 是插件管理的标签，data.tags 是角色卡原生标签
+    let tagsSource = null;
+
+    // 优先检查 extensions.cm_manager.tags
+    const cmManager = data.extensions?.cm_manager;
+    if (cmManager && Array.isArray(cmManager.tags)) {
+        tagsSource = cmManager.tags;
+    }
+    // 降级到 data.tags
+    else if (Array.isArray(data.tags)) {
+        tagsSource = data.tags;
+    }
+
+    if (tagsSource && tagsSource.length > 0) {
+        const validTags = tagsSource.filter(tag => typeof tag === 'string' && tag.trim());
         if (validTags.length > 0) {
             result.tags['tags_all'] = validTags.join(', ');
         }
@@ -209,9 +222,13 @@ function hasNaturalLanguageText(text) {
  * 将翻译后的数据应用回角色卡结构
  * @param {object} charData - 原始角色卡数据
  * @param {object} translatedData - 翻译后的数据 (扁平化或分层结构)
+ * @param {object} [options] - 可选配置
+ * @param {boolean} [options.syncToDataTags=true] - 是否同步标签到 data.tags 字段
  * @returns {object} 更新后的角色卡数据
  */
-export function applyTranslation(charData, translatedData) {
+export function applyTranslation(charData, translatedData, options = {}) {
+    const { syncToDataTags = true } = options;
+    
     // 深拷贝以避免副作用
     const newData = JSON.parse(JSON.stringify(charData));
     const target = newData.data || newData;
@@ -242,26 +259,39 @@ export function applyTranslation(charData, translatedData) {
         });
     }
 
-    // 3. Tags — 从合并字符串拆分回数组
-    if (translatedData.tags && Array.isArray(target.tags)) {
+    // 3. Tags — 根据同步设置决定写入位置
+    // 始终写入 extensions.cm_manager.tags，根据 syncToDataTags 决定是否写入 data.tags
+    if (translatedData.tags) {
+        let translatedTags = null;
+        
         if (translatedData.tags['tags_all'] !== undefined) {
             // 新格式：合并的逗号分隔字符串
-            const translatedTags = translatedData.tags['tags_all']
+            translatedTags = translatedData.tags['tags_all']
                 .split(/[,，]/)
                 .map(t => t.trim())
                 .filter(t => t.length > 0);
-            // 按原始标签数量对齐
-            for (let i = 0; i < target.tags.length && i < translatedTags.length; i++) {
-                target.tags[i] = translatedTags[i];
-            }
         } else {
             // 兼容旧格式 tag_0, tag_1...
+            translatedTags = [];
             Object.keys(translatedData.tags).forEach(key => {
                 const index = parseInt(key.split('_')[1]);
-                if (!isNaN(index) && target.tags[index] !== undefined) {
-                    target.tags[index] = translatedData.tags[key];
+                if (!isNaN(index)) {
+                    translatedTags[index] = translatedData.tags[key];
                 }
             });
+            translatedTags = translatedTags.filter(t => t);
+        }
+        
+        if (translatedTags && translatedTags.length > 0) {
+            // 始终写入 extensions.cm_manager.tags
+            if (!target.extensions) target.extensions = {};
+            if (!target.extensions.cm_manager) target.extensions.cm_manager = {};
+            target.extensions.cm_manager.tags = translatedTags;
+            
+            // 根据同步设置决定是否写入 data.tags
+            if (syncToDataTags) {
+                target.tags = [...translatedTags];
+            }
         }
     }
 

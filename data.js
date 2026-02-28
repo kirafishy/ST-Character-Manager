@@ -93,15 +93,17 @@ export function getCharTags(fileName) {
     return ids.map(id => state.tags.find(t => t.id === id)).filter(Boolean);
 }
 
-export async function addTagToChar(fileName, tagId, skipSync = false, markUnsynced = true) {
+export async function addTagToChar(fileName, tagId, skipSync = false, markUnsynced = true, skipSaveToFile = false) {
     if (!state.tagMap[fileName]) state.tagMap[fileName] = [];
     if (!state.tagMap[fileName].includes(tagId)) {
         state.tagMap[fileName].push(tagId);
         saveTags();
         
-        // 始终保存 cm_manager.tags 到文件
-        const tagNames = getCharTags(fileName).map(t => t.name);
-        await saveCmManagerTagsToCard(fileName, tagNames);
+        if (!skipSaveToFile) {
+            // 始终保存 cm_manager.tags 到文件
+            const tagNames = getCharTags(fileName).map(t => t.name);
+            await saveCmManagerTagsToCard(fileName, tagNames);
+        }
         
         // 如果开启自动同步到 data.tags，则同步
         if (!skipSync && state.settings.autoSyncTags) {
@@ -119,7 +121,7 @@ export async function addTagToChar(fileName, tagId, skipSync = false, markUnsync
     return false;
 }
 
-export async function removeTagFromChar(fileName, tagId, skipSync = false, markUnsynced = true) {
+export async function removeTagFromChar(fileName, tagId, skipSync = false, markUnsynced = true, skipSaveToFile = false) {
     const ids = state.tagMap[fileName];
     if (ids) {
         const idx = ids.indexOf(tagId);
@@ -127,9 +129,11 @@ export async function removeTagFromChar(fileName, tagId, skipSync = false, markU
             ids.splice(idx, 1);
             saveTags();
             
-            // 始终保存 cm_manager.tags 到文件
-            const tagNames = getCharTags(fileName).map(t => t.name);
-            await saveCmManagerTagsToCard(fileName, tagNames);
+            if (!skipSaveToFile) {
+                // 始终保存 cm_manager.tags 到文件
+                const tagNames = getCharTags(fileName).map(t => t.name);
+                await saveCmManagerTagsToCard(fileName, tagNames);
+            }
             
             // 如果开启自动同步到 data.tags，则同步
             if (!skipSync && state.settings.autoSyncTags) {
@@ -161,6 +165,48 @@ async function saveCmManagerTagsToCard(fileName, tagNames) {
         }
         data.extensions.cm_manager.tags = tagNames;
     });
+    
+    // 同步更新酒馆内存中的角色对象，防止快速刷新时被旧数据覆盖
+    syncCmManagerTagsToSTMemory(fileName, tagNames);
+}
+
+/**
+ * 同步更新酒馆内存中角色对象的 cm_manager.tags
+ * @param {string} fileName - 角色文件名
+ * @param {string[]} tagNames - 标签名称数组
+ */
+export function syncCmManagerTagsToSTMemory(fileName, tagNames) {
+    // 更新 state.characters 中的角色对象（最重要，因为插件主要使用这个）
+    const stateChar = state.characters.find(c => c.fileName === fileName);
+    if (stateChar) {
+        if (!stateChar.data) stateChar.data = {};
+        if (!stateChar.data.extensions) stateChar.data.extensions = {};
+        if (!stateChar.data.extensions.cm_manager) stateChar.data.extensions.cm_manager = {};
+        stateChar.data.extensions.cm_manager.tags = tagNames;
+    }
+    
+    // 更新 parentWin.characters 中的角色对象
+    if (parentWin.characters && Array.isArray(parentWin.characters)) {
+        const stChar = parentWin.characters.find(c => c.avatar === fileName);
+        if (stChar) {
+            if (!stChar.data) stChar.data = {};
+            if (!stChar.data.extensions) stChar.data.extensions = {};
+            if (!stChar.data.extensions.cm_manager) stChar.data.extensions.cm_manager = {};
+            stChar.data.extensions.cm_manager.tags = tagNames;
+        }
+    }
+    
+    // 更新 ctx.characters 中的角色对象
+    const ctx = getSTContext();
+    if (ctx && ctx.characters) {
+        const ctxChar = ctx.characters.find(c => c.avatar === fileName);
+        if (ctxChar) {
+            if (!ctxChar.data) ctxChar.data = {};
+            if (!ctxChar.data.extensions) ctxChar.data.extensions = {};
+            if (!ctxChar.data.extensions.cm_manager) ctxChar.data.extensions.cm_manager = {};
+            ctxChar.data.extensions.cm_manager.tags = tagNames;
+        }
+    }
 }
 
 /**
@@ -476,7 +522,10 @@ export async function saveCharacterData(fileName, updateCallback) {
             method: 'POST',
             body: JSON.stringify({ avatar_url: fileName })
         });
-        if (!getRes.ok) throw new Error('无法读取角色数据');
+        if (!getRes.ok) {
+            const errorText = await getRes.text();
+            throw new Error(`无法读取角色数据: ${getRes.status} - ${errorText}`);
+        }
         const fullData = await getRes.json();
 
         let charData = fullData;
@@ -1036,6 +1085,18 @@ export async function deleteWiEntry(wiName, uid) {
 export async function deleteChar(char, { deleteChats = false, deleteWi = false } = {}) {
     const fileName = char.fileName || char.avatar;
 
+    // 清理角色卡文件中的 cm_manager 扩展数据（防止同名新卡继承旧标签）
+    try {
+        await saveCharacterData(fileName, (data) => {
+            if (data.extensions && data.extensions.cm_manager) {
+                delete data.extensions.cm_manager;
+                console.log('[CharManager] 已清理 cm_manager 扩展数据:', fileName);
+            }
+        });
+    } catch (e) {
+        console.warn('[CharManager] 清理 cm_manager 数据失败:', e);
+    }
+
     if (deleteWi && char.character_book) {
         try {
             // Try to delete the specific entry first (cleanup)
@@ -1087,6 +1148,12 @@ export async function deleteChar(char, { deleteChats = false, deleteWi = false }
     if (parentWin.characters && Array.isArray(parentWin.characters)) {
         const idx = parentWin.characters.findIndex(c => c.avatar === fileName);
         if (idx !== -1) parentWin.characters.splice(idx, 1);
+    }
+
+    // 清理本地标签缓存
+    if (state.tagMap[fileName]) {
+        delete state.tagMap[fileName];
+        saveTags();
     }
 
     // 刷新酒馆原生的角色列表

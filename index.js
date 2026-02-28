@@ -111,7 +111,14 @@ async function doActualImport(files, remainingInQueue) {
                 body: formData
             });
             
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+                let errText = await res.text();
+                try {
+                    const errJson = JSON.parse(errText);
+                    if (errJson.error) errText = errJson.error;
+                } catch (parseErr) {}
+                throw new Error(errText);
+            }
             
             const data = await res.json();
             if (data && data.file_name) {
@@ -125,6 +132,7 @@ async function doActualImport(files, remainingInQueue) {
 
     if (importedChars.length === 0) {
         hideProgressBar();
+        notify('导入失败：未识别到有效的角色卡数据', 'warning');
         return;
     }
 
@@ -155,9 +163,19 @@ async function doActualImport(files, remainingInQueue) {
 
         if (char) {
             try {
+                // [Fix] 导入前清除该文件名的旧标签缓存，防止显示已删除同名卡的残留标签
+                if (state.tagMap[fileName]) {
+                    console.log('[CharManager] Clearing ghost tags for imported file:', fileName);
+                    delete state.tagMap[fileName];
+                    saveTags(); // 必须保存，否则会被后续 scan 中的 loadTags 覆盖
+                }
+
                 // 迁移旧配置并导入标签
                 await migrateAndSaveCmManager(char);
                 await importTags(char, { skipSave: false, checkCmManager: true });
+                
+                // 强制保存一次标签状态，确保新导入的标签被持久化
+                saveTags();
             } catch (e) {
                 console.warn('标签导入失败:', fileName, e);
             }
@@ -168,8 +186,8 @@ async function doActualImport(files, remainingInQueue) {
     updateProgressBar(100, '完成', '');
     await new Promise(r => setTimeout(r, 500));
     
-    // 刷新扩展 UI
-    await scan(false, false, true);
+    // 快速刷新扩展 UI（检测新卡，同步酒馆最新数据）
+    await scan(false, false, false);
     
     hideProgressBar();
     notify(`成功导入 ${importedChars.length} 个角色`, 'success');
@@ -372,11 +390,14 @@ async function showUrlImportDialog() {
                                     .filter(Boolean);
                                 
                                 if (newTagNames.length > 0) {
-                                    if (!dataBlock.tags) dataBlock.tags = [];
+                                    if (!dataBlock.extensions) dataBlock.extensions = {};
+                                    if (!dataBlock.extensions.cm_manager) dataBlock.extensions.cm_manager = {};
+                                    if (!dataBlock.extensions.cm_manager.tags) dataBlock.extensions.cm_manager.tags = [];
+                                    
                                     // 合并并去重
-                                    const existingTags = new Set(dataBlock.tags);
+                                    const existingTags = new Set(dataBlock.extensions.cm_manager.tags);
                                     newTagNames.forEach(t => existingTags.add(t));
-                                    dataBlock.tags = Array.from(existingTags);
+                                    dataBlock.extensions.cm_manager.tags = Array.from(existingTags);
                                     dataModified = true;
                                 }
                             }
@@ -796,7 +817,7 @@ async function getCharacterList() {
     throw new Error('数据格式错误');
 }
 
-async function getCharacterData(fn, stMeta) {
+async function getCharacterData(fn, stMeta, bypassCache = false) {
     const isFav = stMeta ? (!!stMeta.fav || (stMeta.data && stMeta.data.extensions && !!stMeta.data.extensions.fav)) : false;
     const charBook = stMeta ? (stMeta.character_book || (stMeta.data && stMeta.data.character_book) || '') : '';
 
@@ -820,7 +841,8 @@ async function getCharacterData(fn, stMeta) {
         date_last_chat: (stMeta && stMeta.date_last_chat) ? Number(stMeta.date_last_chat) : 0
     };
     try {
-        const r = await authFetch('/characters/' + encodeURIComponent(fn));
+        const url = '/characters/' + encodeURIComponent(fn) + (bypassCache ? '?t=' + Date.now() : '');
+        const r = await authFetch(url);
         if (!r.ok) return { ...baseInfo, greetings: 0, error: true };
         const buf = await r.arrayBuffer();
         const p = await parsePNG(buf);
@@ -1112,6 +1134,88 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
         state.isScanning = false;
         if (btn) btn.disabled = false;
         if (icon) icon.classList.remove('rotating');
+    }
+}
+
+/**
+ * 刷新单张角色卡的缓存数据并更新 UI
+ * @param {string} fileName - 角色卡文件名
+ * @param {object} [options] - 选项
+ * @param {boolean} [options.refreshUI=true] - 是否刷新 UI
+ * @param {boolean} [options.refreshDetails=true] - 是否刷新详情页
+ */
+async function refreshSingleCard(fileName, { refreshUI = true, refreshDetails = true } = {}) {
+    try {
+        // 1. 从酒馆获取最新数据
+        if (parentWin.getCharacters && typeof parentWin.getCharacters === 'function') {
+            await parentWin.getCharacters();
+        }
+        
+        const stChars = getSTCharacters();
+        const stChar = stChars.find(c => c.avatar === fileName);
+        
+        if (!stChar) {
+            console.warn('[CharManager] 未找到角色:', fileName);
+            return false;
+        }
+        
+        // 2. 获取完整角色数据，绕过缓存
+        const freshData = await getCharacterData(fileName, stChar, true);
+        
+        if (freshData.error) {
+            console.warn('[CharManager] 获取角色数据失败:', fileName);
+            return false;
+        }
+        
+        // 3. 迁移和导入标签
+        await migrateAndSaveCmManager(freshData);
+        // 在刷新单卡时，强制跳过 cm_manager 检查，以确保从 data.tags 重新加载最新状态
+        // 修复：传递正确的参数名 checkCmManager 而不是 checkCmManager
+        await importTags(freshData, { skipSave: false, checkCmManager: false });
+        saveTags(); // 强制保存标签状态
+        
+        // 4. 更新本地缓存
+        const cachedIndex = state.characters.findIndex(c => c.fileName === fileName);
+        if (cachedIndex !== -1) {
+            // 保留一些本地字段
+            const oldData = state.characters[cachedIndex];
+            freshData.galleryCount = oldData.galleryCount;
+            // 注意：不保留旧标签，使用 importTags 更新后的 state.tagMap
+            
+            state.characters[cachedIndex] = freshData;
+        } else {
+            // 新卡，添加到列表
+            state.characters.push(freshData);
+        }
+        
+        // 5. 刷新 UI
+        if (refreshUI) {
+            renderView();
+            updateStats();
+            renderTagSidebar();
+        }
+        
+        // 6. 刷新详情页（如果当前正在查看该角色）
+        if (refreshDetails && state.currentDetailChar && state.currentDetailChar.fileName === fileName) {
+            // 更新 currentDetailChar 引用
+            state.currentDetailChar = freshData;
+            // 找到详情页实例并更新
+            const detailOverlay = doc.querySelector('.cm-detail-overlay');
+            if (detailOverlay) {
+                // 更新详情页实例的 char 引用
+                const detailInstance = detailOverlay.__detailInstance;
+                if (detailInstance) {
+                    detailInstance.char = freshData;
+                    // 重新渲染详情页
+                    detailInstance.renderDetailsTab();
+                }
+            }
+        }
+        
+        return true;
+    } catch (e) {
+        console.error('[CharManager] 刷新单卡失败:', fileName, e);
+        return false;
     }
 }
 
@@ -3027,7 +3131,7 @@ async function init() {
     window.openCharManager = openModal;
     
     // 初始化翻译模块
-    initTranslationUI({ createBaseDialog, notify, showConfirm, scan, importFiles, updateCharacter });
+    initTranslationUI({ createBaseDialog, notify, showConfirm, scan, importFiles, updateCharacter, refreshSingleCard });
     
     // 异步加载缓存数据
     try {

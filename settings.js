@@ -218,8 +218,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
-                        <span>同步标签到 data.tags</span>
-                        <small>修改标签时同步写入角色卡的 data.tags 字段，影响酒馆原生和其他插件的标签读取</small>
+                        <span>同步插件标签到原生标签</span>
+                        <small>修改标签时同步写入角色卡的原生标签字段，影响酒馆原生和其他插件的标签读取</small>
                     </div>
                     <label class="cm-switch">
                         <input type="checkbox" id="cmSetAutoSyncTags" ${settings.autoSyncTags ? 'checked' : ''}>
@@ -229,10 +229,18 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
-                        <span>全量同步标签到 data.tags</span>
-                        <small>将插件标签写入所有角色卡的 data.tags 字段</small>
+                        <span>全量同步插件标签到原生标签</span>
+                        <small>将插件标签写入所有角色卡的原生标签字段</small>
                     </div>
                     <button id="cmSyncAllTagsBtn" class="cm-btn cm-btn-secondary">立即同步</button>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>从原生标签批量导入到插件标签</span>
+                        <small>将所有角色卡原生标签字段中的标签导入到插件管理中</small>
+                    </div>
+                    <button id="cmBatchImportTagsBtn" class="cm-btn cm-btn-secondary">批量导入</button>
                 </div>
             </div>
 
@@ -559,6 +567,61 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         // syncAllTagsBtn.textContent = originalText;
                     }
                 }
+            };
+        }
+
+        // Batch Import Tags
+        const batchImportTagsBtn = ov.querySelector('#cmBatchImportTagsBtn');
+        if (batchImportTagsBtn) {
+            batchImportTagsBtn.onclick = async () => {
+                const strategyHtml = `
+                    <div style="margin-bottom: 10px;">请选择导入策略：</div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <label><input type="radio" name="importStrategy" value="merge" checked> <b>合并</b> (保留现有插件标签，追加原生标签)</label>
+                        <label><input type="radio" name="importStrategy" value="overwrite"> <b>覆盖</b> (清除现有插件标签，完全使用原生标签)</label>
+                        <label><input type="radio" name="importStrategy" value="skip"> <b>跳过</b> (仅为没有插件标签的角色导入)</label>
+                    </div>
+                `;
+                
+                createBaseDialog('批量导入标签', strategyHtml, [
+                    { text: '取消', id: 'cmBatchImportCancel', cls: 'cm-btn-secondary', onClick: (dlg, close) => close() },
+                    { text: '开始导入', id: 'cmBatchImportConfirm', cls: 'cm-btn-primary', onClick: async (dlg, close) => {
+                        const strategy = dlg.querySelector('input[name="importStrategy"]:checked').value;
+                        close();
+                        
+                        batchImportTagsBtn.disabled = true;
+                        // batchImportTagsBtn.textContent = '导入中...';
+                        if (showProgressBar) showProgressBar('准备导入标签...');
+                        
+                        try {
+                            const { batchImportDataTags } = await import('./st-tags.js');
+                            const count = await batchImportDataTags(strategy, (current, total) => {
+                                // batchImportTagsBtn.textContent = `导入中... ${current}/${total}`;
+                                if (updateProgressBar) {
+                                    const progress = Math.round((current / total) * 100);
+                                    updateProgressBar(progress, `正在导入标签... ${current}/${total}`, `当前进度: ${progress}%`);
+                                }
+                            });
+                            if (updateProgressBar) updateProgressBar(100, '导入完成！', '正在刷新界面...');
+                            await new Promise(r => setTimeout(r, 800));
+                            notify(`成功处理了 ${count} 个角色的标签`, 'success');
+                            
+                            // 刷新界面
+                            renderView();
+                            // renderTagSidebar(); // renderView 内部可能已经调用了，或者需要单独调用
+                            // 重新加载侧边栏需要获取最新的 tagMap
+                            const { renderTagSidebar } = await import('./index.js');
+                            renderTagSidebar();
+                        } catch (e) {
+                            console.error(e);
+                            notify('导入失败: ' + e.message, 'error');
+                        } finally {
+                            if (hideProgressBar) hideProgressBar();
+                            batchImportTagsBtn.disabled = false;
+                            // batchImportTagsBtn.textContent = '批量导入';
+                        }
+                    }}
+                ]);
             };
         }
 

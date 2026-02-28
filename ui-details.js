@@ -74,6 +74,8 @@ export class CharacterDetails {
 
         // 关键修复：先将 overlay 添加到 DOM，确保 getComputedStyle 能正确获取 CSS 变量
         this.overlay.appendChild(this.container);
+        // 保存实例引用，用于外部刷新
+        this.overlay.__detailInstance = this;
         doc.body.appendChild(this.overlay);
 
         // 创建回顶按钮
@@ -570,7 +572,9 @@ export class CharacterDetails {
 
     openAltGreetingsModal(greetings) {
         let currentIndex = 0;
-        const total = greetings.length;
+        let currentGreetings = [...greetings]; // Copy for sorting
+        let total = currentGreetings.length;
+        let isSortMode = false;
 
         const content = doc.createElement('div');
         content.className = 'cm-alt-modal-content';
@@ -578,7 +582,11 @@ export class CharacterDetails {
 
         // 顶部工具栏
         const toolbar = doc.createElement('div');
-        toolbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--cm-border);background:var(--cm-bg-sec);flex-shrink:0;';
+        toolbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--cm-border);background:var(--cm-bg-sec);flex-shrink:0;gap:10px;';
+
+        // 1. 浏览模式控件组
+        const viewControls = doc.createElement('div');
+        viewControls.style.cssText = 'display:flex;align-items:center;flex:1;gap:10px;justify-content:space-between;';
 
         // 上一条
         const prevBtn = doc.createElement('button');
@@ -588,7 +596,7 @@ export class CharacterDetails {
         prevBtn.title = '上一条 (Left Arrow)';
         prevBtn.onclick = () => showIndex(currentIndex - 1);
 
-        // 指示器 (居中) - 标题 + 分页
+        // 指示器 (居中)
         const centerContainer = doc.createElement('div');
         centerContainer.style.cssText = 'flex:1;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:12px;';
 
@@ -605,13 +613,42 @@ export class CharacterDetails {
         nextBtn.title = '下一条 (Right Arrow)';
         nextBtn.onclick = () => showIndex(currentIndex + 1);
 
-        toolbar.appendChild(prevBtn);
-        toolbar.appendChild(centerContainer);
-        toolbar.appendChild(nextBtn);
+        viewControls.appendChild(prevBtn);
+        viewControls.appendChild(centerContainer);
+        viewControls.appendChild(nextBtn);
 
-        // 内容区域
+        // 2. 排序模式控件组 (默认隐藏)
+        const sortControls = doc.createElement('div');
+        sortControls.style.cssText = 'display:none;align-items:center;flex:1;justify-content:flex-end;gap:10px;';
+
+        const cancelSortBtn = doc.createElement('button');
+        cancelSortBtn.className = 'cm-btn cm-btn-secondary';
+        cancelSortBtn.textContent = '取消';
+        
+        const saveSortBtn = doc.createElement('button');
+        saveSortBtn.className = 'cm-btn cm-btn-primary';
+        saveSortBtn.innerHTML = '💾 保存顺序';
+
+        sortControls.appendChild(cancelSortBtn);
+        sortControls.appendChild(saveSortBtn);
+
+        // 3. 模式切换按钮
+        const toggleSortBtn = doc.createElement('button');
+        toggleSortBtn.className = 'cm-btn cm-btn-secondary';
+        toggleSortBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>';
+        toggleSortBtn.title = '开启排序模式';
+        
+        toolbar.appendChild(viewControls);
+        toolbar.appendChild(sortControls);
+        toolbar.appendChild(toggleSortBtn);
+
+        // 内容区域容器
+        const bodyContainer = doc.createElement('div');
+        bodyContainer.style.cssText = 'flex:1;position:relative;overflow:hidden;background:var(--cm-bg);';
+
+        // 1. 浏览视图
         const cardContainer = doc.createElement('div');
-        cardContainer.style.cssText = 'flex:1;overflow-y:auto;padding:20px;position:relative;background:var(--cm-bg);';
+        cardContainer.style.cssText = 'height:100%;overflow-y:auto;padding:20px;position:relative;';
         
         // 复制按钮
         const copyBtn = doc.createElement('button');
@@ -622,7 +659,7 @@ export class CharacterDetails {
         copyBtn.onmouseover = () => copyBtn.style.opacity = '1';
         copyBtn.onmouseout = () => copyBtn.style.opacity = '0.8';
         copyBtn.onclick = () => {
-            navigator.clipboard.writeText(greetings[currentIndex]);
+            navigator.clipboard.writeText(currentGreetings[currentIndex]);
             notify('已复制', 'success');
         };
         cardContainer.appendChild(copyBtn);
@@ -633,14 +670,20 @@ export class CharacterDetails {
         markdownBody.style.cssText = 'font-size:15px;line-height:1.6;max-width:100%;';
         cardContainer.appendChild(markdownBody);
 
-        content.appendChild(toolbar);
-        content.appendChild(cardContainer);
+        // 2. 排序视图 (默认隐藏)
+        const sortListContainer = doc.createElement('div');
+        sortListContainer.style.cssText = 'display:none;height:100%;overflow-y:auto;padding:20px;flex-direction:column;gap:10px;';
 
-        // 渲染分页按钮
+        bodyContainer.appendChild(cardContainer);
+        bodyContainer.appendChild(sortListContainer);
+
+        content.appendChild(toolbar);
+        content.appendChild(bodyContainer);
+
+        // --- 逻辑函数 ---
+
         const renderPagination = () => {
             pagination.innerHTML = '';
-            // 简单的分页逻辑：显示所有页码，如果太多可以考虑折叠，但这里先全部显示
-            // 考虑到空间，如果超过20个可能需要优化，但通常备选开场白不会那么多
             for (let i = 0; i < total; i++) {
                 const pageBtn = doc.createElement('div');
                 pageBtn.textContent = (i + 1).toString();
@@ -666,18 +709,143 @@ export class CharacterDetails {
             }
         };
 
-        // 切换逻辑
         const showIndex = (index) => {
             if (index < 0) index = total - 1;
             if (index >= total) index = 0;
             currentIndex = index;
 
-            // 更新 UI
             renderPagination();
-            markdownBody.innerHTML = this.renderMarkdown(greetings[currentIndex]);
-            
-            // 滚动回顶部
+            markdownBody.innerHTML = this.renderMarkdown(currentGreetings[currentIndex]);
             cardContainer.scrollTop = 0;
+        };
+
+        const renderSortList = () => {
+            sortListContainer.innerHTML = '';
+            currentGreetings.forEach((g, i) => {
+                const item = doc.createElement('div');
+                item.className = 'cm-sort-item';
+                item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;background:var(--cm-bg-ter);border:1px solid var(--cm-border);border-radius:6px;flex-shrink:0;';
+                
+                const idx = doc.createElement('div');
+                idx.textContent = `#${i + 1}`;
+                idx.style.cssText = 'font-weight:bold;color:var(--cm-text-sec);width:30px;flex-shrink:0;';
+                
+                const text = doc.createElement('div');
+                text.textContent = g.length > 80 ? g.substring(0, 80).replace(/\n/g, ' ') + '...' : g.replace(/\n/g, ' ');
+                text.style.cssText = 'flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--cm-text);';
+                
+                const actions = doc.createElement('div');
+                actions.style.display = 'flex';
+                actions.style.gap = '4px';
+                actions.style.flexShrink = '0';
+                
+                const upBtn = doc.createElement('button');
+                upBtn.className = 'cm-btn cm-btn-secondary';
+                upBtn.innerHTML = '⬆';
+                upBtn.title = '上移';
+                upBtn.style.padding = '4px 8px';
+                upBtn.disabled = i === 0;
+                upBtn.onclick = () => moveItem(i, -1);
+                
+                const downBtn = doc.createElement('button');
+                downBtn.className = 'cm-btn cm-btn-secondary';
+                downBtn.innerHTML = '⬇';
+                downBtn.title = '下移';
+                downBtn.style.padding = '4px 8px';
+                downBtn.disabled = i === currentGreetings.length - 1;
+                downBtn.onclick = () => moveItem(i, 1);
+                
+                actions.appendChild(upBtn);
+                actions.appendChild(downBtn);
+                
+                item.appendChild(idx);
+                item.appendChild(text);
+                item.appendChild(actions);
+                sortListContainer.appendChild(item);
+            });
+        };
+
+        const moveItem = (index, direction) => {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= currentGreetings.length) return;
+            
+            const temp = currentGreetings[index];
+            currentGreetings[index] = currentGreetings[newIndex];
+            currentGreetings[newIndex] = temp;
+            
+            renderSortList();
+        };
+
+        // 切换模式
+        toggleSortBtn.onclick = () => {
+            isSortMode = true;
+            viewControls.style.display = 'none';
+            sortControls.style.display = 'flex';
+            toggleSortBtn.style.display = 'none';
+            
+            cardContainer.style.display = 'none';
+            sortListContainer.style.display = 'flex';
+            
+            renderSortList();
+        };
+
+        cancelSortBtn.onclick = () => {
+            isSortMode = false;
+            // 还原数据
+            currentGreetings = [...greetings];
+            
+            viewControls.style.display = 'flex';
+            sortControls.style.display = 'none';
+            toggleSortBtn.style.display = 'block';
+            
+            cardContainer.style.display = 'block';
+            sortListContainer.style.display = 'none';
+            
+            showIndex(currentIndex);
+        };
+
+        saveSortBtn.onclick = async () => {
+            try {
+                await saveCharacterData(this.char.fileName, (data) => {
+                    data.alternate_greetings = currentGreetings;
+                });
+                
+                // 更新本地状态
+                this.char.alternate_greetings = currentGreetings;
+                greetings = currentGreetings; // 更新闭包变量
+                total = currentGreetings.length;
+                
+                notify('顺序已保存', 'success');
+                
+                // 退出排序模式
+                isSortMode = false;
+                viewControls.style.display = 'flex';
+                sortControls.style.display = 'none';
+                toggleSortBtn.style.display = 'block';
+                
+                cardContainer.style.display = 'block';
+                sortListContainer.style.display = 'none';
+                
+                // 刷新视图
+                showIndex(currentIndex);
+                
+                // 刷新外部详情页
+                if (this.viewMode === 'legacy') {
+                    const body = this.container.querySelector('.cm-detail-body');
+                    if (body) {
+                        body.innerHTML = '';
+                        this.renderHeader();
+                        body.appendChild(this.container.querySelector('.cm-detail-header'));
+                        this.renderLegacyView(body);
+                    }
+                } else {
+                    this.renderDetailsTab();
+                }
+                
+            } catch (e) {
+                console.error(e);
+                notify('保存失败: ' + e.message, 'error');
+            }
         };
 
         // 初始化显示
@@ -701,6 +869,7 @@ export class CharacterDetails {
 
             // 键盘导航支持
             const keyHandler = (e) => {
+                if (isSortMode) return; // 排序模式下禁用键盘翻页
                 if (e.key === 'ArrowLeft') showIndex(currentIndex - 1);
                 if (e.key === 'ArrowRight') showIndex(currentIndex + 1);
             };
@@ -2117,6 +2286,33 @@ export class CharacterDetails {
             showTagSelector(this.char, container, this.overlay, () => this.renderTags(container));
         };
         container.appendChild(addBtn);
+
+        // 一键删除所有标签的扫把按钮
+        if (charTags.length > 0) {
+            const clearBtn = doc.createElement('span');
+            clearBtn.className = 'cm-char-tag-clear';
+            clearBtn.innerHTML = ICONS.trash;
+            clearBtn.title = '清除所有标签';
+            clearBtn.style.cssText = 'cursor:pointer;margin-left:8px;opacity:0.6;transition:opacity 0.2s;font-size:14px;display:inline-flex;align-items:center;';
+            clearBtn.onmouseover = () => clearBtn.style.opacity = '1';
+            clearBtn.onmouseout = () => clearBtn.style.opacity = '0.6';
+            clearBtn.onclick = async (e) => {
+                e.stopPropagation();
+                const confirmed = await showConfirm(`确定要清除 "${this.char.name}" 的所有标签吗？共 ${charTags.length} 个标签。`);
+                if (!confirmed) return;
+                
+                // 调用删除单个标签的函数实现批量删除
+                for (const tag of charTags) {
+                    await removeTagFromChar(this.char.fileName, tag.id);
+                }
+                
+                this.renderTags(container); // 重新渲染标签区域
+                renderTagSidebar();
+                renderView();
+                notify('已清除所有标签', 'success');
+            };
+            container.appendChild(clearBtn);
+        }
     }
 
     // --- Event Handlers ---
@@ -2307,6 +2503,7 @@ function showTagSelector(char, tagsContainer, detailOverlay, onUpdate) {
                     renderListItems();
                     if (onUpdate) onUpdate();
                     renderTagSidebar();
+                    renderView(); // 同步更新角色卡列表页的标签显示
                 };
                 list.appendChild(item);
             });

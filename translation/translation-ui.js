@@ -18,17 +18,19 @@ let _showConfirm = null;
 let _scan = null;
 let _importFiles = null;
 let _updateCharacter = null;
+let _refreshSingleCard = null;
 
 /**
  * 初始化翻译 UI 模块（注入外部依赖）
  */
-export function initTranslationUI({ createBaseDialog, notify, showConfirm, scan, importFiles, updateCharacter }) {
+export function initTranslationUI({ createBaseDialog, notify, showConfirm, scan, importFiles, updateCharacter, refreshSingleCard }) {
     _createBaseDialog = createBaseDialog;
     _notify = notify;
     _showConfirm = showConfirm;
     _scan = scan;
     _importFiles = importFiles;
     _updateCharacter = updateCharacter;
+    _refreshSingleCard = refreshSingleCard;
 }
 
 // 模块内部状态
@@ -153,7 +155,18 @@ export async function openTranslationDialog(char) {
         glossaryData = [];
         isDirty = false;
 
-        // 6. 渲染对话框
+        // 6. 检查 tags 翻译提示
+        const hasTags = rawData.tags && Object.keys(rawData.tags).length > 0;
+        const syncDisabled = !state.settings.autoSyncTags; // 同步开关关闭
+        if (hasTags && syncDisabled) {
+            const lang = state.settings.translationUILanguage || 'zh-CN';
+            const warningMsg = lang === 'en'
+                ? 'Tag translations will not appear in ST native card. Enable "Sync plugin tags to native tags" in settings.'
+                : '"同步插件标签到原生标签"设置未开启，当前标签翻译结果无法在酒馆原生角色卡中生效';
+            _notify(warningMsg, 'warning');
+        }
+
+        // 7. 渲染对话框
         renderMainDialog();
 
     } catch (e) {
@@ -491,8 +504,8 @@ function buildItemHTML(group, key, item) {
             <div class="cm-trans-item-header">
                 <input type="checkbox" class="cm-trans-item-checkbox cm-trans-checkbox" data-id="${itemId}" ${isSelected ? 'checked' : ''}>
                 <span class="cm-trans-item-label">${escapeHtml(label)}</span>
-                <span class="cm-trans-status-icon cm-trans-status" data-group="${group}" data-key="${key}" 
-                      title="${t('close') === 'Close' ? 'Click to reset' : '点击重置状态'}">${statusIcon}</span>
+                <span class="cm-trans-status-icon cm-trans-status" data-group="${group}" data-key="${key}"
+                      title="${t('close') === 'Close' ? 'Click to toggle status' : '点击切换翻译状态'}">${statusIcon}</span>
             </div>
             <div class="cm-trans-row">
                 <div class="cm-trans-col">
@@ -678,21 +691,50 @@ function bindDynamicEvents(ov) {
         };
     });
 
-    // 状态图标点击（重置）
+    // 状态图标点击（切换已翻译/未翻译状态）
     ov.querySelectorAll('.cm-trans-status').forEach(icon => {
         icon.onclick = () => {
             const group = icon.dataset.group;
             const key = icon.dataset.key;
             if (currentTranslationData[group] && currentTranslationData[group][key]) {
-                currentTranslationData[group][key].status = STATUS.IDLE;
-                currentTranslationData[group][key].error = null;
-                icon.textContent = STATUS_ICONS.idle;
+                const item = currentTranslationData[group][key];
+                
+                // 根据当前状态切换
+                if (item.status === STATUS.SUCCESS) {
+                    // 已翻译 → 未翻译
+                    item.status = STATUS.IDLE;
+                    item.error = null;
+                } else if (item.status === STATUS.ERROR) {
+                    // 错误 → 未翻译
+                    item.status = STATUS.IDLE;
+                    item.error = null;
+                } else if (item.status === STATUS.IDLE && item.translated && item.translated.trim()) {
+                    // 未翻译但有翻译内容 → 已翻译
+                    item.status = STATUS.SUCCESS;
+                    item.error = null;
+                    isDirty = true;
+                } else if (item.status === STATUS.LOADING) {
+                    // 加载中不处理
+                    return;
+                }
+                
+                // 更新UI
+                icon.textContent = STATUS_ICONS[item.status];
+                icon.title = item.error || (item.status === STATUS.SUCCESS ? (t('close') === 'Close' ? 'Translated' : '已翻译') : (t('close') === 'Close' ? 'Pending' : '未翻译'));
+                
                 const itemEl = ov.querySelector(`.cm-trans-item[data-group="${group}"][data-key="${key}"]`);
                 if (itemEl) {
-                    itemEl.className = 'cm-trans-item';
+                    itemEl.className = `cm-trans-item ${item.status === 'success' ? 'cm-trans-item-success' : item.status === 'error' ? 'cm-trans-item-error' : item.status === 'loading' ? 'cm-trans-item-loading' : ''}`;
+                    
+                    // 移除错误信息
+                    const existingErr = itemEl.querySelector('.cm-trans-error-msg');
+                    if (existingErr) existingErr.remove();
                 }
+                
                 const textarea = ov.querySelector(`.cm-trans-result[data-group="${group}"][data-key="${key}"]`);
                 if (textarea) textarea.style.borderColor = '';
+                
+                updateProgressBar(ov);
             }
         };
     });
@@ -711,10 +753,33 @@ function bindDynamicEvents(ov) {
                     if (itemEl) itemEl.className = 'cm-trans-item cm-trans-item-success';
                     const icon = ov.querySelector(`.cm-trans-status[data-group="${group}"][data-key="${key}"]`);
                     if (icon) icon.textContent = STATUS_ICONS.success;
+                    // 更新进度条和组计数
+                    updateProgressBar(ov);
+                    updateGroupCount(ov, group);
                 }
             }
         };
     });
+}
+
+/**
+ * 更新指定组的计数显示
+ */
+function updateGroupCount(ov, group) {
+    const groupData = currentTranslationData[group];
+    if (!groupData) return;
+    
+    const keys = Object.keys(groupData);
+    const doneCount = keys.filter(k => groupData[k].status === STATUS.SUCCESS).length;
+    
+    // 更新组标题中的计数
+    const groupHeader = ov.querySelector(`.cm-trans-group-btn[data-group="${group}"]`)?.closest('.cm-trans-group-header');
+    if (groupHeader) {
+        const countSpan = groupHeader.querySelector('.cm-trans-group-count');
+        if (countSpan) {
+            countSpan.textContent = `${doneCount}/${keys.length}`;
+        }
+    }
 }
 
 function updateSelectedCount(ov) {
@@ -981,7 +1046,10 @@ function buildTranslatedCharData() {
             flatTranslated[group][key] = item.translated || item.original;
         });
     });
-    return applyTranslation(originalCharData, flatTranslated);
+    // 传递同步设置，控制是否将标签同步写入 data.tags
+    return applyTranslation(originalCharData, flatTranslated, {
+        syncToDataTags: state.settings.autoSyncTags
+    });
 }
 
 /**
@@ -1018,7 +1086,8 @@ function doExportPng() {
         const newCharData = buildTranslatedCharData();
         const jsonStr = JSON.stringify(newCharData);
         const base64Data = btoa(unescape(encodeURIComponent(jsonStr)));
-        const pngBlob = writePngText(originalPngBuffer, 'chara', base64Data);
+        const key = (newCharData.spec === 'chara_card_v3') ? 'ccv3' : 'chara';
+        const pngBlob = writePngText(originalPngBuffer, key, base64Data);
         const translatedName = getTranslatedName();
         downloadBlob(pngBlob, `${translatedName}_translated.png`);
         _notify(t('notifyExportPNGSuccess'), 'success');
@@ -1080,8 +1149,10 @@ async function doOverwriteOriginal(ov) {
             fullCardData: fullData
         });
         
-        // 额外刷新
-        if (_scan) await _scan(false, false, true);
+        // 使用单卡刷新，只刷新当前角色（高效）
+        if (_refreshSingleCard) {
+            await _refreshSingleCard(currentChar.fileName);
+        }
 
         isDirty = false;
         _notify(t('notifyOverwriteSuccess'), 'success');
@@ -1116,9 +1187,10 @@ async function doImportAsNew(ov) {
             // 如果有原图，直接写入 PNG 块并导入 PNG
             // 这样酒馆后端会自动识别并处理图片和元数据
             try {
-                // 写入 tEXt/chara 块
+                // 写入 tEXt 块
                 const base64Data = btoa(unescape(encodeURIComponent(jsonStr)));
-                const pngBlob = writePngText(originalPngBuffer, 'chara', base64Data);
+                const key = (fullCardData.spec === 'chara_card_v3') ? 'ccv3' : 'chara';
+                const pngBlob = writePngText(originalPngBuffer, key, base64Data);
                 importFile = new File([pngBlob], `${safeName}.png`, { type: 'image/png' });
             } catch (pngErr) {
                 console.warn('[Translation] PNG 写入失败，降级为 JSON 导入:', pngErr);
