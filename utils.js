@@ -64,15 +64,26 @@ export function formatRichText(text, charName = '', preserveHtml = false) {
     }
     
     // 获取引号颜色配置
+    // 新版预设颜色映射
+    const QUOTE_COLOR_PRESETS = {
+        moonMist: '#94A3B8',    // 月雾灰蓝 (默认)
+        seaSalt: '#67B7C2',     // 海盐青灰
+        lavender: '#A3A1D6',    // 薰衣草影
+        amber: '#E5C07B',       // 琥珀微光
+        mint: '#7BDCB5',        // 薄荷苔绿
+        wisteria: '#C4B5FD',    // 紫藤轻语
+        iceLake: '#A5F3FC',     // 冰湖浅青
+        morningStar: '#CBD5E1', // 晨星银
+        // 兼容旧版设置的颜色映射
+        purple: '#A3A1D6',      // 紫色 -> 薰衣草影
+        blue: '#67B7C2',        // 蓝色 -> 海盐青灰
+        green: '#7BDCB5',        // 绿色 -> 薄荷苔绿
+        orange: '#E5C07B',       // 橙色 -> 琥珀微光
+        pink: '#C4B5FD'         // 粉色 -> 紫藤轻语
+    };
     const quoteColor = state.settings.quoteColorTheme === 'custom'
-        ? (state.settings.customQuoteColor || '#8B5CF6')
-        : {
-            purple: '#8B5CF6',
-            blue: '#3B82F6',
-            green: '#10B981',
-            orange: '#F59E0B',
-            pink: '#EC4899'
-        }[state.settings.quoteColorTheme] || '#8B5CF6';
+        ? (state.settings.customQuoteColor || '#94A3B8')
+        : QUOTE_COLOR_PRESETS[state.settings.quoteColorTheme] || '#94A3B8';
     
     // 如果保留 HTML (用于带有自定义样式的创作者注释)，使用混合方法
     if (preserveHtml) {

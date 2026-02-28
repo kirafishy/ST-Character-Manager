@@ -136,11 +136,14 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <small>设置中文和英文引号内内容的高亮颜色</small>
                     </div>
                     <select id="cmSetQuoteTheme" class="cm-select-input">
-                        <option value="purple" ${settings.quoteColorTheme === 'purple' ? 'selected' : ''}>紫色 (默认)</option>
-                        <option value="blue" ${settings.quoteColorTheme === 'blue' ? 'selected' : ''}>蓝色</option>
-                        <option value="green" ${settings.quoteColorTheme === 'green' ? 'selected' : ''}>绿色</option>
-                        <option value="orange" ${settings.quoteColorTheme === 'orange' ? 'selected' : ''}>橙色</option>
-                        <option value="pink" ${settings.quoteColorTheme === 'pink' ? 'selected' : ''}>粉色</option>
+                        <option value="moonMist" ${settings.quoteColorTheme === 'moonMist' ? 'selected' : ''}>月雾灰蓝 (默认)</option>
+                        <option value="seaSalt" ${settings.quoteColorTheme === 'seaSalt' ? 'selected' : ''}>海盐青灰</option>
+                        <option value="lavender" ${settings.quoteColorTheme === 'lavender' ? 'selected' : ''}>薰衣草影</option>
+                        <option value="amber" ${settings.quoteColorTheme === 'amber' ? 'selected' : ''}>琥珀微光</option>
+                        <option value="mint" ${settings.quoteColorTheme === 'mint' ? 'selected' : ''}>薄荷苔绿</option>
+                        <option value="wisteria" ${settings.quoteColorTheme === 'wisteria' ? 'selected' : ''}>紫藤轻语</option>
+                        <option value="iceLake" ${settings.quoteColorTheme === 'iceLake' ? 'selected' : ''}>冰湖浅青</option>
+                        <option value="morningStar" ${settings.quoteColorTheme === 'morningStar' ? 'selected' : ''}>晨星银</option>
                         <option value="custom" ${settings.quoteColorTheme === 'custom' ? 'selected' : ''}>自定义</option>
                     </select>
                 </div>
@@ -148,7 +151,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 <div id="cmCustomQuoteColorWrap" style="display:${settings.quoteColorTheme === 'custom' ? 'block' : 'none'};padding:10px;background:var(--cm-bg-ter);border-radius:8px;margin-bottom:12px;">
                     <div style="display:flex;gap:10px;align-items:center;">
                         <label style="font-size:12px;color:var(--cm-text-sec);width:60px;">引号</label>
-                        <input type="color" id="cmSetCustomQuoteColor" value="${settings.customQuoteColor || '#8B5CF6'}" style="cursor:pointer;background:none;border:none;padding:0;width:30px;height:30px;">
+                        <input type="color" id="cmSetCustomQuoteColor" value="${settings.customQuoteColor || '#94A3B8'}" style="cursor:pointer;background:none;border:none;padding:0;width:30px;height:30px;">
                     </div>
                 </div>
 
@@ -170,8 +173,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </div>
                     <div style="margin-top:10px;font-size:12px;line-height:1.7;color:var(--cm-text);">
                         对话示例：<br>
-                        <span id="cmPreviewCharToken" style="font-weight:700;color:#22D3EE;">{{char}}</span>：<span id="cmPreviewQuoteToken" style="color:#8B5CF6;">"你好，今天想聊什么？"</span><br>
-                        <span id="cmPreviewUserToken2" style="font-weight:700;color:#FB923C;">{{user}}</span>：<span id="cmPreviewQuoteToken2" style="color:#8B5CF6;">「嗯……让我想想」</span>你陷入了沉思。
+                        <span id="cmPreviewCharToken" style="font-weight:700;color:#22D3EE;">{{char}}</span>：<span id="cmPreviewQuoteToken" style="color:#94A3B8;">"你好，今天想聊什么？"</span><br>
+                        <span id="cmPreviewUserToken2" style="font-weight:700;color:#FB923C;">{{user}}</span>：<span id="cmPreviewQuoteToken2" style="color:#94A3B8;">「嗯……让我想想」</span>你陷入了沉思。
                     </div>
                 </div>
 
@@ -457,20 +460,30 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         };
 
         const getQuotePreviewColor = (quoteTheme, customQuote) => {
-            if (quoteTheme === 'custom') return customQuote || '#8B5CF6';
+            if (quoteTheme === 'custom') return customQuote || '#94A3B8';
+            // 新版预设颜色映射
             const map = {
-                purple: '#8B5CF6',
-                blue: '#3B82F6',
-                green: '#10B981',
-                orange: '#F59E0B',
-                pink: '#EC4899'
+                moonMist: '#94A3B8',    // 月雾灰蓝 (默认)
+                seaSalt: '#67B7C2',     // 海盐青灰
+                lavender: '#A3A1D6',    // 薰衣草影
+                amber: '#E5C07B',       // 琥珀微光
+                mint: '#7BDCB5',        // 薄荷苔绿
+                wisteria: '#C4B5FD',    // 紫藤轻语
+                iceLake: '#A5F3FC',     // 冰湖浅青
+                morningStar: '#CBD5E1', // 晨星银
+                // 兼容旧版设置的颜色映射
+                purple: '#A3A1D6',      // 紫色 -> 薰衣草影
+                blue: '#67B7C2',        // 蓝色 -> 海盐青灰
+                green: '#7BDCB5',       // 绿色 -> 薄荷苔绿
+                orange: '#E5C07B',      // 橙色 -> 琥珀微光
+                pink: '#C4B5FD'         // 粉色 -> 紫藤轻语
             };
-            return map[quoteTheme] || map.purple;
+            return map[quoteTheme] || map.moonMist;
         };
 
         const updateMacroPreview = () => {
             const colors = getMacroPreviewColors(state.settings.macroColorTheme || 'dark1', state.settings.customCharColor, state.settings.customUserColor);
-            const quoteColor = getQuotePreviewColor(state.settings.quoteColorTheme || 'purple', state.settings.customQuoteColor);
+            const quoteColor = getQuotePreviewColor(state.settings.quoteColorTheme || 'moonMist', state.settings.customQuoteColor);
             const userSwatch = ov.querySelector('#cmPreviewUserSwatch');
             const charSwatch = ov.querySelector('#cmPreviewCharSwatch');
             const userHex = ov.querySelector('#cmPreviewUserHex');

@@ -25,8 +25,8 @@ export const defaultSettings = {
     macroColorTheme: 'dark1', // 预设主题
     customCharColor: '#22D3EE',
     customUserColor: '#FB923C',
-    quoteColorTheme: 'purple', // 引号颜色预设主题
-    customQuoteColor: '#8B5CF6', // 自定义引号颜色
+    quoteColorTheme: 'moonMist', // 引号颜色预设主题 (默认月雾灰蓝)
+    customQuoteColor: '#94A3B8', // 自定义引号颜色
     translationEnabled: false, // 角色卡翻译功能开关
     debugMode: false, // 调试模式
     // --- Translation Settings ---
@@ -79,8 +79,25 @@ const savedSettings = (() => {
     try { return JSON.parse(localStorage.getItem('cm_settings') || '{}'); } catch (e) { return {}; }
 })();
 
+// 旧版引号颜色主题迁移到新版本的映射
+const migrateQuoteColorTheme = (settings) => {
+    const oldToNew = {
+        'purple': 'lavender',   // 紫色 -> 薰衣草影
+        'blue': 'seaSalt',      // 蓝色 -> 海盐青灰
+        'green': 'mint',        // 绿色 -> 薄荷苔绿
+        'orange': 'amber',      // 橙色 -> 琥珀微光
+        'pink': 'wisteria'      // 粉色 -> 紫藤轻语
+    };
+    
+    if (settings.quoteColorTheme && oldToNew[settings.quoteColorTheme]) {
+        settings.quoteColorTheme = oldToNew[settings.quoteColorTheme];
+    }
+    
+    return settings;
+};
+
 export const state = {
-    settings: { ...defaultSettings, ...savedSettings },
+    settings: migrateQuoteColorTheme({ ...defaultSettings, ...savedSettings }),
     hasUnsyncedTags: false, // 是否有未同步的标签
     unsyncedCards: new Set(), // 记录哪些卡片有未同步的标签
     characters: [], // 改为异步加载
