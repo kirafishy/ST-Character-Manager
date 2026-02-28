@@ -933,6 +933,42 @@ export async function deleteChatFile(chatId, avatarUrl = null) {
             console.log('删除聊天记录成功（无详细响应）');
         }
         
+        // 检查是否删除的是当前聊天，如果是则需要关闭当前聊天
+        try {
+            const chatName = chatId.replace('.jsonl', '');
+            if (avatarUrl && typeof parentWin.this_chid !== 'undefined' && typeof parentWin.characters !== 'undefined') {
+                const currentCharId = parentWin.this_chid;
+                const currentChar = parentWin.characters[currentCharId];
+                
+                if (currentChar && currentChar.avatar === avatarUrl && currentChar.chat === chatName) {
+                    // 删除的是当前聊天，需要关闭当前聊天
+                    if (typeof parentWin.closeCurrentChat !== 'function') {
+                        // 如果没有closeCurrentChat函数，手动清理
+                        if (typeof parentWin.chat_metadata !== 'undefined') {
+                            parentWin.chat_metadata = {};
+                        }
+                        if (typeof parentWin.chat !== 'undefined') {
+                            parentWin.chat.length = 0;
+                        }
+                    } else {
+                        // 使用原生的closeCurrentChat函数来正确关闭当前聊天
+                        await parentWin.closeCurrentChat();
+                    }
+                }
+            }
+        } catch (switchErr) {
+            console.warn('处理当前聊天关闭时出错:', switchErr);
+        }
+        
+        // 刷新欢迎屏幕上的最近聊天列表
+        try {
+            if (typeof parentWin.refreshWelcomeScreen === 'function') {
+                await parentWin.refreshWelcomeScreen();
+            }
+        } catch (refreshErr) {
+            console.warn('刷新欢迎屏幕失败:', refreshErr);
+        }
+        
         // 触发聊天删除事件，通知SillyTavern UI更新
         try {
             const chatName = chatId.replace('.jsonl', '');
