@@ -875,17 +875,26 @@ async function getCharacterData(fn, stMeta, bypassCache = false) {
             console.warn('Auto migration failed for ' + fn, e);
         }
         return {
-            ...baseInfo,
-            fileSize: buf.byteLength,
-            name: info.name || baseInfo.name,
-            desc: info.desc, greetings: info.greetings, creator: info.creator,
-            firstMes: info.firstMes, altGreetings: info.altGreetings,
-            creatorcomment: baseInfo.creatorcomment || info.creatorcomment,
-            version: baseInfo.version || info.version,
-            fav: baseInfo.fav || info.fav,
-            character_book: baseInfo.character_book || info.character_book,
-            source_link: baseInfo.source_link || info.source_link || '',
-            tokens: info.tokens || 0
+            // ===== 基础信息（用于 UI 显示和列表渲染）=====
+            ...baseInfo,           // fileName, avatarUrl, date_added 等基础字段
+            fileSize: buf.byteLength,  // 文件大小（字节）
+            name: info.name || baseInfo.name,  // 角色名称
+            desc: info.desc,       // 角色描述
+            greetings: info.greetings,  // 开场白数量
+            creator: info.creator, // 创作者
+            firstMes: info.firstMes,  // 第一条消息
+            altGreetings: info.altGreetings,  // 候补开场白数组
+            creatorcomment: baseInfo.creatorcomment || info.creatorcomment,  // 创作者备注
+            version: baseInfo.version || info.version,  // 角色卡版本
+            fav: baseInfo.fav || info.fav,  // 是否收藏
+            character_book: baseInfo.character_book || info.character_book,  // 世界书
+            source_link: baseInfo.source_link || info.source_link || '',  // 来源链接
+            tokens: info.tokens || 0,  // Token 数量
+            
+            // ===== 完整原始数据（用于标签导入等需要访问扩展字段的场景）=====
+            data: p.data || p,  // 完整的 data 对象，包含 extensions.cm_manager.tags 等扩展字段
+            tags: (p.data || p).tags || [],  // 原生标签数组（data.tags）
+            extensions: (p.data || p).extensions || {}  // 扩展字段对象，包含 cm_manager、source_url 等
         };
     } catch (e) {
         return { ...baseInfo, greetings: 0, error: true };

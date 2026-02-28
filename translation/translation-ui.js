@@ -1162,8 +1162,15 @@ async function doOverwriteOriginal(ov) {
         
         // 使用单卡刷新，只刷新当前角色（高效）
         // useSavedTags: true 表示使用翻译后保存的 cm_manager.tags
+        // refreshUI: true 确保 UI 被刷新
+        // 注意：需要确保后端数据已更新，添加短暂延迟
+        await new Promise(r => setTimeout(r, 100));
+        
         if (_refreshSingleCard) {
-            await _refreshSingleCard(currentChar.fileName, { useSavedTags: true });
+            await _refreshSingleCard(currentChar.fileName, { useSavedTags: true, refreshUI: true, refreshDetails: false });
+        } else if (_scan) {
+            // 降级方案：使用 scan 刷新整个列表
+            await _scan(false, false, false);
         }
 
         isDirty = false;
