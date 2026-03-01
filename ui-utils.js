@@ -50,7 +50,7 @@ export function showAlert(msg) {
     return new Promise(resolve => {
         createBaseDialog('提示', '<div style="padding:10px;text-align:center">' + escapeHtml(msg) + '</div>', [
             { text: '确定', id: 'cmAlertOk', cls: 'cm-btn-primary', onClick: (ov, close) => { close(); resolve(); } }
-        ]);
+        ], null, { stack: true });
     });
 }
 
@@ -59,7 +59,7 @@ export function showConfirm(msg) {
         createBaseDialog('确认', '<div style="padding:10px;text-align:left;white-space:pre-wrap;line-height:1.5">' + escapeHtml(msg) + '</div>', [
             { text: '取消', id: 'cmConfirmCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => { close(); resolve(false); } },
             { text: '确定', id: 'cmConfirmOk', cls: 'cm-btn-primary', onClick: (ov, close) => { close(); resolve(true); } }
-        ]);
+        ], null, { stack: true });
     });
 }
 
@@ -104,6 +104,6 @@ export function showDeleteConfirm(count, wiCount) {
                     resolve({ ok: true, delWi, delChats });
                 }
             }
-        ]);
+        ], null, { stack: true });
     });
 }
