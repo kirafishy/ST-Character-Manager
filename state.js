@@ -20,6 +20,7 @@ export const defaultSettings = {
     showCardNote: true,         // 显示卡片注释/备注
     autoScan: true,
     autoSyncTags: false, // 同步标签到 data.tags 字段（影响酒馆原生和其他插件）
+    importTagStrategy: 'ask', // 导入时角色卡内置标签的处理策略: 'ask' (询问) | 'auto' (自动导入所有) | 'existing' (仅导入已存在) | 'none' (不导入)
     scanBatchSize: 15, // 扫描/导入时的并发数量（用于全量刷新和批量标签导入）
     defaultSort: 'date_desc',
     detailContentMode: 'scroll', // 详情页内容显示模式: 'scroll' | 'expand'

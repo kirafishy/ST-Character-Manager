@@ -318,8 +318,19 @@ export async function importTags(character, { importSetting = null, skipSave = f
         return;
     }
     
-    // 强制使用 ASK 策略（忽略 powerUserSettings）
-    let setting = tag_import_setting.ASK;
+    // 使用设置中的策略
+    let setting;
+    const strategy = state.settings.importTagStrategy;
+    
+    // 策略映射配置
+    const strategyMap = {
+        'auto': tag_import_setting.ALL,
+        'existing': tag_import_setting.ONLY_EXISTING,
+        'none': tag_import_setting.NONE,
+        'ask': tag_import_setting.ASK
+    };
+    
+    setting = strategyMap[strategy] || tag_import_setting.ASK;
 
     let tagsToApply = [];
 

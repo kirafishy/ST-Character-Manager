@@ -226,6 +226,19 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <option value="name_asc" ${settings.defaultSort === 'name_asc' ? 'selected' : ''}>🔤 名称 (A-Z)</option>
                     </select>
                 </div>
+                
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>导入时角色卡内置标签处理策略</span>
+                        <small>设置导入角色卡时如何处理其内置的标签</small>
+                    </div>
+                    <select id="cmSetImportTagStrategy" class="cm-select-input" style="max-width:200px">
+                        <option value="ask" ${settings.importTagStrategy === 'ask' ? 'selected' : ''}>🔍 询问 (逐个选择)</option>
+                        <option value="auto" ${settings.importTagStrategy === 'auto' ? 'selected' : ''}>✅ 自动导入所有</option>
+                        <option value="existing" ${settings.importTagStrategy === 'existing' ? 'selected' : ''}>🏷️ 仅导入已存在标签</option>
+                        <option value="none" ${settings.importTagStrategy === 'none' ? 'selected' : ''}>❌ 不导入任何标签</option>
+                    </select>
+                </div>
             </div>
 
             <!-- 标签设置 -->
@@ -484,6 +497,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         };
         bindSelect('cmSetDefSort', 'defaultSort');
         bindSelect('cmSetDetailMode', 'detailContentMode');
+        bindSelect('cmSetImportTagStrategy', 'importTagStrategy');
 
         // Macro Color Theme
         const macroThemeSelect = ov.querySelector('#cmSetMacroTheme');
