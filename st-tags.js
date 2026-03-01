@@ -541,7 +541,8 @@ async function runWithConcurrency(tasks, concurrency = 5, onProgress) {
             }
             // 进度回调在任务完成后触发
             if (onProgress) {
-                onProgress(completedCounter.increment(), total);
+                // 优化：只传递当前完成的结果，避免创建整个数组的切片
+                onProgress(completedCounter.increment(), total, results[index]);
             }
         }
     }
@@ -677,22 +678,16 @@ export async function batchImportDataTags(strategy, onProgress, concurrency) {
     let accumulatedStats = { updated: 0, skipped: 0, fetched: 0, created: 0, errors: 0 };
     
     // 使用并发控制执行所有任务
-    const results = await runWithConcurrency(tasks, concurrency, (completed, totalTasks) => {
+    const results = await runWithConcurrency(tasks, concurrency, (completed, totalTasks, latestResult) => {
         if (onProgress) {
-            // 从结果中累加已完成的统计
-            // 注意：这里只累加已完成的结果，避免读取中间状态
-            let newStats = { updated: 0, skipped: 0, fetched: 0, created: 0, errors: 0 };
-            for (let i = 0; i < completed; i++) {
-                const r = results[i];
-                if (r && r.status === 'fulfilled' && r.value) {
-                    newStats.updated += r.value.updated || 0;
-                    newStats.skipped += r.value.skipped || 0;
-                    newStats.fetched += r.value.fetched || 0;
-                    newStats.created += r.value.created || 0;
-                    newStats.errors += r.value.errors || 0;
-                }
+            // 从最新完成的结果中累加统计
+            if (latestResult && latestResult.status === 'fulfilled' && latestResult.value) {
+                accumulatedStats.updated += latestResult.value.updated || 0;
+                accumulatedStats.skipped += latestResult.value.skipped || 0;
+                accumulatedStats.fetched += latestResult.value.fetched || 0;
+                accumulatedStats.created += latestResult.value.created || 0;
+                accumulatedStats.errors += latestResult.value.errors || 0;
             }
-            accumulatedStats = newStats;
             onProgress(completed, totalTasks, { ...accumulatedStats });
         }
     });
