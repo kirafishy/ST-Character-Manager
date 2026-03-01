@@ -1075,7 +1075,7 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
         if (toFetch.length > 0) {
             console.debug('[CharManager] New/Modified cards to fetch:', toFetch.length);
             if (showToast && !forceFull) notify(`发现 ${toFetch.length} 张新卡，正在后台同步...`, 'info');
-            const chunkSize = 10;
+            const chunkSize = state.settings?.scanBatchSize || 15;
             for (let i = 0; i < toFetch.length; i += chunkSize) {
                 const chunk = toFetch.slice(i, i + chunkSize);
 

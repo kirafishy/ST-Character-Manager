@@ -372,10 +372,14 @@ export function needsTagImport(character) {
  * @param {object[]} characters - 需要导入标签的角色数组
  * @param {object} options - 选项
  * @param {boolean} [options.skipSave=false] - 是否跳过保存
- * @param {number} [options.concurrency=5] - 并发数
+ * @param {number} [options.concurrency] - 并发数，默认使用设置中的 scanBatchSize
  * @returns {Promise<{success: number, errors: number}>} 处理结果统计
  */
-export async function batchImportTags(characters, { skipSave = false, concurrency = 5 } = {}) {
+export async function batchImportTags(characters, { skipSave = false, concurrency } = {}) {
+    // 如果未指定并发数，使用设置中的批次大小
+    if (concurrency === undefined) {
+        concurrency = state.settings?.scanBatchSize || 15;
+    }
     if (!characters || characters.length === 0) return { success: 0, errors: 0 };
     
     // 少量角色：逐个弹窗询问
@@ -574,10 +578,14 @@ function aggregateResults(results) {
  * 批量从 data.tags 导入标签到插件管理 (手动触发)
  * @param {string} strategy - 导入策略 ('merge' | 'overwrite' | 'skip')
  * @param {Function} onProgress - 进度回调 (current, total, stats)
- * @param {number} concurrency - 并发数 (默认 5)
+ * @param {number} [concurrency] - 并发数，默认使用设置中的 scanBatchSize
  * @returns {Promise<{updated: number, skipped: number, fetched: number, created: number, errors: number}>} 详细统计结果
  */
-export async function batchImportDataTags(strategy, onProgress, concurrency = 5) {
+export async function batchImportDataTags(strategy, onProgress, concurrency) {
+    // 如果未指定并发数，使用设置中的批次大小
+    if (concurrency === undefined) {
+        concurrency = state.settings?.scanBatchSize || 15;
+    }
     const characters = state.characters;
     const total = characters.length;
     

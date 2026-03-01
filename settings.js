@@ -204,6 +204,17 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </label>
                 </div>
 
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>扫描/导入批次大小</span>
+                        <small>全量刷新和批量导入标签时的并发数量 (${settings.scanBatchSize || 15})<br><span style="color:var(--cm-text-sec);font-size:11px;">⚠️ 过高可能导致卡顿或请求失败</span></small>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <input type="range" id="cmSetScanBatchSize" min="5" max="50" step="5" value="${settings.scanBatchSize || 15}" style="width:100px">
+                        <span id="cmSetScanBatchSizeVal" style="font-size:12px;width:30px;text-align:right">${settings.scanBatchSize || 15}</span>
+                    </div>
+                </div>
+
                  <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>默认排序方式</span>
@@ -350,6 +361,38 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindCheck('cmSetAutoScan', 'autoScan');
         bindCheck('cmSetAutoSyncTags', 'autoSyncTags');
         bindCheck('cmSetDebugMode', 'debugMode');
+
+        // 扫描批次大小滑块
+        const scanBatchSizeSlider = ov.querySelector('#cmSetScanBatchSize');
+        const scanBatchSizeVal = ov.querySelector('#cmSetScanBatchSizeVal');
+        if (scanBatchSizeSlider && scanBatchSizeVal) {
+            scanBatchSizeSlider.oninput = (e) => {
+                scanBatchSizeVal.textContent = e.target.value;
+            };
+            scanBatchSizeSlider.onchange = async (e) => {
+                const newValue = parseInt(e.target.value, 10);
+                // 当批次大小超过 25 时显示风险警告
+                if (newValue > 25) {
+                    const confirmed = await showConfirm(
+                        `批次大小设置为 ${newValue} 可能导致：\n\n` +
+                        `• 服务器压力过大，触发限流\n` +
+                        `• 内存占用过高，页面卡顿\n` +
+                        `• 网络请求失败率增加\n\n` +
+                        `确定要使用此设置吗？`
+                    );
+                    if (!confirmed) {
+                        // 用户取消，恢复到建议值 25
+                        e.target.value = 25;
+                        scanBatchSizeVal.textContent = '25';
+                        state.settings.scanBatchSize = 25;
+                        saveSettings();
+                        return;
+                    }
+                }
+                state.settings.scanBatchSize = newValue;
+                saveSettings();
+            };
+        }
         
         // Translation Settings — 版权声明弹窗逻辑
         const transCheck = ov.querySelector('#cmSetTrans');
