@@ -4,6 +4,7 @@ import { createTag, addTagToChar, saveTags, saveCharacterData, syncCmManagerTags
 import { log, escapeHtml, parsePNG } from './utils.js';
 import { Z_INDEX } from './constants.js';
 import { authFetch } from './api.js';
+import { setCache } from './db.js';
 
 const IMPORT_EXLCUDED_TAGS = ['ROOT', 'TAVERN'];
 const ANTI_TROLL_MAX_TAGS = 50;
@@ -371,26 +372,29 @@ export function needsTagImport(character) {
  * @param {object[]} characters - 需要导入标签的角色数组
  * @param {object} options - 选项
  * @param {boolean} [options.skipSave=false] - 是否跳过保存
- * @returns {Promise<void>}
+ * @param {number} [options.concurrency=5] - 并发数
+ * @returns {Promise<{success: number, errors: number}>} 处理结果统计
  */
-export async function batchImportTags(characters, { skipSave = false } = {}) {
-    if (!characters || characters.length === 0) return;
+export async function batchImportTags(characters, { skipSave = false, concurrency = 5 } = {}) {
+    if (!characters || characters.length === 0) return { success: 0, errors: 0 };
     
     // 少量角色：逐个弹窗询问
     if (characters.length <= 3) {
+        let success = 0;
         for (const char of characters) {
             await importTags(char, { importSetting: tag_import_setting.ASK, skipSave });
+            success++;
         }
-        return;
+        return { success, errors: 0 };
     }
     
     // 大量角色：弹出统一策略选择
     const strategy = await showBatchTagStrategyPopup(characters.length);
     
     switch (strategy) {
-        case batch_tag_strategy.IMPORT_ALL:
-            // 全部导入
-            for (const char of characters) {
+        case batch_tag_strategy.IMPORT_ALL: {
+            // 全部导入 - 使用并发处理
+            const tasks = characters.map(char => async () => {
                 const fileName = char.fileName || char.avatar;
                 const rawTags = getRawTags(char);
                 const importTagsList = filterTags(rawTags);
@@ -401,32 +405,45 @@ export async function batchImportTags(characters, { skipSave = false } = {}) {
                 await saveCmManagerTags(fileName, importTagsList);
                 
                 const { existingTags, newTags } = categorizeTags(importTagsList, fileName);
-                applyTags(fileName, [...existingTags, ...newTags], skipSave);
+                await applyTags(fileName, [...existingTags, ...newTags], skipSave);
+            });
+            const results = await runWithConcurrency(tasks, concurrency);
+            // 检查并记录错误
+            const errors = results.filter(r => r.status === 'rejected').length;
+            if (errors > 0) {
+                log(`[ST-Tags] 批量导入完成，但有 ${errors} 个角色处理失败`);
             }
-            break;
+            return { success: results.length - errors, errors };
+        }
             
-        case batch_tag_strategy.SKIP_ALL:
-            // 全部跳过，设置空数组
-            for (const char of characters) {
+        case batch_tag_strategy.SKIP_ALL: {
+            // 全部跳过，设置空数组 - 使用并发处理
+            const tasks = characters.map(char => async () => {
                 const fileName = char.fileName || char.avatar;
                 const cm = getCmManager(char);
                 cm.tags = [];
                 // 保存空数组到文件
                 await saveCmManagerTags(fileName, []);
+            });
+            const results = await runWithConcurrency(tasks, concurrency);
+            const errors = results.filter(r => r.status === 'rejected').length;
+            if (errors > 0) {
+                log(`[ST-Tags] 批量跳过完成，但有 ${errors} 个角色处理失败`);
             }
-            break;
+            return { success: results.length - errors, errors };
+        }
             
         case batch_tag_strategy.ASK_EACH:
-            // 逐个询问
+            // 逐个询问（需要用户交互，无法并行）
             for (const char of characters) {
                 await importTags(char, { importSetting: tag_import_setting.ASK, skipSave });
             }
-            break;
+            return { success: characters.length, errors: 0 };
             
         case batch_tag_strategy.CANCEL:
         default:
             // 取消，不做任何处理
-            break;
+            return { success: 0, errors: 0 };
     }
 }
 
@@ -476,46 +493,118 @@ function areTagsEqual(arr1, arr2) {
 }
 
 /**
+ * 原子计数器类 - 用于并发环境下的安全计数
+ */
+class AtomicCounter {
+    #value = 0;
+    increment() { return ++this.#value; }
+    get() { return this.#value; }
+}
+
+/**
+ * 并发控制器 - 限制同时执行的 Promise 数量
+ * @param {Array<() => Promise<T>>} tasks - 任务函数数组
+ * @param {number} concurrency - 最大并发数
+ * @param {Function} [onProgress] - 可选的进度回调 (completed, total)
+ * @returns {Promise<Array<{status: string, value?: T, reason?: Error}>>}
+ * @template T
+ */
+async function runWithConcurrency(tasks, concurrency = 5, onProgress) {
+    const results = new Array(tasks.length);
+    let currentIndex = 0;
+    const completedCounter = new AtomicCounter();
+    const total = tasks.length;
+    
+    async function runTask() {
+        while (currentIndex < tasks.length) {
+            const index = currentIndex++;
+            try {
+                results[index] = { status: 'fulfilled', value: await tasks[index]() };
+            } catch (error) {
+                results[index] = { status: 'rejected', reason: error };
+                log(`[ST-Tags] 任务 ${index} 执行失败:`, error);
+            }
+            // 进度回调在任务完成后触发
+            if (onProgress) {
+                onProgress(completedCounter.increment(), total);
+            }
+        }
+    }
+    
+    // 启动 concurrency 个并发任务
+    const workers = Array(Math.min(concurrency, tasks.length))
+        .fill(null)
+        .map(() => runTask());
+    
+    await Promise.all(workers);
+    return results;
+}
+
+/**
+ * 汇总任务结果数组为统计对象
+ * @param {Array<{status: string, value?: object}>} results - 任务结果数组
+ * @returns {{updated: number, skipped: number, fetched: number, created: number, errors: number}}
+ */
+function aggregateResults(results) {
+    const stats = { updated: 0, skipped: 0, fetched: 0, created: 0, errors: 0 };
+    let rejectedCount = 0;
+    
+    for (const result of results) {
+        if (result.status === 'rejected') {
+            rejectedCount++;
+            continue;
+        }
+        const value = result.value;
+        if (value && typeof value === 'object') {
+            stats.updated += value.updated || 0;
+            stats.skipped += value.skipped || 0;
+            stats.fetched += value.fetched || 0;
+            stats.created += value.created || 0;
+            stats.errors += value.errors || 0;
+        }
+    }
+    
+    // rejected 任务也计入 errors
+    stats.errors += rejectedCount;
+    
+    return stats;
+}
+
+/**
  * 批量从 data.tags 导入标签到插件管理 (手动触发)
  * @param {string} strategy - 导入策略 ('merge' | 'overwrite' | 'skip')
  * @param {Function} onProgress - 进度回调 (current, total, stats)
+ * @param {number} concurrency - 并发数 (默认 5)
  * @returns {Promise<{updated: number, skipped: number, fetched: number, created: number, errors: number}>} 详细统计结果
  */
-export async function batchImportDataTags(strategy, onProgress) {
+export async function batchImportDataTags(strategy, onProgress, concurrency = 5) {
     const characters = state.characters;
     const total = characters.length;
     
-    // 详细统计
-    const stats = {
-        updated: 0,      // 成功更新的角色数
-        skipped: 0,      // 跳过的角色数（无标签或无需更新）
-        fetched: 0,      // 回源读取的角色数
-        created: 0,      // 新创建的标签数
-        errors: 0        // 错误数
-    };
-    
-    for (let i = 0; i < total; i++) {
-        const char = characters[i];
+    // 创建所有角色的处理任务
+    // 每个任务返回独立的统计结果，避免共享状态导致的竞态条件
+    const tasks = characters.map((char) => async () => {
+        // 每个任务的独立统计
+        const localStats = { updated: 0, skipped: 0, fetched: 0, created: 0, errors: 0 };
+        
         const fileName = char.fileName || char.avatar;
         let rawTags = getRawTags(char);
         let importTagsList = filterTags(rawTags);
         
         // 【回源兜底】如果缓存中 tags 为空，尝试从服务器获取真实数据
-        // 使用更精确的条件判断：检查 cm_manager.tags 是否为数组
         const cmManagerTags = char.data?.extensions?.cm_manager?.tags;
         if (importTagsList.length === 0 && !Array.isArray(cmManagerTags)) {
             const realTags = await fetchRealTagsFromServer(fileName);
             if (realTags.length > 0) {
                 importTagsList = filterTags(realTags);
-                stats.fetched++;
+                localStats.fetched = 1;
                 log(`[ST-Tags] 回源获取到标签: ${fileName} -> ${importTagsList.join(', ')}`);
             }
         }
         
         if (importTagsList.length === 0) {
-            stats.skipped++;
-            if (onProgress) onProgress(i + 1, total, stats);
-            continue;
+            localStats.skipped = 1;
+            return localStats;
         }
 
         const cm = getCmManager(char);
@@ -525,61 +614,78 @@ export async function batchImportDataTags(strategy, onProgress) {
         let shouldUpdate = false;
 
         if (strategy === 'skip') {
-            // 仅当插件标签为空时导入
             if (currentPluginTags.length === 0) {
                 newPluginTags = importTagsList;
                 shouldUpdate = true;
             } else {
-                stats.skipped++;
+                localStats.skipped = 1;
             }
         } else if (strategy === 'overwrite') {
-            // 覆盖：完全使用 data.tags
             newPluginTags = importTagsList;
             shouldUpdate = true;
         } else {
-            // 合并：保留现有，追加新的 (去重)
             newPluginTags = [...new Set([...currentPluginTags, ...importTagsList])];
-            // 使用 Set 比较检查是否有变化，效率更高
             shouldUpdate = !areTagsEqual(currentPluginTags, newPluginTags);
             if (!shouldUpdate) {
-                stats.skipped++;
+                localStats.skipped = 1;
             }
         }
 
         if (shouldUpdate) {
-            // 先保存到文件，成功后再修改内存状态，避免持久化失败导致状态不一致
             if (fileName) {
                 try {
                     await saveCmManagerTags(fileName, newPluginTags);
                 } catch (e) {
                     console.warn(`[ST-Tags] Failed to save tags for ${fileName}:`, e);
-                    stats.errors++;
-                    // 持久化失败时跳过后续应用，避免统计与真实落盘状态不一致
-                    if (onProgress) onProgress(i + 1, total, stats);
-                    continue;
+                    localStats.errors = 1;
+                    return localStats;
                 }
             }
             
-            // 持久化成功后，再更新内存状态
             cm.tags = newPluginTags;
-            
-            // 同步更新酒馆内存中的角色对象，防止快速刷新时被旧数据覆盖
             syncCmManagerTagsToSTMemory(fileName, newPluginTags);
             
-            // 应用到插件系统 (创建 Tag 对象并关联)
-            const { existingTags, newTags } = categorizeTags(newPluginTags, fileName, false); // filterAssigned=false，因为我们要完全替换
-            // 统计新创建的标签数
-            stats.created += newTags.length;
-            // replace=true 以确保完全匹配新的列表
+            const { existingTags, newTags } = categorizeTags(newPluginTags, fileName, false);
+            localStats.created = newTags.length;
             await applyTags(fileName, [...existingTags, ...newTags], true, true);
-            stats.updated++;
+            localStats.updated = 1;
         }
 
-        if (onProgress) onProgress(i + 1, total, stats);
-    }
+        return localStats;
+    });
+    
+    // 用于实时统计的累加器（仅在进度回调时使用）
+    let accumulatedStats = { updated: 0, skipped: 0, fetched: 0, created: 0, errors: 0 };
+    
+    // 使用并发控制执行所有任务
+    const results = await runWithConcurrency(tasks, concurrency, (completed, totalTasks) => {
+        if (onProgress) {
+            // 从结果中累加已完成的统计
+            // 注意：这里只累加已完成的结果，避免读取中间状态
+            let newStats = { updated: 0, skipped: 0, fetched: 0, created: 0, errors: 0 };
+            for (let i = 0; i < completed; i++) {
+                const r = results[i];
+                if (r && r.status === 'fulfilled' && r.value) {
+                    newStats.updated += r.value.updated || 0;
+                    newStats.skipped += r.value.skipped || 0;
+                    newStats.fetched += r.value.fetched || 0;
+                    newStats.created += r.value.created || 0;
+                    newStats.errors += r.value.errors || 0;
+                }
+            }
+            accumulatedStats = newStats;
+            onProgress(completed, totalTasks, { ...accumulatedStats });
+        }
+    });
+    
+    // 汇总最终结果
+    const stats = aggregateResults(results);
     
     // 最后统一保存一次 tags.json
     saveTags();
+    
+    // 同步更新 IndexedDB 缓存，确保重启后数据不丢失
+    await setCache('characters', state.characters);
     
     log(`[ST-Tags] 批量导入完成: 更新 ${stats.updated}, 跳过 ${stats.skipped}, 回源 ${stats.fetched}, 新建标签 ${stats.created}, 错误 ${stats.errors}`);
     return stats;
