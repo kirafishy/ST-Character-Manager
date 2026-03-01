@@ -1016,9 +1016,16 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
             }
         }
 
+        // 在扫描开始时保存标签快照，防止异步操作期间被覆盖
         // 加载最新的标签数据
         loadTags();
-
+        
+        // 保存标签快照（深拷贝），用于扫描结束后恢复可能的丢失数据
+        const tagsSnapshot = {
+            tags: JSON.parse(JSON.stringify(state.tags)),
+            tagMap: JSON.parse(JSON.stringify(state.tagMap))
+        };
+        
         const cacheMap = new Map();
         state.characters.forEach(c => cacheMap.set(c.fileName, c));
 
@@ -1115,6 +1122,63 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
 
         // 批量保存标签更改
         saveTags();
+        
+        // 合并标签快照，恢复异步操作期间可能丢失的标签数据
+        // 【修复】添加时间戳机制，避免恢复用户在扫描期间有意删除的标签
+        // 注意：如果扫描期间用户删除了标签，该标签在 state.tags 中不存在是预期行为
+        // 只有当标签有角色关联但不在 state.tags 中时，才可能是数据丢失
+        const deletedTagIdsDuringScan = new Set();
+        
+        // 找出扫描期间被有意删除的标签（快照中有但当前没有，且无关联）
+        for (const tag of tagsSnapshot.tags) {
+            if (!state.tags.some(t => t.id === tag.id)) {
+                // 检查该标签是否仍有关联的角色
+                const hasAssociationInSnapshot = Object.values(tagsSnapshot.tagMap).some(tagIds => tagIds.includes(tag.id));
+                const hasAssociationInCurrent = Object.values(state.tagMap).some(tagIds => tagIds.includes(tag.id));
+                
+                // 如果快照中有关联但当前没有，说明用户可能在扫描期间取消了标签关联
+                // 如果快照中和当前都有关联，说明标签数据可能丢失，需要恢复
+                if (hasAssociationInSnapshot && hasAssociationInCurrent) {
+                    // 恢复该标签（可能是数据丢失）
+                    state.tags.push(tag);
+                    console.log('[CharManager] 恢复扫描期间丢失的标签:', tag.name);
+                } else if (!hasAssociationInSnapshot && !hasAssociationInCurrent) {
+                    // 无关联，可能是之前遗留的标签，不需要恢复
+                    deletedTagIdsDuringScan.add(tag.id);
+                }
+                // 其他情况：用户可能在扫描期间修改了关联，以当前状态为准
+            }
+        }
+        
+        // 检查 tagMap 中是否有丢失的关联
+        for (const [fileName, tagIds] of Object.entries(tagsSnapshot.tagMap)) {
+            // 跳过在扫描期间被删除的角色
+            if (!state.characters.some(c => c.fileName === fileName)) continue;
+            
+            if (!state.tagMap[fileName]) {
+                // 该角色的标签关联完全丢失，恢复
+                state.tagMap[fileName] = tagIds.filter(tagId =>
+                    // 只恢复仍然存在的标签，跳过被删除的标签
+                    state.tags.some(t => t.id === tagId) && !deletedTagIdsDuringScan.has(tagId)
+                );
+                if (state.tagMap[fileName].length > 0) {
+                    console.log('[CharManager] 恢复扫描期间丢失的标签关联:', fileName);
+                }
+            } else {
+                // 合并标签关联，但跳过被删除的标签
+                for (const tagId of tagIds) {
+                    if (!state.tagMap[fileName].includes(tagId)) {
+                        // 只合并仍然存在的标签
+                        if (state.tags.some(t => t.id === tagId) && !deletedTagIdsDuringScan.has(tagId)) {
+                            state.tagMap[fileName].push(tagId);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 再次保存合并后的标签
+        saveTags();
 
         state.characters = newList;
 
@@ -1205,6 +1269,9 @@ async function refreshSingleCard(fileName, { refreshUI = true, refreshDetails = 
             // 新卡，添加到列表
             state.characters.push(freshData);
         }
+        
+        // 持久化到 IndexedDB，确保重启后数据一致
+        await persistCharacterState(true);
         
         // 5. 刷新 UI
         if (refreshUI) {
@@ -2721,7 +2788,7 @@ function createModal() {
                 });
 
                 card.remove();
-                state.characters = state.characters.filter(c => c.fileName !== fileName);
+                // deleteChar 已内部处理 state.characters 清理和持久化，此处移除冗余代码
                 findDuplicates(); updateStats(); renderTagSidebar();
                 notify('已删除', 'success');
             } catch (err) {
@@ -2960,13 +3027,13 @@ function createModal() {
                     deleteChats: confirmRes.delChats,
                     deleteWi: shouldDeleteWi
                 });
-                state.characters = state.characters.filter(c => c.fileName !== fn);
+                // deleteChar 已内部处理 state.characters 清理和持久化，此处移除冗余代码
                 ok++;
             } catch (e) {
                 console.error('批量删除角色失败:', e);
             }
         }
-
+        
         state.selectedCards.clear();
         findDuplicates(); updateStats(); updateBatchBar(); renderTagSidebar(); renderView();
 

@@ -56,11 +56,80 @@ export async function setCache(key, value) {
             const store = transaction.objectStore(STORE_NAME);
             const request = store.put(value, key);
 
-            request.onsuccess = () => resolve();
+            // 使用事务完成事件确保数据真正落盘
+            // request.onsuccess 仅表示请求成功，但事务可能尚未提交
+            // transaction.oncomplete 才是数据真正持久化的边界
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(new Error('Transaction aborted'));
+            
+            // 仍然需要监听 request 错误以便及早发现问题
             request.onerror = () => reject(request.error);
         });
     } catch (e) {
         console.error('[CharManager] Failed to set cache:', e);
+        throw e;
+    }
+}
+
+/**
+ * 批量写入多个 key-value 对（原子事务）
+ * 确保多 key 写入在同一事务中完成，避免部分成功导致的数据不一致
+ * 【修复】添加对每个 item 的边界检查
+ * @param {Array<{key: string, value: any}>} items - 要写入的 key-value 对数组
+ * @returns {Promise<void>}
+ */
+export async function setCacheBatch(items) {
+    if (!items || items.length === 0) return;
+    
+    // 过滤无效项，避免写入失败
+    const validItems = items.filter(item =>
+        item &&
+        item.key !== undefined &&
+        item.key !== null &&
+        item.value !== undefined
+    );
+    
+    if (validItems.length === 0) {
+        console.warn('[CharManager] setCacheBatch: 无有效数据项');
+        return;
+    }
+    
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            // 使用单一事务写入所有数据
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            
+            let errorOccurred = null;
+            
+            for (const item of validItems) {
+                try {
+                    store.put(item.value, item.key);
+                } catch (e) {
+                    errorOccurred = e;
+                    break;
+                }
+            }
+            
+            if (errorOccurred) {
+                transaction.abort();
+                reject(errorOccurred);
+                return;
+            }
+            
+            // 使用事务完成事件确保所有数据真正落盘
+            transaction.oncomplete = () => {
+                log('[CharManager] Batch cache saved:', validItems.length, 'items');
+                resolve();
+            };
+            
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(new Error('Transaction aborted'));
+        });
+    } catch (e) {
+        console.error('[CharManager] Failed to set cache batch:', e);
         throw e;
     }
 }
@@ -73,7 +142,11 @@ export async function clearCache(key) {
             const store = transaction.objectStore(STORE_NAME);
             const request = store.delete(key);
 
-            request.onsuccess = () => resolve();
+            // 使用事务完成事件确保数据真正落盘
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(new Error('Transaction aborted'));
+            
             request.onerror = () => reject(request.error);
         });
     } catch (e) {

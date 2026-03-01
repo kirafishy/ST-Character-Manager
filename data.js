@@ -3,7 +3,74 @@ import { generateId, notify, loadJSZip, calculateTokens } from './utils.js';
 import { getSTContext, doc, parentWin, getSTCharacters } from './context.js';
 import { COLORS } from './constants.js';
 import { authFetch } from './api.js';
-import { setCache } from './db.js';
+import { setCache, setCacheBatch } from './db.js';
+
+// 文件写入串行队列 - 防止同一文件的并发写操作互相覆盖
+const fileWriteQueues = new Map();
+
+/**
+ * 获取指定文件的写入队列（串行化执行）
+ * 【修复】添加队列清理逻辑，防止内存泄漏
+ * @param {string} fileName - 文件名
+ * @returns {{ wait: Promise<void>, done: Function }}
+ */
+function enqueueFileWrite(fileName) {
+    const existing = fileWriteQueues.get(fileName) || Promise.resolve();
+    let resolveNext;
+    const newQueue = existing.then(() => new Promise(resolve => {
+        resolveNext = resolve;
+    })).finally(() => {
+        // 队列完成后清理，防止内存泄漏
+        if (fileWriteQueues.get(fileName) === newQueue) {
+            fileWriteQueues.delete(fileName);
+        }
+    });
+    fileWriteQueues.set(fileName, newQueue);
+    return { wait: existing, done: () => resolveNext() };
+}
+
+/**
+ * 统一持久化门面函数
+ * 在所有元数据变更成功后调用，确保内存状态同步写入 IndexedDB
+ * 【修复】解决防抖模式下 Promise 链断裂问题
+ * @param {boolean} immediate - 是否立即写入（跳过 debounce）
+ * @returns {Promise<void>}
+ */
+let persistTimeout = null;
+let persistResolveQueue = [];
+
+export async function persistCharacterState(immediate = false) {
+    // 防抖：200ms 内的多次调用合并为一次
+    if (!immediate) {
+        return new Promise(resolve => {
+            // 将所有等待的 resolver 加入队列
+            persistResolveQueue.push(resolve);
+            
+            if (persistTimeout) clearTimeout(persistTimeout);
+            
+            persistTimeout = setTimeout(async () => {
+                persistTimeout = null;
+                try {
+                    await setCache('characters', state.characters);
+                } catch (e) {
+                    console.error('[CharManager] Failed to persist character state:', e);
+                }
+                // resolve 所有等待的 Promise
+                const queue = persistResolveQueue;
+                persistResolveQueue = [];
+                queue.forEach(r => r());
+            }, 200);
+        });
+    }
+    
+    // 立即写入模式
+    try {
+        await setCache('characters', state.characters);
+    } catch (e) {
+        console.error('[CharManager] Failed to persist character state:', e);
+        throw e;
+    }
+}
 
 /**
  * 比较两个数组是否相等（浅比较）
@@ -55,7 +122,7 @@ export function updateTag(tagId, name, color) {
     return false;
 }
 
-export function deleteTag(tagId, skipSync = false, markUnsynced = true) {
+export async function deleteTag(tagId, skipSync = false, markUnsynced = true) {
     const idx = state.tags.findIndex(t => t.id === tagId);
     if (idx > -1) {
         state.tags.splice(idx, 1);
@@ -71,10 +138,12 @@ export function deleteTag(tagId, skipSync = false, markUnsynced = true) {
         
         if (affectedFiles.length > 0) {
             if (!skipSync && state.settings.autoSyncTags) {
-                affectedFiles.forEach(fileName => syncTagsToCard(fileName));
+                // 使用 Promise.all 等待所有同步操作完成
+                await Promise.all(affectedFiles.map(fileName => syncTagsToCard(fileName)));
             } else if (skipSync && markUnsynced) {
                 state.hasUnsyncedTags = true;
-                setCache('hasUnsyncedTags', true);
+                // 使用 await 确保状态位写入完成
+                await setCache('hasUnsyncedTags', true);
                 
                 // 记录哪些卡片需要同步
                 if (!state.unsyncedCards) state.unsyncedCards = new Set();
@@ -110,7 +179,8 @@ export async function addTagToChar(fileName, tagId, skipSync = false, markUnsync
             await syncTagsToCard(fileName);
         } else if (markUnsynced) {
             state.hasUnsyncedTags = true;
-            setCache('hasUnsyncedTags', true);
+            // 使用 await 确保状态位写入完成
+            await setCache('hasUnsyncedTags', true);
             
             // 记录哪些卡片需要同步到 data.tags
             if (!state.unsyncedCards) state.unsyncedCards = new Set();
@@ -140,7 +210,8 @@ export async function removeTagFromChar(fileName, tagId, skipSync = false, markU
                 await syncTagsToCard(fileName);
             } else if (markUnsynced) {
                 state.hasUnsyncedTags = true;
-                setCache('hasUnsyncedTags', true);
+                // ✅ P2-1 修复: 使用 await 确保状态位写入完成
+                await setCache('hasUnsyncedTags', true);
                 
                 // 记录哪些卡片需要同步到 data.tags
                 if (!state.unsyncedCards) state.unsyncedCards = new Set();
@@ -210,6 +281,52 @@ export function syncCmManagerTagsToSTMemory(fileName, tagNames) {
 }
 
 /**
+ * 深度合并辅助函数
+ * 递归合并源对象到目标对象，保留目标对象中源对象不存在的属性
+ * 【修复】添加循环引用检测，防止恶意数据导致栈溢出
+ * @param {object} target - 目标对象
+ * @param {object} source - 源对象（新数据）
+ * @param {WeakSet} [seen] - 已访问对象集合（用于检测循环引用）
+ * @param {number} [depth] - 当前递归深度
+ */
+const MAX_MERGE_DEPTH = 20;
+
+function deepMerge(target, source, seen = new WeakSet(), depth = 0) {
+    if (!source) return target;
+    if (!target) return source;
+    
+    // 防止循环引用和过深递归
+    if (depth > MAX_MERGE_DEPTH) {
+        console.warn('[CharManager] deepMerge: 达到最大深度限制，停止递归');
+        return target;
+    }
+    if (seen.has(source)) {
+        console.warn('[CharManager] deepMerge: 检测到循环引用，跳过');
+        return target;
+    }
+    seen.add(source);
+    
+    for (const key in source) {
+        if (source[key] !== undefined) {
+            // 只对纯对象进行递归合并，数组和基本类型直接覆盖
+            if (
+                source[key] !== null &&
+                typeof source[key] === 'object' &&
+                !Array.isArray(source[key]) &&
+                target[key] !== null &&
+                typeof target[key] === 'object' &&
+                !Array.isArray(target[key])
+            ) {
+                deepMerge(target[key], source[key], seen, depth + 1);
+            } else {
+                target[key] = source[key];
+            }
+        }
+    }
+    return target;
+}
+
+/**
  * 同步更新酒馆内存中角色对象的完整数据
  * @param {string} fileName - 角色文件名
  * @param {object} newCharData - 新的角色数据
@@ -219,17 +336,21 @@ function syncCharDataToMemory(fileName, newCharData) {
     const updateCharObject = (charObj) => {
         if (!charObj) return;
         
-        // 更新基础字段
-        if (newCharData.name) charObj.name = newCharData.name;
+        // 使用深度合并策略，保留未传递字段的现有值
+        // 基础字段：仅在明确传递时更新
+        if (newCharData.name !== undefined) charObj.name = newCharData.name;
         if (newCharData.description !== undefined) charObj.description = newCharData.description;
         if (newCharData.personality !== undefined) charObj.personality = newCharData.personality;
         if (newCharData.scenario !== undefined) charObj.scenario = newCharData.scenario;
         if (newCharData.first_mes !== undefined) charObj.first_mes = newCharData.first_mes;
         if (newCharData.mes_example !== undefined) charObj.mes_example = newCharData.mes_example;
-        if (newCharData.tags) charObj.tags = newCharData.tags;
+        if (newCharData.tags !== undefined) charObj.tags = newCharData.tags;
         
         // creator_notes 映射到 creatorcomment (酒馆原生字段名)
         if (newCharData.creator_notes !== undefined) charObj.creatorcomment = newCharData.creator_notes;
+        
+        // 收藏状态
+        if (newCharData.fav !== undefined) charObj.fav = newCharData.fav;
         
         // 更新 extensions 字段（包括 system_prompt, post_history_instructions, cm_manager 等）
         if (newCharData.system_prompt !== undefined ||
@@ -246,10 +367,20 @@ function syncCharDataToMemory(fileName, newCharData) {
                 charObj.data.extensions.post_history_instructions = newCharData.post_history_instructions;
             }
             
-            // 同步其他 extensions（包括 cm_manager）
+            // 使用深度合并同步 extensions，避免覆盖现有数据
             if (newCharData.extensions) {
-                Object.assign(charObj.data.extensions, newCharData.extensions);
+                deepMerge(charObj.data.extensions, newCharData.extensions);
             }
+        }
+        
+        // 同步 character_book（如果有更新）
+        if (newCharData.character_book !== undefined) {
+            charObj.character_book = newCharData.character_book;
+        }
+        
+        // 同步版本号
+        if (newCharData.character_version !== undefined) {
+            charObj.character_version = newCharData.character_version;
         }
     };
     
@@ -340,6 +471,11 @@ export async function replaceCharacterImage(char, file) {
         if (!r.ok) throw new Error(await r.text());
 
         char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
+        
+        // 更换图片后持久化到 IndexedDB，确保重启后数据一致
+        // 虽然主要修改的是图片，但 avatarUrl 的更新需要持久化
+        await persistCharacterState(true);
+        
         return true;
     } catch (e) {
         console.error(e);
@@ -438,6 +574,16 @@ export async function syncTagsToCard(fileName) {
             console.error('[TagSync] Failed to save char data:', saveRes.status);
         } else {
             console.log('[TagSync] Tags synced for', fileName);
+            
+            // 同步更新内存中的 tags 字段并持久化
+            // 【修复】添加防御性检查，确保 stateChar 存在后再更新
+            const stateChar = state.characters.find(c => c.fileName === fileName);
+            if (stateChar && finalTags) {
+                stateChar.tags = finalTags;
+            }
+            
+            // 使用防抖模式持久化，避免批量同步时的频繁 I/O
+            await persistCharacterState();
         }
     } catch (e) {
         console.error('[TagSync] Error:', e);
@@ -575,6 +721,10 @@ export function compareChars(a, b) {
 }
 
 export async function saveCharacterData(fileName, updateCallback) {
+    // 使用串行队列防止同一文件的并发写操作互相覆盖
+    const { wait, done } = enqueueFileWrite(fileName);
+    await wait;
+    
     try {
         const getRes = await authFetch('/api/characters/get', {
             method: 'POST',
@@ -669,11 +819,45 @@ export async function saveCharacterData(fileName, updateCallback) {
         });
 
         if (!r.ok) throw new Error(await r.text());
+        
+        // API 写入成功后，同步更新内存状态
+        // 1. 更新 state.characters 中的角色对象
+        const stateChar = state.characters.find(c => c.fileName === fileName);
+        if (stateChar) {
+            // 合并更新后的数据到 state 缓存
+            Object.assign(stateChar, {
+                name: charData.name,
+                description: charData.description,
+                personality: charData.personality,
+                scenario: charData.scenario,
+                first_mes: charData.first_mes,
+                mes_example: charData.mes_example,
+                creatorcomment: charData.creator_notes || charData.creatorcomment,
+                version: charData.character_version,
+                fav: charData.extensions?.fav ?? charData.fav ?? stateChar.fav
+            });
+            // 同步 extensions 中的数据
+            if (charData.extensions) {
+                if (!stateChar.data) stateChar.data = {};
+                if (!stateChar.data.extensions) stateChar.data.extensions = {};
+                Object.assign(stateChar.data.extensions, charData.extensions);
+            }
+        }
+        
+        // 2. 同步更新酒馆内存中的角色数据
+        syncCharDataToMemory(fileName, charData);
+        
+        // 持久化到 IndexedDB，确保重启后数据一致
+        await persistCharacterState(true);
+        
         return true;
     } catch (e) {
         console.error(e);
         notify('保存失败: ' + e.message, 'error');
         return false;
+    } finally {
+        // 释放串行队列
+        done();
     }
 }
 
@@ -727,6 +911,10 @@ export async function deleteWorldInfo(wiName, skipRefresh = false) {
 }
 
 export async function updateCharacter(fileName, newCharData, imageBlob = null, options = {}) {
+    // 使用串行队列防止同一文件的并发写操作互相覆盖
+    const { wait, done } = enqueueFileWrite(fileName);
+    await wait;
+    
     const {
         cleanOldWorldInfo = true,
         preserveSourceLink = true,
@@ -736,107 +924,118 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
     } = options;
 
     const char = state.characters.find(c => c.fileName === fileName);
-    if (!char) throw new Error('未找到目标角色: ' + fileName);
+    if (!char) {
+        done();
+        throw new Error('未找到目标角色: ' + fileName);
+    }
 
-    // 1. 清理旧世界书逻辑
-    // 如果新数据指定了新的 WB，且旧 WB 不再被使用，则尝试删除旧 WB
-    if (cleanOldWorldInfo && char.character_book && newCharData.character_book) {
-        const oldWI = char.character_book;
-        // 如果新旧 WB 不同（且旧的不为空）
-        // 注意：这里简单比较名称，如果是对象则比较 name
-        let oldWIName = typeof oldWI === 'object' ? oldWI.name : oldWI;
-        let newWIName = typeof newCharData.character_book === 'object' ? newCharData.character_book.name : newCharData.character_book;
+    try {
+        // 1. 清理旧世界书逻辑
+        // 如果新数据指定了新的 WB，且旧 WB 不再被使用，则尝试删除旧 WB
+        if (cleanOldWorldInfo && char.character_book && newCharData.character_book) {
+            const oldWI = char.character_book;
+            // 如果新旧 WB 不同（且旧的不为空）
+            // 注意：这里简单比较名称，如果是对象则比较 name
+            let oldWIName = typeof oldWI === 'object' ? oldWI.name : oldWI;
+            let newWIName = typeof newCharData.character_book === 'object' ? newCharData.character_book.name : newCharData.character_book;
 
-        if (oldWIName && oldWIName !== newWIName) {
-            const isUsedByOthers = state.characters.some(c => c.fileName !== fileName && c.character_book === oldWIName);
-            if (!isUsedByOthers) {
-                try {
-                    console.log('[CharManager] 自动清理旧世界书:', oldWIName);
-                    await deleteWorldInfo(oldWIName, true); // skipRefresh=true
-                } catch (e) {
-                    console.warn('[CharManager] 清理旧世界书失败:', e);
+            if (oldWIName && oldWIName !== newWIName) {
+                const isUsedByOthers = state.characters.some(c => c.fileName !== fileName && c.character_book === oldWIName);
+                if (!isUsedByOthers) {
+                    try {
+                        console.log('[CharManager] 自动清理旧世界书:', oldWIName);
+                        await deleteWorldInfo(oldWIName, true); // skipRefresh=true
+                    } catch (e) {
+                        console.warn('[CharManager] 清理旧世界书失败:', e);
+                    }
                 }
             }
         }
-    }
 
-    // 2. 构建 FormData
-    const fd = new FormData();
-    fd.append('ch_name', newCharData.name || char.name);
-    fd.append('avatar_url', fileName);
-    
-    if (imageBlob) {
-        fd.append('avatar', imageBlob);
-    } else {
-        fd.append('avatar', new Blob([''], { type: 'application/octet-stream' }), '');
-    }
-
-    // 3. 保留 Source Link
-    if (preserveSourceLink) {
-        const savedLink = char.source_link || '';
-        if (savedLink) {
-            if (!newCharData.extensions) newCharData.extensions = {};
-            newCharData.extensions.source_url = savedLink;
-            // 删除旧字段以保持整洁（可选）
-            if (newCharData.extensions.source_link) delete newCharData.extensions.source_link;
+        // 2. 构建 FormData
+        const fd = new FormData();
+        fd.append('ch_name', newCharData.name || char.name);
+        fd.append('avatar_url', fileName);
+        
+        if (imageBlob) {
+            fd.append('avatar', imageBlob);
+        } else {
+            fd.append('avatar', new Blob([''], { type: 'application/octet-stream' }), '');
         }
-    }
 
-    // 4. 添加字段
-    const fields = [
-        'description', 'first_mes', 'personality', 'scenario',
-        'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
-        'character_version', 'creator', 'talkativeness'
-    ];
-
-    fields.forEach(k => {
-        if (newCharData[k] !== undefined && newCharData[k] !== null) {
-            fd.append(k, newCharData[k]);
+        // 3. 保留 Source Link
+        if (preserveSourceLink) {
+            const savedLink = char.source_link || '';
+            if (savedLink) {
+                if (!newCharData.extensions) newCharData.extensions = {};
+                newCharData.extensions.source_url = savedLink;
+                // 删除旧字段以保持整洁（可选）
+                if (newCharData.extensions.source_link) delete newCharData.extensions.source_link;
+            }
         }
-    });
 
-    if (newCharData.alternate_greetings && Array.isArray(newCharData.alternate_greetings)) {
-        newCharData.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
-    }
+        // 4. 添加字段
+        const fields = [
+            'description', 'first_mes', 'personality', 'scenario',
+            'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
+            'character_version', 'creator', 'talkativeness'
+        ];
 
-    if (newCharData.tags && Array.isArray(newCharData.tags)) {
-        newCharData.tags.forEach(t => fd.append('tags', t));
-    }
+        fields.forEach(k => {
+            if (newCharData[k] !== undefined && newCharData[k] !== null) {
+                fd.append(k, newCharData[k]);
+            }
+        });
 
-    // 5. 处理收藏状态
-    const isFav = newCharData.extensions?.fav || newCharData.fav;
-    fd.append('fav', isFav ? 'true' : 'false');
-
-    // 6. 处理世界书
-    if (newCharData.character_book) {
-        if (typeof newCharData.character_book === 'string') {
-            fd.append('character_book', newCharData.character_book);
-        } else if (typeof newCharData.character_book === 'object') {
-            fd.append('character_book', JSON.stringify(newCharData.character_book));
+        if (newCharData.alternate_greetings && Array.isArray(newCharData.alternate_greetings)) {
+            newCharData.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
         }
+
+        if (newCharData.tags && Array.isArray(newCharData.tags)) {
+            newCharData.tags.forEach(t => fd.append('tags', t));
+        }
+
+        // 5. 处理收藏状态
+        const isFav = newCharData.extensions?.fav || newCharData.fav;
+        fd.append('fav', isFav ? 'true' : 'false');
+
+        // 6. 处理世界书
+        if (newCharData.character_book) {
+            if (typeof newCharData.character_book === 'string') {
+                fd.append('character_book', newCharData.character_book);
+            } else if (typeof newCharData.character_book === 'object') {
+                fd.append('character_book', JSON.stringify(newCharData.character_book));
+            }
+        }
+
+        // 7. 附加完整 JSON 数据 (如果提供)
+        if (fullCardData) {
+            fd.append('json_data', JSON.stringify(fullCardData));
+        }
+
+        const r = await authFetch('/api/characters/edit', {
+            method: 'POST',
+            body: fd
+        });
+
+        if (!r.ok) throw new Error(await r.text());
+
+        // 8. 更新本地状态
+        Object.assign(char, newCharData);
+        char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
+        
+        // 9. 同步更新酒馆内存中的角色数据，防止刷新时被旧数据覆盖
+        syncCharDataToMemory(fileName, newCharData);
+        
+        // 持久化到 IndexedDB，确保重启后数据一致
+        await persistCharacterState(true);
+        
+        if (notifySuccess) notify('角色更新成功', 'success');
+        return true;
+    } finally {
+        // 释放串行队列
+        done();
     }
-
-    // 7. 附加完整 JSON 数据 (如果提供)
-    if (fullCardData) {
-        fd.append('json_data', JSON.stringify(fullCardData));
-    }
-
-    const r = await authFetch('/api/characters/edit', {
-        method: 'POST',
-        body: fd
-    });
-
-    if (!r.ok) throw new Error(await r.text());
-
-    // 8. 更新本地状态
-    Object.assign(char, newCharData);
-    char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
-    
-    // 9. 同步更新酒馆内存中的角色数据，防止刷新时被旧数据覆盖
-    syncCharDataToMemory(fileName, newCharData);
-    
-    if (notifySuccess) notify('角色更新成功', 'success');
-    return true;
 }
 
 export async function toggleFavorite(fileName, currentFavState) {
@@ -851,25 +1050,37 @@ export async function toggleFavorite(fileName, currentFavState) {
         }
     } catch (e) { }
     if (isActiveChar) {
+        // 当前角色：通过模拟点击 DOM 按钮触发酒馆原生逻辑
         const domBtn = parentWin.document.getElementById('favorite_button');
         if (domBtn) {
             domBtn.click();
+            
+            // 【修复】等待 DOM 更新完成后再获取实际状态，避免竞态条件
+            // 使用 requestAnimationFrame 确保 DOM 更新完成
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            
+            // 从 DOM 按钮获取实际的收藏状态（更可靠）
+            const actualFavState = domBtn.classList.contains('fav_on') ||
+                                   domBtn.getAttribute('data-fav') === 'true';
+            
             const char = state.characters.find(c => c.fileName === fileName);
-            if (char) char.fav = newState;
-            notify(newState ? '已收藏 (当前角色)' : '取消收藏 (当前角色)', 'success');
-            return newState;
+            if (char) char.fav = actualFavState;
+            
+            // 持久化收藏状态到 IndexedDB（原生 DOM 操作不触发我们的持久化）
+            await setCache('characters', state.characters);
+            notify(actualFavState ? '已收藏 (当前角色)' : '取消收藏 (当前角色)', 'success');
+            return actualFavState;
         }
     }
-    const char = state.characters.find(c => c.fileName === fileName);
     
-    // 如果不是当前角色，手动调用 API
+    // 非当前角色：通过 API 直接修改
     try {
         await saveCharacterData(fileName, (data) => {
             if (!data.extensions) data.extensions = {};
             data.extensions.fav = newState;
             data.fav = newState;
         });
-        if (char) char.fav = newState;
+        // saveCharacterData 已内部处理状态更新和持久化
         notify(newState ? '已收藏' : '取消收藏', 'success');
         return newState;
     } catch (e) {
@@ -921,6 +1132,29 @@ export async function renameCharacterFile(char, newName) {
         char.fileName = newFileName;
         char.name = newName;
         char.avatarUrl = '/characters/' + encodeURIComponent(newFileName);
+
+        // 同步更新酒馆原生内存中的角色文件名
+        // 1. 更新 parentWin.characters
+        if (parentWin.characters && Array.isArray(parentWin.characters)) {
+            const stChar = parentWin.characters.find(c => c.avatar === oldFileName);
+            if (stChar) {
+                stChar.avatar = newFileName;
+                stChar.name = newName;
+            }
+        }
+        
+        // 2. 更新 ctx.characters
+        const ctx = getSTContext();
+        if (ctx && ctx.characters) {
+            const ctxChar = ctx.characters.find(c => c.avatar === oldFileName);
+            if (ctxChar) {
+                ctxChar.avatar = newFileName;
+                ctxChar.name = newName;
+            }
+        }
+
+        // 持久化到 IndexedDB，确保重启后数据一致
+        await persistCharacterState(true);
 
         notify('重命名成功', 'success');
         return true;
@@ -1191,44 +1425,57 @@ export async function deleteChar(char, { deleteChats = false, deleteWi = false }
         }
 
         await window.deleteCharacter(fileName);
-        return;
+    } else {
+        // Fallback: 使用 API 删除
+        const r = await authFetch('/api/characters/delete', {
+            method: 'POST',
+            body: JSON.stringify({
+                avatar_url: fileName,
+                delete_chats: deleteChats
+            })
+        });
+        
+        if (!r.ok) throw new Error('删除失败');
+
+        // 同步移除酒馆内存中的角色，防止快速刷新时误判为新角色
+        if (parentWin.characters && Array.isArray(parentWin.characters)) {
+            const idx = parentWin.characters.findIndex(c => c.avatar === fileName);
+            if (idx !== -1) parentWin.characters.splice(idx, 1);
+        }
+
+        // 刷新酒馆原生的角色列表
+        try {
+            if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
+                const context = parentWin.SillyTavern.getContext();
+                if (typeof context.getCharacters === 'function') {
+                    await context.getCharacters();
+                }
+            } else if (typeof parentWin.getCharacters === 'function') {
+                // Fallback for older versions
+                await parentWin.getCharacters();
+            }
+        } catch (e) {
+            console.warn('[CharManager] Failed to refresh character list:', e);
+        }
     }
 
-    // Fallback: 使用 API 删除
-    const r = await authFetch('/api/characters/delete', {
-        method: 'POST',
-        body: JSON.stringify({
-            avatar_url: fileName,
-            delete_chats: deleteChats
-        })
-    });
+    // 统一清理插件状态并持久化
+    // 无论使用原生删除还是 API 删除，都需要清理插件内部状态
     
-    if (!r.ok) throw new Error('删除失败');
-
-    // 同步移除酒馆内存中的角色，防止快速刷新时误判为新角色
-    if (parentWin.characters && Array.isArray(parentWin.characters)) {
-        const idx = parentWin.characters.findIndex(c => c.avatar === fileName);
-        if (idx !== -1) parentWin.characters.splice(idx, 1);
-    }
-
-    // 清理本地标签缓存
+    // 1. 从插件状态中移除角色
+    state.characters = state.characters.filter(c => c.fileName !== fileName);
+    
+    // 2. 清理本地标签缓存
     if (state.tagMap[fileName]) {
         delete state.tagMap[fileName];
         saveTags();
     }
-
-    // 刷新酒馆原生的角色列表
-    try {
-        if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
-            const context = parentWin.SillyTavern.getContext();
-            if (typeof context.getCharacters === 'function') {
-                await context.getCharacters();
-            }
-        } else if (typeof parentWin.getCharacters === 'function') {
-            // Fallback for older versions
-            await parentWin.getCharacters();
-        }
-    } catch (e) {
-        console.warn('[CharManager] Failed to refresh character list:', e);
+    
+    // 3. 清理选中状态
+    if (state.selectedCards && state.selectedCards.has(fileName)) {
+        state.selectedCards.delete(fileName);
     }
+    
+    // 4. 持久化到 IndexedDB，确保重启后数据一致
+    await persistCharacterState(true);
 }

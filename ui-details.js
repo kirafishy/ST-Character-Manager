@@ -7,7 +7,7 @@ import { state } from './state.js';
 import { ICONS, Z_INDEX } from './constants.js';
 import { escapeHtml, formatSize, notify, parsePNG, formatRichText } from './utils.js';
 import { createBaseDialog, showConfirm, showDeleteConfirm } from './ui-utils.js';
-import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion, deleteChatFile } from './data.js';
+import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion, deleteChatFile, persistCharacterState } from './data.js';
 import { getCmManager, migrateToCmManager } from './st-tags.js';
 import { authFetch } from './api.js';
 import { renderView, renderTagSidebar, updateCreatorComment, closeModal } from './index.js';
@@ -1241,8 +1241,7 @@ export class CharacterDetails {
                     deleteWi: confirmRes.delWi && wiCount > 0
                 });
 
-                // 从本地状态移除
-                state.characters = state.characters.filter(c => c.fileName !== this.char.fileName);
+                // deleteChar 已内部处理 state.characters 清理和持久化，此处移除冗余代码
                 
                 // 刷新界面
                 renderTagSidebar();
