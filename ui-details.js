@@ -95,6 +95,14 @@ export class CharacterDetails {
             } else {
                 backToTopBtn.classList.remove('visible');
             }
+            
+            // 检测页面底部是否有备选开场白区域
+            const altGreetingsSection = contentBody.querySelector('.cm-section:nth-last-child(1)');
+            if (altGreetingsSection && altGreetingsSection.querySelector('[data-section-type="alt-greetings"]')) {
+                contentBody.classList.add('has-alt-greetings-at-bottom');
+            } else {
+                contentBody.classList.remove('has-alt-greetings-at-bottom');
+            }
         }, { passive: true });
 
         if (this.viewMode === 'legacy') {
@@ -389,6 +397,7 @@ export class CharacterDetails {
             altSection.className = 'cm-section';
             
             const header = doc.createElement('h4');
+            header.setAttribute('data-section-type', 'alt-greetings');
             header.style.cssText = 'cursor:pointer;display:flex;align-items:center;justify-content:space-between;';
             
             const titleDiv = doc.createElement('div');
@@ -1475,6 +1484,7 @@ export class CharacterDetails {
             altSection.className = 'cm-section';
             
             const header = doc.createElement('h4');
+            header.setAttribute('data-section-type', 'alt-greetings');
             header.style.cssText = 'cursor:pointer;display:flex;align-items:center;justify-content:space-between;';
             
             const titleDiv = doc.createElement('div');

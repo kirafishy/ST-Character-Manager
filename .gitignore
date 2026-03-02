@@ -2,3 +2,6 @@ AGENTS.md
 README.md
 .roo/
 .kilocode/
+package.json
+version-bump.js
+.vscode/tasks.json

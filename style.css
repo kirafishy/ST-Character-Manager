@@ -4724,6 +4724,11 @@ body.hide-card-note .cm-note {
     border: 1px solid var(--cm-accent);
 }
 
+/* 当页面底部有备选开场白区域时，增加回到顶部按钮的偏移量 */
+.cm-detail-body.has-alt-greetings-at-bottom {
+    --cm-back-to-top-offset: 80px;
+}
+
 .cm-back-to-top.visible {
     opacity: 1;
     pointer-events: auto;
