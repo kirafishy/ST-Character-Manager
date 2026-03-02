@@ -777,7 +777,6 @@ function countTokens(p) {
     const d = p.data || p;
     if (!d) return 0;
     let t = (d.name || '') + (d.description || '') + (d.first_mes || '') + (d.scenario || '') + (d.mes_example || '') + (d.system_prompt || '');
-    if (d.alternate_greetings && Array.isArray(d.alternate_greetings)) t += d.alternate_greetings.join('');
     // 包含世界书（character_book）中启用的条目
     const cb = d.character_book;
     if (cb) {

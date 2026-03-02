@@ -411,8 +411,9 @@ export class CharacterDetails {
             
             let altHtml = '';
             char.alternate_greetings.forEach((g, i) => {
+                const greetingTokens = calculateTokens(g);
                 altHtml += `<div class="cm-greeting-item">
-                    <div class="cm-greeting-header">#${i + 1}</div>
+                    <div class="cm-greeting-header">#${i + 1} 🪙 ${greetingTokens}</div>
                     <div class="cm-markdown-body" style="padding:12px;${isExpand ? 'max-height:none;overflow-y:visible;' : 'max-height:200px;overflow-y:auto;'}background:var(--cm-bg);">${this.renderMarkdown(g)}</div>
                 </div>`;
             });
@@ -722,13 +723,14 @@ export class CharacterDetails {
         const renderSortList = () => {
             sortListContainer.innerHTML = '';
             currentGreetings.forEach((g, i) => {
+                const greetingTokens = calculateTokens(g);
                 const item = doc.createElement('div');
                 item.className = 'cm-sort-item';
                 item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;background:var(--cm-bg-ter);border:1px solid var(--cm-border);border-radius:6px;flex-shrink:0;';
                 
                 const idx = doc.createElement('div');
-                idx.textContent = `#${i + 1}`;
-                idx.style.cssText = 'font-weight:bold;color:var(--cm-text-sec);width:30px;flex-shrink:0;';
+                idx.textContent = `#${i + 1} 🪙 ${greetingTokens}`;
+                idx.style.cssText = 'font-weight:bold;color:var(--cm-text-sec);width:60px;flex-shrink:0;';
                 
                 const text = doc.createElement('div');
                 text.textContent = g.length > 80 ? g.substring(0, 80).replace(/\n/g, ' ') + '...' : g.replace(/\n/g, ' ');
@@ -1495,8 +1497,9 @@ export class CharacterDetails {
             
             let altHtml = '';
             char.alternate_greetings.forEach((g, i) => {
+                const greetingTokens = calculateTokens(g);
                 altHtml += `<div class="cm-greeting-item">
-                    <div class="cm-greeting-header">#${i + 1}</div>
+                    <div class="cm-greeting-header">#${i + 1} 🪙 ${greetingTokens}</div>
                     <div class="cm-markdown-body" style="padding:12px;${isExpand ? 'max-height:none;overflow-y:visible;' : 'max-height:200px;overflow-y:auto;'}background:var(--cm-bg);">${this.renderMarkdown(g)}</div>
                 </div>`;
             });
