@@ -1893,6 +1893,56 @@ body.cm-resizing * {
     gap: 6px
 }
 
+/* 伸缩按钮基础样式 */
+.cm-toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--cm-text-sec);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 4px;
+    opacity: 0.6;
+    transition: opacity 0.2s, color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cm-toggle-btn:hover {
+    opacity: 1;
+    color: var(--cm-text);
+}
+
+.cm-toggle-btn.active {
+    color: var(--cm-accent-text);
+    opacity: 1;
+}
+
+/* 标题栏中的按钮 */
+.cm-section-header .cm-toggle-btn {
+    width: 20px;
+    height: 20px;
+}
+
+/* 开场白内容的伸缩按钮 */
+.cm-greeting-item .cm-toggle-btn {
+    width: 18px;
+    height: 18px;
+}
+
+/* 内容区域样式（带动画） */
+.cm-section-content {
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--cm-bg);
+    transition: max-height 0.3s ease-in-out;
+}
+
+.cm-section-content.expanded {
+    max-height: none;
+    overflow-y: visible;
+}
+
 .cm-section pre {
     margin: 0;
     padding: 14px;

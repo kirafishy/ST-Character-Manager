@@ -295,8 +295,6 @@ export class CharacterDetails {
 
     renderLegacyView(body) {
         const char = this.char;
-        const isExpand = state.settings.detailContentMode === 'expand';
-        const maxHeightStyle = isExpand ? 'max-height:none;overflow-y:visible;' : 'max-height:300px;overflow-y:auto;';
         
         // 1. 作者注释 (原备注/注释)
         const commentSection = doc.createElement('div');
@@ -304,14 +302,19 @@ export class CharacterDetails {
         commentSection.style.borderColor = '#ca8a04';
         
         const commentHeader = doc.createElement('div');
-        commentHeader.style.cssText = 'padding:10px 14px;font-size:13px;color:#ca8a04;background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);display:flex;justify-content:space-between;align-items:center';
-        commentHeader.innerHTML = '<span>作者注释</span>';
+        commentHeader.className = 'cm-section-header';
+        commentHeader.style.cssText = 'padding:10px 14px;font-size:13px;color:#ca8a04;background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);display:flex;align-items:center;gap:8px';
         
-        const commentContent = doc.createElement('div');
-        commentContent.className = 'cm-markdown-body';
-        commentContent.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
+        const commentTitle = doc.createElement('span');
+        commentTitle.textContent = '作者注释';
+        commentHeader.appendChild(commentTitle);
         
-        commentContent.innerHTML = this.renderMarkdown(char.creator_notes || char.creatorcomment || '(无)');
+        const commentContentResult = this.createToggleableContent(char.creator_notes || char.creatorcomment || '(无)', 'author-comment');
+        const commentContent = commentContentResult.container;
+        const commentToggleBtn = commentContentResult.toggleBtn;
+        
+        // 将按钮放在标题旁边
+        commentHeader.appendChild(commentToggleBtn);
         
         commentSection.appendChild(commentHeader);
         commentSection.appendChild(commentContent);
@@ -323,18 +326,30 @@ export class CharacterDetails {
         noteSection.style.borderColor = '#2563eb';
         
         const noteHeader = doc.createElement('div');
-        noteHeader.style.cssText = 'padding:10px 14px;font-size:13px;color:#2563eb;background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);display:flex;justify-content:space-between;align-items:center';
-        noteHeader.innerHTML = '<span>备注</span><button class="cm-edit-btn" id="cmEditNoteBtn">' + ICONS.pencil + '</button>';
+        noteHeader.className = 'cm-section-header';
+        noteHeader.style.cssText = 'padding:10px 14px;font-size:13px;color:#2563eb;background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);display:flex;align-items:center;gap:8px';
         
-        const noteContent = doc.createElement('div');
-        noteContent.id = 'cmNoteContent';
-        noteContent.className = 'cm-markdown-body';
-        noteContent.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
+        const noteTitle = doc.createElement('span');
+        noteTitle.textContent = '备注';
+        noteHeader.appendChild(noteTitle);
         
         // 获取备注（优先使用 cm_manager.note，兼容旧字段）
         const cm = getCmManager(char);
         const userNote = cm.note !== undefined ? cm.note : (char.extensions && char.extensions.st_character_manager_note) || '';
-        noteContent.innerHTML = this.renderMarkdown(userNote || '(无)');
+        const noteContentResult = this.createToggleableContent(userNote || '(无)', 'user-note');
+        const noteContent = noteContentResult.container;
+        const noteToggleBtn = noteContentResult.toggleBtn;
+        noteContent.id = 'cmNoteContent';
+        
+        // 将伸缩按钮放在标题旁边
+        noteHeader.appendChild(noteToggleBtn);
+        
+        // 添加编辑按钮到最右边
+        const noteEditBtn = doc.createElement('button');
+        noteEditBtn.className = 'cm-edit-btn';
+        noteEditBtn.id = 'cmEditNoteBtn';
+        noteEditBtn.innerHTML = ICONS.pencil;
+        noteHeader.appendChild(noteEditBtn);
         
         noteSection.appendChild(noteHeader);
         noteSection.appendChild(noteContent);
@@ -343,37 +358,32 @@ export class CharacterDetails {
         // 备注编辑逻辑
         noteHeader.querySelector('#cmEditNoteBtn').onclick = () => {
             if (noteContent.tagName === 'DIV') {
-                const textarea = doc.createElement('textarea');
-                textarea.className = 'cm-input';
-                textarea.style.height = '100px';
-                textarea.style.resize = 'vertical';
-                textarea.value = userNote;
-                noteContent.replaceWith(textarea);
-                const btn = noteHeader.querySelector('#cmEditNoteBtn');
-                btn.innerHTML = '💾';
-                btn.onclick = async () => {
-                    const val = textarea.value.trim();
-                    // 保存备注到 cm_manager.note
-                    await saveCharacterData(char.fileName, (data) => {
-                        const dataCm = getCmManager({ data });
-                        dataCm.note = val;
-                        // 清理旧字段
-                        if (data.extensions && data.extensions.st_character_manager_note !== undefined) {
-                            delete data.extensions.st_character_manager_note;
-                        }
-                    });
-                    
-                    // 刷新显示
-                    const newDiv = doc.createElement('div');
-                    newDiv.id = 'cmNoteContent';
-                    newDiv.className = 'cm-markdown-body';
-                    newDiv.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
-                    newDiv.innerHTML = this.renderMarkdown(val || '(无)');
-                    textarea.replaceWith(newDiv);
-                    btn.innerHTML = ICONS.pencil;
-                    // 重新绑定
-                    btn.onclick = () => { this.renderLegacyView(body); };
-                };
+                const contentDiv = noteContent.querySelector('.cm-markdown-body');
+                if (contentDiv) {
+                    const textarea = doc.createElement('textarea');
+                    textarea.className = 'cm-input';
+                    textarea.style.height = '100px';
+                    textarea.style.resize = 'vertical';
+                    textarea.value = userNote;
+                    contentDiv.replaceWith(textarea);
+                    const btn = noteHeader.querySelector('#cmEditNoteBtn');
+                    btn.innerHTML = '💾';
+                    btn.onclick = async () => {
+                        const val = textarea.value.trim();
+                        // 保存备注到 cm_manager.note
+                        await saveCharacterData(char.fileName, (data) => {
+                            const dataCm = getCmManager({ data });
+                            dataCm.note = val;
+                            // 清理旧字段
+                            if (data.extensions && data.extensions.st_character_manager_note !== undefined) {
+                                delete data.extensions.st_character_manager_note;
+                            }
+                        });
+                        
+                        // 刷新显示
+                        this.renderLegacyView(body);
+                    };
+                }
             }
         };
 
@@ -381,14 +391,38 @@ export class CharacterDetails {
         const descSection = doc.createElement('div');
         descSection.className = 'cm-section cm-section-desc';
         const desc = this.getCharProp('description');
-        descSection.innerHTML = `<h4>📋 描述</h4><div class="cm-markdown-body" style="padding:14px;${maxHeightStyle}background:var(--cm-bg);">${this.renderMarkdown(desc || '(无)')}</div>`;
+        const descHeader = doc.createElement('h4');
+        descHeader.className = 'cm-section-header';
+        descHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
+        descHeader.innerHTML = '<span>📋 描述</span>';
+        const descContentResult = this.createToggleableContent(desc || '(无)', 'description');
+        const descContent = descContentResult.container;
+        const descToggleBtn = descContentResult.toggleBtn;
+        
+        // 将按钮放在标题旁边
+        descHeader.appendChild(descToggleBtn);
+        
+        descSection.appendChild(descHeader);
+        descSection.appendChild(descContent);
         body.appendChild(descSection);
 
         // 4. 开场白
         const firstSection = doc.createElement('div');
         firstSection.className = 'cm-section cm-section-first';
         const firstMes = this.getCharProp('first_mes') || this.getCharProp('first_message');
-        firstSection.innerHTML = `<h4>${ICONS.chat} 主开场白</h4><div class="cm-markdown-body" style="padding:14px;${maxHeightStyle}background:var(--cm-bg);">${this.renderMarkdown(firstMes || '(无)')}</div>`;
+        const firstHeader = doc.createElement('h4');
+        firstHeader.className = 'cm-section-header';
+        firstHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
+        firstHeader.innerHTML = `<span>${ICONS.chat} 主开场白</span>`;
+        const firstContentResult = this.createToggleableContent(firstMes || '(无)', 'first-message');
+        const firstContent = firstContentResult.container;
+        const firstToggleBtn = firstContentResult.toggleBtn;
+        
+        // 将按钮放在标题旁边
+        firstHeader.appendChild(firstToggleBtn);
+        
+        firstSection.appendChild(firstHeader);
+        firstSection.appendChild(firstContent);
         body.appendChild(firstSection);
 
         // 5. 备选开场白
@@ -396,41 +430,56 @@ export class CharacterDetails {
             const altSection = doc.createElement('div');
             altSection.className = 'cm-section';
             
-            const header = doc.createElement('h4');
-            header.setAttribute('data-section-type', 'alt-greetings');
-            header.style.cssText = 'cursor:pointer;display:flex;align-items:center;justify-content:space-between;';
+            const altHeader = doc.createElement('h4');
+            altHeader.setAttribute('data-section-type', 'alt-greetings');
+            altHeader.style.cssText = 'cursor:pointer;display:flex;align-items:center;gap:8px;';
             
-            const titleDiv = doc.createElement('div');
-            titleDiv.innerHTML = `<span class="cm-alt-arrow" style="display:inline-block;width:16px;transition:transform 0.2s">▶</span> 📝 备选开场白 (${char.alternate_greetings.length})`;
-            header.appendChild(titleDiv);
+            const altTitleDiv = doc.createElement('div');
+            altTitleDiv.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1';
+            altTitleDiv.innerHTML = `<span class="cm-alt-arrow" style="display:inline-block;width:16px;transition:transform 0.2s">▶</span><span>📝 备选开场白 (${char.alternate_greetings.length})</span>`;
+            altHeader.appendChild(altTitleDiv);
 
             const maxBtn = doc.createElement('button');
             maxBtn.innerHTML = ICONS.maximize || '⛶';
             maxBtn.title = '全屏查看';
-            maxBtn.style.cssText = 'background:transparent;border:none;color:var(--cm-text-sec);cursor:pointer;padding:0 8px;';
+            maxBtn.style.cssText = 'background:transparent;border:none;color:var(--cm-text-sec);cursor:pointer;padding:0 8px;margin-left:auto;';
             maxBtn.onclick = (e) => {
                 e.stopPropagation();
                 this.openAltGreetingsModal(char.alternate_greetings);
             };
-            header.appendChild(maxBtn);
+            altHeader.appendChild(maxBtn);
             
             const contentDiv = doc.createElement('div');
             contentDiv.className = 'cm-greetings-list';
             contentDiv.style.display = 'none'; // 默认折叠
             
-            let altHtml = '';
+            let altItems = [];
             char.alternate_greetings.forEach((g, i) => {
                 const greetingTokens = calculateTokens(g);
-                altHtml += `<div class="cm-greeting-item">
-                    <div class="cm-greeting-header">#${i + 1} 🪙 ${greetingTokens}</div>
-                    <div class="cm-markdown-body" style="padding:12px;${isExpand ? 'max-height:none;overflow-y:visible;' : 'max-height:200px;overflow-y:auto;'}background:var(--cm-bg);">${this.renderMarkdown(g)}</div>
-                </div>`;
+                const item = doc.createElement('div');
+                item.className = 'cm-greeting-item';
+                item.style.position = 'relative';
+                const greetingHeader = doc.createElement('div');
+                greetingHeader.className = 'cm-greeting-header';
+                greetingHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
+                greetingHeader.innerHTML = `<span>#${i + 1} 🪙 ${greetingTokens}</span>`;
+                const greetingContentResult = this.createToggleableContent(g, `alt-greeting-${i}`, true, 200);
+                const greetingContent = greetingContentResult.container;
+                const greetingToggleBtn = greetingContentResult.toggleBtn;
+                
+                // 将按钮放在标题旁边
+                greetingHeader.appendChild(greetingToggleBtn);
+                
+                item.appendChild(greetingHeader);
+                item.appendChild(greetingContent);
+                altItems.push(item);
             });
-            contentDiv.innerHTML = altHtml;
+            
+            altItems.forEach(item => contentDiv.appendChild(item));
 
             // Toggle logic
-            header.onclick = () => {
-                const icon = header.querySelector('.cm-alt-arrow');
+            altHeader.onclick = () => {
+                const icon = altHeader.querySelector('.cm-alt-arrow');
                 if (contentDiv.style.display === 'none') {
                     contentDiv.style.display = 'flex';
                     if (icon) icon.style.transform = 'rotate(90deg)';
@@ -440,7 +489,7 @@ export class CharacterDetails {
                 }
             };
 
-            altSection.appendChild(header);
+            altSection.appendChild(altHeader);
             altSection.appendChild(contentDiv);
             body.appendChild(altSection);
         }
@@ -1382,14 +1431,19 @@ export class CharacterDetails {
         commentSection.style.borderColor = '#ca8a04';
         
         const commentHeader = doc.createElement('div');
-        commentHeader.style.cssText = 'padding:10px 14px;font-size:13px;color:#ca8a04;background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);display:flex;justify-content:space-between;align-items:center';
-        commentHeader.innerHTML = '<span>作者注释</span>';
+        commentHeader.className = 'cm-section-header';
+        commentHeader.style.cssText = 'padding:10px 14px;font-size:13px;color:#ca8a04;background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);display:flex;align-items:center;gap:8px';
         
-        const commentContent = doc.createElement('div');
-        commentContent.className = 'cm-markdown-body';
-        commentContent.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
+        const commentTitle = doc.createElement('span');
+        commentTitle.textContent = '作者注释';
+        commentHeader.appendChild(commentTitle);
         
-        commentContent.innerHTML = this.renderMarkdown(char.creator_notes || char.creatorcomment || '(无)');
+        const commentContentResult = this.createToggleableContent(char.creator_notes || char.creatorcomment || '(无)', 'author-comment');
+        const commentContent = commentContentResult.container;
+        const commentToggleBtn = commentContentResult.toggleBtn;
+        
+        // 将按钮放在标题旁边
+        commentHeader.appendChild(commentToggleBtn);
         
         commentSection.appendChild(commentHeader);
         commentSection.appendChild(commentContent);
@@ -1401,18 +1455,31 @@ export class CharacterDetails {
         noteSection.style.borderColor = '#2563eb';
         
         const noteHeader = doc.createElement('div');
-        noteHeader.style.cssText = 'padding:10px 14px;font-size:13px;color:#2563eb;background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);display:flex;justify-content:space-between;align-items:center';
-        noteHeader.innerHTML = '<span>备注</span><button class="cm-edit-btn" id="cmEditNoteBtn">' + ICONS.pencil + '</button>';
+        noteHeader.className = 'cm-section-header';
+        noteHeader.style.cssText = 'padding:10px 14px;font-size:13px;color:#2563eb;background:var(--cm-bg-sec);border-bottom:1px solid var(--cm-border);display:flex;align-items:center;gap:8px';
         
-        const noteContent = doc.createElement('div');
-        noteContent.id = 'cmNoteContent';
-        noteContent.className = 'cm-markdown-body';
-        noteContent.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
+        const noteTitle = doc.createElement('span');
+        noteTitle.textContent = '备注';
+        noteHeader.appendChild(noteTitle);
         
         // 获取备注（优先使用 cm_manager.note，兼容旧字段）
         const cm = getCmManager(char);
         const userNote = cm.note !== undefined ? cm.note : (char.extensions && char.extensions.st_character_manager_note) || '';
-        noteContent.innerHTML = this.renderMarkdown(userNote || '(无)');
+        const noteContentResult = this.createToggleableContent(userNote || '(无)', 'user-note');
+        const noteContent = noteContentResult.container;
+        const noteToggleBtn = noteContentResult.toggleBtn;
+        noteContent.id = 'cmNoteContent';
+        
+        // 将伸缩按钮放在标题旁边
+        noteHeader.appendChild(noteToggleBtn);
+        
+        // 添加编辑按钮到最右边
+        const noteEditBtn = doc.createElement('button');
+        noteEditBtn.className = 'cm-edit-btn';
+        noteEditBtn.id = 'cmEditNoteBtn';
+        noteEditBtn.innerHTML = ICONS.pencil;
+        noteEditBtn.style.marginLeft = 'auto';
+        noteHeader.appendChild(noteEditBtn);
         
         noteSection.appendChild(noteHeader);
         noteSection.appendChild(noteContent);
@@ -1421,37 +1488,32 @@ export class CharacterDetails {
         // 备注编辑逻辑
         noteHeader.querySelector('#cmEditNoteBtn').onclick = () => {
             if (noteContent.tagName === 'DIV') {
-                const textarea = doc.createElement('textarea');
-                textarea.className = 'cm-input';
-                textarea.style.height = '100px';
-                textarea.style.resize = 'vertical';
-                textarea.value = userNote;
-                noteContent.replaceWith(textarea);
-                const btn = noteHeader.querySelector('#cmEditNoteBtn');
-                btn.innerHTML = '💾';
-                btn.onclick = async () => {
-                    const val = textarea.value.trim();
-                    // 保存备注到 cm_manager.note
-                    await saveCharacterData(char.fileName, (data) => {
-                        const dataCm = getCmManager({ data });
-                        dataCm.note = val;
-                        // 清理旧字段
-                        if (data.extensions && data.extensions.st_character_manager_note !== undefined) {
-                            delete data.extensions.st_character_manager_note;
-                        }
-                    });
-                    
-                    // 刷新显示
-                    const newDiv = doc.createElement('div');
-                    newDiv.id = 'cmNoteContent';
-                    newDiv.className = 'cm-markdown-body';
-                    newDiv.style.cssText = `padding:14px;${maxHeightStyle}background:var(--cm-bg);`;
-                    newDiv.innerHTML = this.renderMarkdown(val || '(无)');
-                    textarea.replaceWith(newDiv);
-                    btn.innerHTML = ICONS.pencil;
-                    // 重新绑定
-                    btn.onclick = () => { this.renderDetailsTab(); };
-                };
+                const contentDiv = noteContent.querySelector('.cm-markdown-body');
+                if (contentDiv) {
+                    const textarea = doc.createElement('textarea');
+                    textarea.className = 'cm-input';
+                    textarea.style.height = '100px';
+                    textarea.style.resize = 'vertical';
+                    textarea.value = userNote;
+                    contentDiv.replaceWith(textarea);
+                    const btn = noteHeader.querySelector('#cmEditNoteBtn');
+                    btn.innerHTML = '💾';
+                    btn.onclick = async () => {
+                        const val = textarea.value.trim();
+                        // 保存备注到 cm_manager.note
+                        await saveCharacterData(char.fileName, (data) => {
+                            const dataCm = getCmManager({ data });
+                            dataCm.note = val;
+                            // 清理旧字段
+                            if (data.extensions && data.extensions.st_character_manager_note !== undefined) {
+                                delete data.extensions.st_character_manager_note;
+                            }
+                        });
+                        
+                        // 刷新显示
+                        this.renderDetailsTab();
+                    };
+                }
             }
         };
 
@@ -1459,14 +1521,38 @@ export class CharacterDetails {
         const descSection = doc.createElement('div');
         descSection.className = 'cm-section cm-section-desc';
         const desc = this.getCharProp('description');
-        descSection.innerHTML = `<h4>📋 描述</h4><div class="cm-markdown-body" style="padding:14px;${maxHeightStyle}background:var(--cm-bg);">${this.renderMarkdown(desc || '(无)')}</div>`;
+        const descHeader = doc.createElement('h4');
+        descHeader.className = 'cm-section-header';
+        descHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
+        descHeader.innerHTML = '<span>📋 描述</span>';
+        const descContentResult = this.createToggleableContent(desc || '(无)', 'description');
+        const descContent = descContentResult.container;
+        const descToggleBtn = descContentResult.toggleBtn;
+        
+        // 将按钮放在标题旁边
+        descHeader.appendChild(descToggleBtn);
+        
+        descSection.appendChild(descHeader);
+        descSection.appendChild(descContent);
         container.appendChild(descSection);
 
         // 3. 开场白
         const firstSection = doc.createElement('div');
         firstSection.className = 'cm-section cm-section-first';
         const firstMes = this.getCharProp('first_mes') || this.getCharProp('first_message');
-        firstSection.innerHTML = `<h4>${ICONS.chat} 主开场白</h4><div class="cm-markdown-body" style="padding:14px;${maxHeightStyle}background:var(--cm-bg);">${this.renderMarkdown(firstMes || '(无)')}</div>`;
+        const firstHeader = doc.createElement('h4');
+        firstHeader.className = 'cm-section-header';
+        firstHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
+        firstHeader.innerHTML = `<span>${ICONS.chat} 主开场白</span>`;
+        const firstContentResult = this.createToggleableContent(firstMes || '(无)', 'first-message');
+        const firstContent = firstContentResult.container;
+        const firstToggleBtn = firstContentResult.toggleBtn;
+        
+        // 将按钮放在标题旁边
+        firstHeader.appendChild(firstToggleBtn);
+        
+        firstSection.appendChild(firstHeader);
+        firstSection.appendChild(firstContent);
         container.appendChild(firstSection);
 
         // 3.5 历史后指令
@@ -1474,7 +1560,19 @@ export class CharacterDetails {
         if (phi) {
             const phiSection = doc.createElement('div');
             phiSection.className = 'cm-section';
-            phiSection.innerHTML = `<h4>📜 历史后指令</h4><div class="cm-markdown-body" style="padding:14px;${maxHeightStyle}background:var(--cm-bg);">${this.renderMarkdown(phi)}</div>`;
+            const phiHeader = doc.createElement('h4');
+            phiHeader.className = 'cm-section-header';
+            phiHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
+            phiHeader.innerHTML = '<span>📜 历史后指令</span>';
+            const phiContentResult = this.createToggleableContent(phi, 'post-history-instructions');
+            const phiContent = phiContentResult.container;
+            const phiToggleBtn = phiContentResult.toggleBtn;
+            
+            // 将按钮放在标题旁边
+            phiHeader.appendChild(phiToggleBtn);
+            
+            phiSection.appendChild(phiHeader);
+            phiSection.appendChild(phiContent);
             container.appendChild(phiSection);
         }
 
@@ -1483,41 +1581,56 @@ export class CharacterDetails {
             const altSection = doc.createElement('div');
             altSection.className = 'cm-section';
             
-            const header = doc.createElement('h4');
-            header.setAttribute('data-section-type', 'alt-greetings');
-            header.style.cssText = 'cursor:pointer;display:flex;align-items:center;justify-content:space-between;';
+            const altHeader = doc.createElement('h4');
+            altHeader.setAttribute('data-section-type', 'alt-greetings');
+            altHeader.style.cssText = 'cursor:pointer;display:flex;align-items:center;gap:8px;';
             
-            const titleDiv = doc.createElement('div');
-            titleDiv.innerHTML = `<span class="cm-alt-arrow" style="display:inline-block;width:16px;transition:transform 0.2s">▶</span> 📝 备选开场白 (${char.alternate_greetings.length})`;
-            header.appendChild(titleDiv);
+            const altTitleDiv = doc.createElement('div');
+            altTitleDiv.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1';
+            altTitleDiv.innerHTML = `<span class="cm-alt-arrow" style="display:inline-block;width:16px;transition:transform 0.2s">▶</span><span>📝 备选开场白 (${char.alternate_greetings.length})</span>`;
+            altHeader.appendChild(altTitleDiv);
 
             const maxBtn = doc.createElement('button');
             maxBtn.innerHTML = ICONS.maximize || '⛶';
             maxBtn.title = '全屏查看';
-            maxBtn.style.cssText = 'background:transparent;border:none;color:var(--cm-text-sec);cursor:pointer;padding:0 8px;';
+            maxBtn.style.cssText = 'background:transparent;border:none;color:var(--cm-text-sec);cursor:pointer;padding:0 8px;margin-left:auto;';
             maxBtn.onclick = (e) => {
                 e.stopPropagation();
                 this.openAltGreetingsModal(char.alternate_greetings);
             };
-            header.appendChild(maxBtn);
+            altHeader.appendChild(maxBtn);
             
             const contentDiv = doc.createElement('div');
             contentDiv.className = 'cm-greetings-list';
             contentDiv.style.display = 'none'; // 默认折叠
             
-            let altHtml = '';
+            let altItems = [];
             char.alternate_greetings.forEach((g, i) => {
                 const greetingTokens = calculateTokens(g);
-                altHtml += `<div class="cm-greeting-item">
-                    <div class="cm-greeting-header">#${i + 1} 🪙 ${greetingTokens}</div>
-                    <div class="cm-markdown-body" style="padding:12px;${isExpand ? 'max-height:none;overflow-y:visible;' : 'max-height:200px;overflow-y:auto;'}background:var(--cm-bg);">${this.renderMarkdown(g)}</div>
-                </div>`;
+                const item = doc.createElement('div');
+                item.className = 'cm-greeting-item';
+                item.style.position = 'relative';
+                const greetingHeader = doc.createElement('div');
+                greetingHeader.className = 'cm-greeting-header';
+                greetingHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
+                greetingHeader.innerHTML = `<span>#${i + 1} 🪙 ${greetingTokens}</span>`;
+                const greetingContentResult = this.createToggleableContent(g, `alt-greeting-${i}`, true, 200);
+                const greetingContent = greetingContentResult.container;
+                const greetingToggleBtn = greetingContentResult.toggleBtn;
+                
+                // 将按钮放在标题旁边
+                greetingHeader.appendChild(greetingToggleBtn);
+                
+                item.appendChild(greetingHeader);
+                item.appendChild(greetingContent);
+                altItems.push(item);
             });
-            contentDiv.innerHTML = altHtml;
+            
+            altItems.forEach(item => contentDiv.appendChild(item));
 
             // Toggle logic
-            header.onclick = () => {
-                const icon = header.querySelector('.cm-alt-arrow');
+            altHeader.onclick = () => {
+                const icon = altHeader.querySelector('.cm-alt-arrow');
                 if (contentDiv.style.display === 'none') {
                     contentDiv.style.display = 'flex';
                     if (icon) icon.style.transform = 'rotate(90deg)';
@@ -1527,7 +1640,7 @@ export class CharacterDetails {
                 }
             };
 
-            altSection.appendChild(header);
+            altSection.appendChild(altHeader);
             altSection.appendChild(contentDiv);
             container.appendChild(altSection);
         }
@@ -2456,6 +2569,85 @@ export class CharacterDetails {
             }
         };
         input.click();
+    }
+
+    /**
+     * 创建可伸缩的内容区域
+     * @param {string} content - 要显示的内容
+     * @param {string} id - 内容区域的唯一标识
+     * @param {boolean} isGreeting - 是否为开场白内容（使用不同的高度阈值）
+     * @param {number} maxHeight - 最大高度阈值（默认300px）
+     * @returns {Object} 包含内容容器和伸缩按钮的对象
+     */
+    createToggleableContent(content, id, isGreeting = false, maxHeight = 300) {
+        const container = doc.createElement('div');
+        container.className = 'cm-section-content';
+        container.id = `cm-content-${id}`;
+        
+        const contentDiv = doc.createElement('div');
+        contentDiv.className = 'cm-markdown-body';
+        contentDiv.style.padding = isGreeting ? '12px' : '14px';
+        contentDiv.innerHTML = this.renderMarkdown(content || '(无)');
+        
+        // 创建伸缩按钮 - 默认显示
+        const toggleBtn = doc.createElement('button');
+        toggleBtn.className = 'cm-toggle-btn';
+        toggleBtn.title = '展开/折叠内容';
+        
+        // 添加 ARIA 无障碍属性
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        toggleBtn.setAttribute('aria-controls', `cm-content-${id}`);
+        
+        // 配置优先级：全局设置 > 本地存储
+        const globalSetting = state.settings.detailContentMode;
+        const isExpanded = (globalSetting === 'expand') ||
+                          (globalSetting !== 'scroll' && localStorage.getItem(this._getToggleKey(id)) === 'expanded');
+        
+        // 初始化展开/折叠状态
+        this._setToggleState(container, toggleBtn, isExpanded, maxHeight);
+        
+        // 绑定点击事件
+        toggleBtn.onclick = (e) => {
+            e.stopPropagation();
+            const shouldExpand = !container.classList.contains('expanded');
+            this._setToggleState(container, toggleBtn, shouldExpand, maxHeight);
+            localStorage.setItem(this._getToggleKey(id), shouldExpand ? 'expanded' : 'collapsed');
+        };
+        
+        container.appendChild(contentDiv);
+        
+        return { container, toggleBtn };
+    }
+
+    /**
+     * 获取本地存储键名（添加角色 ID 命名空间避免冲突）
+     * @private
+     */
+    _getToggleKey(id) {
+        const charId = this.char?.fileName || 'default';
+        return `cm_toggle_${charId}_${id}`;
+    }
+
+    /**
+     * 设置伸缩状态（包含动画逻辑）
+     * @private
+     */
+    _setToggleState(container, toggleBtn, isExpanded, maxHeight) {
+        if (isExpanded) {
+            container.classList.add('expanded');
+            container.style.maxHeight = 'none';
+            container.style.overflowY = 'visible';
+            toggleBtn.classList.add('active');
+            toggleBtn.innerHTML = ICONS.minus;
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        } else {
+            container.classList.remove('expanded');
+            container.style.maxHeight = `${maxHeight}px`;
+            container.style.overflowY = 'auto';
+            toggleBtn.classList.remove('active');
+            toggleBtn.innerHTML = ICONS.plus;
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
     }
 }
 
