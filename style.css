@@ -1836,10 +1836,16 @@ body.cm-resizing * {
 }
 
 .cm-tab-content {
-    height: 100%;
+    flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
+    margin-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 确保内容区域有底部空间 */
+.cm-tab-content > .cm-section:last-child {
+    margin-bottom: 0;
 }
 
 /* 旧版视图样式适配 */
@@ -4775,7 +4781,7 @@ body.hide-card-note .cm-note {
 }
 
 /* 当页面底部有备选开场白区域时，增加回到顶部按钮的偏移量 */
-.cm-detail-body.has-alt-greetings-at-bottom {
+.cm-detail.has-alt-greetings-at-bottom {
     --cm-back-to-top-offset: 80px;
 }
 

@@ -90,18 +90,22 @@ export class CharacterDetails {
         // 滚动监听
         contentBody.addEventListener('scroll', () => {
             const scrollTop = contentBody.scrollTop;
+            const scrollHeight = contentBody.scrollHeight;
+            const clientHeight = contentBody.clientHeight;
+            const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+            
+            // 显示/隐藏回顶按钮
             if (scrollTop > 50) {
                 backToTopBtn.classList.add('visible');
             } else {
                 backToTopBtn.classList.remove('visible');
             }
             
-            // 检测页面底部是否有备选开场白区域
-            const altGreetingsSection = contentBody.querySelector('.cm-section:nth-last-child(1)');
-            if (altGreetingsSection && altGreetingsSection.querySelector('[data-section-type="alt-greetings"]')) {
-                contentBody.classList.add('has-alt-greetings-at-bottom');
+            // 只有滚动到底部且存在备选开场白时才抬高按钮
+            if (isNearBottom && this.checkAltGreetingsAtBottom()) {
+                this.container.classList.add('has-alt-greetings-at-bottom');
             } else {
-                contentBody.classList.remove('has-alt-greetings-at-bottom');
+                this.container.classList.remove('has-alt-greetings-at-bottom');
             }
         }, { passive: true });
 
@@ -1413,6 +1417,50 @@ export class CharacterDetails {
             } else {
                 body.classList.remove('has-fixed-content');
             }
+        }
+        
+        // 切换标签后重新检测备选开场白位置
+        this.updateBackToTopPosition();
+    }
+    
+    // 检测当前页面最后一个 section 是否为备选开场白
+    checkAltGreetingsAtBottom() {
+        let hasAltGreetings = false;
+        const activeTabId = this.viewMode === 'legacy' ? null : this.currentTab;
+        
+        if (this.viewMode === 'legacy') {
+            // 经典视图：直接检查 contentBody 中的 section
+            const contentBody = this.container.querySelector('.cm-detail-body');
+            if (contentBody) {
+                const sections = contentBody.querySelectorAll('.cm-section');
+                if (sections.length > 0) {
+                    const lastSection = sections[sections.length - 1];
+                    if (lastSection.querySelector('[data-section-type="alt-greetings"]')) {
+                        hasAltGreetings = true;
+                    }
+                }
+            }
+        } else if (activeTabId && this.tabContents[activeTabId]) {
+            // 标签视图：检查当前激活的 tab 内容
+            const activeTabContent = this.tabContents[activeTabId];
+            const sections = activeTabContent.querySelectorAll('.cm-section');
+            if (sections.length > 0) {
+                const lastSection = sections[sections.length - 1];
+                if (lastSection.querySelector('[data-section-type="alt-greetings"]')) {
+                    hasAltGreetings = true;
+                }
+            }
+        }
+        
+        return hasAltGreetings;
+    }
+    
+    // 更新回顶按钮位置状态
+    updateBackToTopPosition() {
+        if (this.checkAltGreetingsAtBottom()) {
+            this.container.classList.add('has-alt-greetings-at-bottom');
+        } else {
+            this.container.classList.remove('has-alt-greetings-at-bottom');
         }
     }
 
