@@ -1,5 +1,5 @@
 import { state, saveSettings, defaultSettings } from './state.js';
-import { ICONS } from './constants.js';
+import { ICONS, Z_INDEX } from './constants.js';
 import { escapeHtml } from './utils.js';
 import { syncAllTags } from './data.js';
 import { clearAllCache } from './db.js';
@@ -410,6 +410,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         // Translation Settings — 版权声明弹窗逻辑
         const transCheck = ov.querySelector('#cmSetTrans');
         const transSettings = ov.querySelector('#cmTransSettings');
+        
         if (transCheck && transSettings) {
             transCheck.onchange = (e) => {
                 if (e.target.checked) {
@@ -1159,16 +1160,11 @@ function showTranslationDisclaimer(_unused, onAccept, onReject) {
                         </ol>
                     </div>
                 </div>
-
-                <!-- 倒计时提示 -->
-                <div style="text-align:center;font-size:12px;color:var(--cm-text-sec);margin-top:8px">
-                    <span id="cmDisclaimerCountdown">请阅读以上条款，接受按钮将在 <strong>5</strong> 秒后可用</span>
+    
+                <div style="padding:12px 20px;border-top:1px solid var(--cm-border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0">
+                    <button id="cmDisclaimerReject" class="cm-btn cm-btn-secondary">拒绝 / Decline</button>
+                    <button id="cmDisclaimerAccept" class="cm-btn cm-btn-primary" disabled style="opacity:0.5;cursor:not-allowed">接受 (5s)</button>
                 </div>
-            </div>
-            <div style="padding:12px 20px;border-top:1px solid var(--cm-border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0">
-                <button id="cmDisclaimerReject" class="cm-btn cm-btn-secondary">拒绝 / Decline</button>
-                <button id="cmDisclaimerAccept" class="cm-btn cm-btn-primary">接受 (5s) / Accept (5s)</button>
-            </div>
         </div>
     `;
 
@@ -1185,15 +1181,10 @@ function showTranslationDisclaimer(_unused, onAccept, onReject) {
         };
     }
 
-    // 接受按钮
+    // 接受按钮 - 倒计时显示在按钮上
     const acceptBtn = ov.querySelector('#cmDisclaimerAccept');
-    const countdownEl = ov.querySelector('#cmDisclaimerCountdown');
 
     if (acceptBtn) {
-        acceptBtn.disabled = true;
-        acceptBtn.style.opacity = '0.5';
-        acceptBtn.style.cursor = 'not-allowed';
-
         acceptBtn.onclick = () => {
             closeDisclaimer();
             if (onAccept) onAccept();
@@ -1203,21 +1194,15 @@ function showTranslationDisclaimer(_unused, onAccept, onReject) {
     let remaining = 5;
     const timer = setInterval(() => {
         remaining--;
-        if (countdownEl) {
-            if (remaining > 0) {
-                countdownEl.innerHTML = `请阅读以上条款，接受按钮将在 <strong>${remaining}</strong> 秒后可用`;
-            } else {
-                countdownEl.innerHTML = '✅ 您现在可以点击接受按钮 / You may now click Accept';
-            }
+        if (remaining > 0) {
+            acceptBtn.textContent = `接受 (${remaining}s)`;
         }
         if (remaining <= 0) {
             clearInterval(timer);
-            if (acceptBtn) {
-                acceptBtn.disabled = false;
-                acceptBtn.style.opacity = '1';
-                acceptBtn.style.cursor = 'pointer';
-                acceptBtn.textContent = '接受 / Accept';
-            }
+            acceptBtn.disabled = false;
+            acceptBtn.style.opacity = '1';
+            acceptBtn.style.cursor = 'pointer';
+            acceptBtn.textContent = '接受 / Accept';
         }
     }, 1000);
 }
