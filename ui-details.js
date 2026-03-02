@@ -668,6 +668,15 @@ export class CharacterDetails {
         pagination.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;justify-content:center;max-width:400px;';
         centerContainer.appendChild(pagination);
 
+        // Token 计数显示
+        const tokenBadge = doc.createElement('div');
+        tokenBadge.className = 'cm-token-badge';
+        tokenBadge.style.cssText = 'display:flex;align-items:center;gap:4px;padding:4px 8px;background:var(--cm-bg-ter);border:1px solid var(--cm-border);border-radius:4px;font-size:12px;color:var(--cm-text-sec);white-space:nowrap;';
+        tokenBadge.innerHTML = '🪙 <span class="cm-token-count">-</span>';
+        centerContainer.appendChild(tokenBadge);
+
+        const tokenCountEl = tokenBadge.querySelector('.cm-token-count');
+
         // 下一条
         const nextBtn = doc.createElement('button');
         nextBtn.className = 'cm-btn cm-btn-secondary';
@@ -712,20 +721,6 @@ export class CharacterDetails {
         // 1. 浏览视图
         const cardContainer = doc.createElement('div');
         cardContainer.style.cssText = 'height:100%;overflow-y:auto;padding:20px;position:relative;';
-        
-        // 复制按钮
-        const copyBtn = doc.createElement('button');
-        copyBtn.className = 'cm-icon-btn';
-        copyBtn.innerHTML = ICONS.copy || '📋';
-        copyBtn.title = '复制当前内容';
-        copyBtn.style.cssText = 'position:absolute;top:16px;right:16px;z-index:' + Z_INDEX.BADGE + ';padding:8px;background:var(--cm-bg-sec);border:1px solid var(--cm-border);border-radius:4px;cursor:pointer;opacity:0.8;transition:opacity 0.2s;';
-        copyBtn.onmouseover = () => copyBtn.style.opacity = '1';
-        copyBtn.onmouseout = () => copyBtn.style.opacity = '0.8';
-        copyBtn.onclick = () => {
-            navigator.clipboard.writeText(currentGreetings[currentIndex]);
-            notify('已复制', 'success');
-        };
-        cardContainer.appendChild(copyBtn);
 
         // Markdown 内容
         const markdownBody = doc.createElement('div');
@@ -778,7 +773,10 @@ export class CharacterDetails {
             currentIndex = index;
 
             renderPagination();
-            markdownBody.innerHTML = this.renderMarkdown(currentGreetings[currentIndex]);
+            const currentGreeting = currentGreetings[currentIndex];
+            markdownBody.innerHTML = this.renderMarkdown(currentGreeting);
+            // 更新 Token 计数
+            tokenCountEl.textContent = calculateTokens(currentGreeting);
             cardContainer.scrollTop = 0;
         };
 
