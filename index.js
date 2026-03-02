@@ -1,4 +1,4 @@
-import { ICONS, COLORS } from './constants.js';
+import { ICONS, COLORS, Z_INDEX } from './constants.js';
 import manifest from './manifest.json' with { type: 'json' };
 import { doc, parentWin, getSTContext, getSTCharacters } from './context.js';
 import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip, notify, parsePNG } from './utils.js';
