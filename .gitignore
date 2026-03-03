@@ -5,3 +5,5 @@ README.md
 package.json
 version-bump.js
 .vscode/tasks.json
+CLAUDE.md
+.claude/

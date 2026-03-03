@@ -597,6 +597,7 @@ function bindAllEvents(ov) {
         promptInput.onchange = () => {
             state.settings.translationPrompt = promptInput.value;
             saveSettings();
+            isDirty = true;
         };
     }
 
@@ -928,7 +929,6 @@ async function translateSingleItem(ov, group, key, charContext, options = {}) {
             item.translated = translated;
             item.status = STATUS.SUCCESS;
             item.error = null;
-            isDirty = true;
             isDirty = true;
             updateItemUI(ov, group, key);
         } else {
@@ -1464,6 +1464,7 @@ function renderGlossaryTable(ov) {
                 addBtn.onclick = (e) => {
                     e.stopPropagation();
                     glossaryData.unshift({ original: '', translation: '', type: 'term' });
+                    isDirty = true;
                     renderGlossaryTable(ov);
                 };
             }
@@ -1483,6 +1484,7 @@ function renderGlossaryTable(ov) {
                     e.stopPropagation();
                     if (confirm(t('confirmClearGlossary') || '确定要清空术语表吗？')) {
                         glossaryData = [];
+                        isDirty = true;
                         panel.style.display = 'none';
                         _notify(t('btnClearGlossary') + ' ✅', 'info');
                     }
@@ -1523,21 +1525,30 @@ function renderGlossaryTable(ov) {
     grid.querySelectorAll('.cm-glossary-translation').forEach(input => {
         input.onchange = () => {
             const idx = parseInt(input.dataset.index);
-            if (glossaryData[idx]) glossaryData[idx].translation = input.value;
+            if (glossaryData[idx]) {
+                glossaryData[idx].translation = input.value;
+                isDirty = true;
+            }
         };
     });
 
     grid.querySelectorAll('.cm-glossary-original-input').forEach(input => {
         input.onchange = () => {
             const idx = parseInt(input.dataset.index);
-            if (glossaryData[idx]) glossaryData[idx].original = input.value;
+            if (glossaryData[idx]) {
+                glossaryData[idx].original = input.value;
+                isDirty = true;
+            }
         };
     });
 
     grid.querySelectorAll('.cm-glossary-type').forEach(select => {
         select.onchange = () => {
             const idx = parseInt(select.dataset.index);
-            if (glossaryData[idx]) glossaryData[idx].type = select.value;
+            if (glossaryData[idx]) {
+                glossaryData[idx].type = select.value;
+                isDirty = true;
+            }
         };
     });
 
@@ -1546,6 +1557,7 @@ function renderGlossaryTable(ov) {
             btn.onclick = () => {
                 const idx = parseInt(btn.dataset.index);
                 glossaryData.splice(idx, 1);
+                isDirty = true;
                 renderGlossaryTable(ov);
             };
         });
