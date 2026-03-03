@@ -1461,7 +1461,7 @@ body.cm-resizing * {
     width: 100vw;
     height: 100vh;
     background: var(--cm-overlay);
-    z-index: var(--cm-z-index-modal-confirm, 700020); /* 弹窗级: 确认对话框 */
+    z-index: var(--cm-z-index-modal-cropper, 700050); /* 弹窗级: 确认对话框 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2786,7 +2786,7 @@ body.cm-resizing * {
     display: flex;
     align-items: center;
     justify-content: center;
-    max-height: calc(100vh - 120px);
+    min-height: 0; /* 允许 flex 子项缩小 */
     overflow: hidden;
 }
 
