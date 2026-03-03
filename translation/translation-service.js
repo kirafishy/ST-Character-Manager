@@ -34,14 +34,14 @@ export function safeParseJson(text) {
 /**
  * 指数退避等待
  * @param {number} attempt - 当前尝试次数 (0-based)
- * @param {number} baseDelay - 基础延迟 (ms)
+ * @param {number} baseDelay - 基础延迟 (ms)，默认 1000ms
  * @param {boolean} isRateLimit - 是否为 429 错误
  */
 async function exponentialBackoff(attempt, baseDelay = 1000, isRateLimit = false) {
     // 如果是 429 错误，增加基础延迟时间
     const actualBaseDelay = isRateLimit ? Math.max(baseDelay, 3000) : baseDelay;
-    // 增加随机抖动 (Jitter) 避免并发请求同时重试
-    const jitter = Math.random() * 1000;
+    // 增加随机抖动 (Jitter) 避免并发请求同时重试，抖动范围为 基础延迟的 20%
+    const jitter = actualBaseDelay * 0.2 * Math.random();
     const delay = actualBaseDelay * Math.pow(2, attempt) + jitter;
     await new Promise(resolve => setTimeout(resolve, delay));
 }
@@ -52,14 +52,25 @@ async function exponentialBackoff(attempt, baseDelay = 1000, isRateLimit = false
 export class TranslationService {
     constructor(settings) {
         this.settings = settings || {};
+        this.abortController = null;
     }
 
     /**
      * 更新设置
-     * @param {object} newSettings 
+     * @param {object} newSettings
      */
     updateSettings(newSettings) {
         this.settings = { ...this.settings, ...newSettings };
+    }
+
+    /**
+     * 中断当前正在进行的 API 请求
+     */
+    cancelOngoingRequest() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
     }
 
     /**
@@ -132,6 +143,12 @@ export class TranslationService {
      * @returns {Promise<object>} 翻译后的键值对对象
      */
     async translate(dataToTranslate, charContext, options = {}) {
+        // 清理上一次请求残留的 controller（防止内存泄漏）
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+
         const prompt = this.getSystemPrompt(options);
         
         // 获取目标语言名称用于 User Prompt
@@ -144,10 +161,8 @@ export class TranslationService {
         
         // 根据数据内容检测是否包含代码混合内容（正则脚本 replaceString、酒馆助手 content）
         const keys = Object.keys(dataToTranslate);
+        const { hasRegexReplace, hasScriptContent } = this.detectMixedCodeContent(keys);
         let extraInstructions = '';
-        
-        const hasRegexReplace = keys.some(k => k.includes('replaceString'));
-        const hasScriptContent = keys.some(k => k.match(/script_.*_content$/));
         
         if (hasRegexReplace || hasScriptContent) {
             extraInstructions = `\n\nIMPORTANT - Code-mixed content rules:
@@ -214,7 +229,13 @@ export class TranslationService {
             } catch (e) {
                 console.error(`[Translation] Error (Attempt ${attempt + 1}):`, e);
                 lastError = e;
-                
+
+                // 如果是用户主动中断（关闭翻译界面），直接抛出，不再重试
+                if (e.name === 'AbortError' || (e.message && e.message.includes('aborted'))) {
+                    console.log('[Translation] Request aborted by user');
+                    throw e;
+                }
+
                 // 如果不是网络错误或 503，可能不需要重试 (视情况而定，这里简单处理都重试)
                 if (e.message.includes('400') || e.message.includes('401')) {
                     throw e; // 认证或请求错误不重试
@@ -244,19 +265,31 @@ export class TranslationService {
             temperature: 0.7
         };
 
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(body)
-        });
+        // 创建新的 AbortController
+        this.abortController = new AbortController();
 
-        if (!res.ok) {
-            const txt = await res.text();
-            throw new Error(`OpenAI API Error: ${res.status} - ${txt}`);
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(body),
+                signal: this.abortController.signal
+            });
+
+            if (!res.ok) {
+                const txt = await res.text();
+                throw new Error(`OpenAI API Error: ${res.status} - ${txt}`);
+            }
+
+            const data = await res.json();
+            return data.choices[0].message.content;
+        } catch (e) {
+            // 重新抛出错误，让上层处理
+            throw e;
+        } finally {
+            // 请求完成后（无论成功、失败或中断）清除 controller
+            this.abortController = null;
         }
-
-        const data = await res.json();
-        return data.choices[0].message.content;
     }
 
     /**
@@ -311,11 +344,28 @@ export class TranslationService {
     }
 
     /**
+     * 检测是否包含代码混合内容（正则脚本 replaceString、酒馆助手 content）
+     * @param {string[]} keys - 需要翻译的键名数组
+     * @returns {{ hasRegexReplace: boolean, hasScriptContent: boolean }}
+     */
+    detectMixedCodeContent(keys) {
+        const hasRegexReplace = keys.some(k => k.includes('replaceString'));
+        const hasScriptContent = keys.some(k => k.match(/script_.*_content$/));
+        return { hasRegexReplace, hasScriptContent };
+    }
+
+    /**
      * 公开的 API 调用方法，供外部模块（如术语表扫描器）使用
      * @param {Array<{role: string, content: string}>} messages - 消息数组
      * @returns {Promise<object>} 解析后的 JSON 对象
      */
     async callAPI(messages) {
+        // 清理上一次请求残留的 controller（防止内存泄漏）
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+
         if (this.settings.debugMode) {
             console.log('[Translation Debug] API Request:', JSON.parse(JSON.stringify(messages)));
         }

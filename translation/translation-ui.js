@@ -62,6 +62,25 @@ const GROUP_LABELS = {
     scripts: '📜 酒馆助手脚本'
 };
 
+/**
+ * 统一的翻译错误处理函数
+ * @param {object} item - 翻译项对象
+ * @param {Error} error - 错误对象
+ * @returns {boolean} - 是否为用户中断（true 表示中断，应恢复状态）
+ */
+function handleTranslationError(item, error) {
+    // 如果是用户主动中断（关闭翻译界面），不显示错误，直接恢复状态
+    if (error.name === 'AbortError' || (error.message && error.message.includes('aborted'))) {
+        item.status = STATUS.IDLE;
+        item.error = null;
+        return true;
+    } else {
+        item.status = STATUS.ERROR;
+        item.error = error.message;
+        return false;
+    }
+}
+
 // 获取本地化的分组标签
 function getGroupLabel(key) {
     const lang = state.settings.translationUILanguage || 'zh-CN';
@@ -183,6 +202,7 @@ function handleClose(ov, originalClose) {
         return;
     }
 
+    // 用户确认关闭后才中断请求（避免误中断）
     const confirmHtml = `
         <div class="cm-trans-confirm-body" style="padding: 10px;">
             <p style="margin-bottom: 8px;">${t('confirmCloseUnsaved')}</p>
@@ -207,6 +227,10 @@ function handleClose(ov, originalClose) {
             id: 'cmTransConfirmDiscard',
             cls: 'cm-btn-danger',
             onClick: (dlg, closeDlg) => {
+                // 用户确认放弃后，中断当前请求
+                if (service) {
+                    service.cancelOngoingRequest();
+                }
                 isDirty = false;
                 closeDlg();
                 originalClose();
@@ -837,6 +861,8 @@ async function runTranslation(ov, mode, groupFilter) {
         return;
     }
 
+    isDirty = true;
+
     // 确保服务使用最新设置
     service.updateSettings(state.settings);
 
@@ -909,13 +935,13 @@ async function translateSingleItem(ov, group, key, charContext, options = {}) {
         let mvuMarkers = null;
         const isMVUContent = mvuAnalysis && (group === 'regex' || group === 'scripts') &&
                              (key.includes('replaceString') || key.includes('content'));
-        
+
         if (isMVUContent) {
             const { processed, markers } = preprocessMVUContent(originalText, mvuAnalysis.lockedPaths);
             originalText = processed;
             mvuMarkers = markers;
         }
-        
+
         const dataToTranslate = { [key]: originalText };
         const result = await service.translate(dataToTranslate, charContext, options);
 
@@ -925,7 +951,7 @@ async function translateSingleItem(ov, group, key, charContext, options = {}) {
             if (isMVUContent && mvuMarkers && mvuMarkers.size > 0) {
                 translated = postprocessMVUContent(translated, mvuMarkers);
             }
-            
+
             item.translated = translated;
             item.status = STATUS.SUCCESS;
             item.error = null;
@@ -935,8 +961,7 @@ async function translateSingleItem(ov, group, key, charContext, options = {}) {
             throw new Error('翻译结果缺失');
         }
     } catch (e) {
-        item.status = STATUS.ERROR;
-        item.error = e.message;
+        handleTranslationError(item, e);
         updateItemUI(ov, group, key);
     }
     updateProgressBar(ov);
@@ -985,9 +1010,16 @@ async function translateGroup(ov, group, keys, charContext, options = {}) {
             updateItemUI(ov, group, k);
         });
     } catch (e) {
+        const wasAborted = handleTranslationError({ status: null, error: null }, e);
         keys.forEach(k => {
-            currentTranslationData[group][k].status = STATUS.ERROR;
-            currentTranslationData[group][k].error = e.message;
+            const item = currentTranslationData[group][k];
+            if (wasAborted) {
+                item.status = STATUS.IDLE;
+                item.error = null;
+            } else {
+                item.status = STATUS.ERROR;
+                item.error = e.message;
+            }
             updateItemUI(ov, group, k);
         });
     }
@@ -1407,6 +1439,8 @@ async function doScanGlossary(ov) {
             }
             return;
         }
+
+        isDirty = true;
 
         glossaryData = results.map(n => ({
             original: n.original,
