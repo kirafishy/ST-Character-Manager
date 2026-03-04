@@ -83,3 +83,59 @@ export const Z_INDEX = {
     TRANSLATION_OVERLAY: 2147483646,  // 翻译界面遮罩
     IMPORT_TAG_OVERLAY: 2147483647,   // 导入标签窗口（最高优先级）
 };
+
+/**
+ * AI 模型配置列表
+ * 用于批量 AI 标签功能的模型选择
+ * name: 显示名称
+ * tokenLimit: 该模型的 Token 上限（用于批量分组）
+ */
+export const AI_MODELS = [
+  { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "tokenLimit": 2097152 },
+  { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "tokenLimit": 2097152 },
+  { "id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash-Lite", "tokenLimit": 1048576 },
+  { "id": "gemini-3-pro-preview", "name": "Gemini 3 Pro Preview", "tokenLimit": 2097152 },
+  { "id": "gemini-3-flash-preview", "name": "Gemini 3 Flash Preview", "tokenLimit": 2097152 },
+  { "id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview", "tokenLimit": 2097152 },
+  { "id": "gemini-3.1-flash-lite-preview", "name": "Gemini 3.1 Flash-Lite Preview", "tokenLimit": 1048576 },
+
+  { "id": "deepseek-chat", "name": "DeepSeek Chat (DeepSeek-V3.2)", "tokenLimit": 128000 },
+  { "id": "deepseek-reasoner", "name": "DeepSeek Reasoner (DeepSeek-V3.2 Thinking)", "tokenLimit": 128000 },
+
+  { "id": "claude-opus-4-6", "name": "Claude 4.6 Opus", "tokenLimit": 200000 },
+  { "id": "claude-sonnet-4-6", "name": "Claude 4.6 Sonnet", "tokenLimit": 200000 },
+  { "id": "claude-haiku-4-5", "name": "Claude 4.5 Haiku (alias)", "tokenLimit": 200000 },
+  { "id": "claude-haiku-4-5-20251001", "name": "Claude 4.5 Haiku (20251001 snapshot)", "tokenLimit": 200000 },
+
+  { "id": "gpt-5.2", "name": "GPT-5.2", "tokenLimit": 400000 },
+  { "id": "gpt-5.2-2025-12-11", "name": "GPT-5.2 (2025-12-11 snapshot)", "tokenLimit": 400000 },
+  { "id": "gpt-5.2-pro", "name": "GPT-5.2 Pro", "tokenLimit": 400000 },
+  { "id": "gpt-5-mini", "name": "GPT-5 Mini", "tokenLimit": 400000 },
+  { "id": "gpt-5-nano", "name": "GPT-5 Nano", "tokenLimit": 400000 },
+  { "id": "gpt-4.1", "name": "GPT-4.1", "tokenLimit": 1048576 },
+  { "id": "gpt-4.1-mini", "name": "GPT-4.1 Mini", "tokenLimit": 1048576 },
+  { "id": "gpt-4.1-nano", "name": "GPT-4.1 Nano", "tokenLimit": 1048576 },
+  { "id": "gpt-4o", "name": "GPT-4o", "tokenLimit": 128000 },
+  { "id": "gpt-4o-mini", "name": "GPT-4o Mini", "tokenLimit": 128000 },
+  { "id": "o3", "name": "o3", "tokenLimit": 200000 },
+  { "id": "o4-mini", "name": "o4-mini", "tokenLimit": 200000 },
+
+  { "id": "grok-4-1-fast-reasoning", "name": "Grok 4.1 Fast (Reasoning)", "tokenLimit": 2000000 },
+  { "id": "grok-4-1-fast-non-reasoning", "name": "Grok 4.1 Fast (Non-reasoning)", "tokenLimit": 2000000 },
+  { "id": "grok-4-fast-reasoning", "name": "Grok 4 Fast (Reasoning)", "tokenLimit": 2000000 },
+  { "id": "grok-4-fast-non-reasoning", "name": "Grok 4 Fast (Non-reasoning)", "tokenLimit": 2000000 },
+  { "id": "grok-4", "name": "Grok 4", "tokenLimit": 256000 },
+  { "id": "grok-code-fast-1", "name": "Grok Code Fast 1", "tokenLimit": 256000 },
+  { "id": "grok-3", "name": "Grok 3", "tokenLimit": 131072 },
+  { id: 'custom', name: '自定义模型', tokenLimit: 4096 }
+];
+
+/**
+ * 获取模型的 Token 上限
+ * @param {string} modelId - 模型 ID
+ * @returns {number} Token 上限
+ */
+export function getModelTokenLimit(modelId) {
+    const model = AI_MODELS.find(m => m.id === modelId);
+    return model ? model.tokenLimit : 4096;
+}

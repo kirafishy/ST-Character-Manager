@@ -45,9 +45,10 @@ ${JSON.stringify(systemTags)}
  * 构建批量角色的概览 Prompt
  * @param {object[]} cardDataList - 角色卡数据数组
  * @param {string[]} systemTags - 系统标签库
+ * @param {boolean} forceGenerateTags - 是否强制生成标签（忽略现有标签）
  * @returns {string}
  */
-export function buildBatchOverviewPrompt(cardDataList, systemTags) {
+export function buildBatchOverviewPrompt(cardDataList, systemTags, forceGenerateTags = false) {
     const charactersSection = cardDataList.map((card, index) => {
         return `
 
@@ -55,13 +56,17 @@ export function buildBatchOverviewPrompt(cardDataList, systemTags) {
 ${buildCharacterDataSection(card)}`;
     }).join('\n');
     
+    const tagRequirement = forceGenerateTags
+        ? '2. 为每个角色生成标签：最多5个，优先从[系统标签库]中选择匹配标签，仅当无匹配时才创建新标签'
+        : '2. 为每个角色生成标签：最多5个，优先从[系统标签库]中选择匹配标签，仅当无匹配时才创建新标签';
+    
     return `你是一位专业的角色卡分析师。请分析以下${cardDataList.length}个角色卡数据，为每个角色生成概览和标签。
 
 [角色卡列表]${charactersSection}
 
 [任务要求]
 1. 为每个角色生成概览：150字以内，精炼概括角色核心特征
-2. 为每个角色生成标签：最多5个，优先从[系统标签库]中选择匹配标签，仅当无匹配时才创建新标签
+${tagRequirement}
 
 [系统标签库]
 ${JSON.stringify(systemTags)}

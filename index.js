@@ -1,4 +1,4 @@
-import { ICONS, COLORS, Z_INDEX } from './constants.js';
+import { ICONS, COLORS, Z_INDEX, AI_MODELS, getModelTokenLimit } from './constants.js';
 import manifest from './manifest.json' with { type: 'json' };
 import { doc, parentWin, getSTContext, getSTCharacters } from './context.js';
 import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip, notify, parsePNG } from './utils.js';
@@ -2239,27 +2239,37 @@ function showTagEditor(tag) {
  * 批量 AI 生成标签
  * @param {string} mode - 'serial' | 'batch'
  * @param {number} tokenLimit - Token 上限
+ * @param {boolean} overwriteExisting - 是否覆盖已有标签
  */
-async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096) {
+async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwriteExisting = false) {
     const selectedAvatars = Array.from(state.selectedCards);
     const characters = state.characters.filter(c =>
         selectedAvatars.includes(c.fileName || c.avatar)
     );
     
-    // 过滤出无标签的角色（包括 tags 为 null、空数组或空字符串的情况）
-    const targetChars = characters.filter(c => {
-        const cm = getCmManager(c);
-        return !cm.tags || cm.tags.length === 0 || (cm.tags.length === 1 && cm.tags[0] === '');
-    });
+    // 根据 overwriteExisting 决定目标角色
+    let targetChars;
+    if (overwriteExisting) {
+        // 覆盖模式：处理所有选中的角色
+        targetChars = characters;
+    } else {
+        // 默认模式：只处理无标签的角色
+        targetChars = characters.filter(c => {
+            const cm = getCmManager(c);
+            return !cm.tags || cm.tags.length === 0 || (cm.tags.length === 1 && cm.tags[0] === '');
+        });
+    }
     
     if (targetChars.length === 0) {
-        notify('所有选中角色已有标签，无需生成', 'info');
+        notify(overwriteExisting ? '请先选择角色' : '所有选中角色已有标签，无需生成', 'info');
         return;
     }
     
-    const confirmed = await showConfirm(
-        `将对 ${targetChars.length} 个角色生成 AI 标签\n（跳过 ${characters.length - targetChars.length} 个已有标签的角色）\n\n模式：${mode === 'serial' ? '串行（1 个/次）' : `批量（Token 上限：${tokenLimit}）`}`
-    );
+    const skippedCount = overwriteExisting ? 0 : characters.length - targetChars.length;
+    const modeText = mode === 'serial' ? '逐个处理' : `批量处理（Token 上限：${tokenLimit}）`;
+    const confirmMsg = `将对 ${targetChars.length} 个角色生成 AI 标签${skippedCount > 0 ? `\n（跳过 ${skippedCount} 个已有标签的角色）` : ''}\n\n模式：${modeText}${overwriteExisting ? '\n⚠️ 将覆盖已有标签' : ''}`;
+    
+    const confirmed = await showConfirm(confirmMsg);
     
     if (!confirmed) return;
     
@@ -2278,7 +2288,7 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096) {
         const { generateAIOverview, generateBatchOverview, extractCharacterData } = await import('./ai-overview/ai-service.js');
         
         if (mode === 'serial') {
-            // 串行模式
+            // 逐个处理模式
             for (let i = 0; i < targetChars.length; i++) {
                 if (cancelled) break;
                 
@@ -2290,7 +2300,8 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096) {
                 );
                 
                 try {
-                    await generateAIOverview(char, true);
+                    // overwriteExisting=true 时强制生成标签
+                    await generateAIOverview(char, overwriteExisting);
                     success++;
                     notify(`✅ ${char.name}: 生成成功`, 'success', 1500);
                 } catch (e) {
@@ -2304,7 +2315,7 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096) {
                 }
             }
         } else {
-            // 批量模式
+            // 批量处理模式
             const result = await generateBatchOverview(targetChars, tokenLimit, (charName, successFlag, error) => {
                 if (cancelled) return;
                 if (successFlag) {
@@ -2314,7 +2325,7 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096) {
                     errors++;
                     notify(`❌ ${charName}: ${error}`, 'error', 1500);
                 }
-            });
+            }, overwriteExisting);
             
             success = result.success;
             errors = result.errors;
@@ -2335,6 +2346,112 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096) {
         hideProgressBar();
         notify(`批量处理失败：${e.message}`, 'error');
     }
+}
+
+/**
+ * 显示 AI 标签配置弹窗
+ */
+function showAITagConfigDialog() {
+    if (state.selectedCards.size === 0) {
+        notify('请先选择角色卡', 'warning');
+        return;
+    }
+    
+    const selectedCount = state.selectedCards.size;
+    
+    // 构建模型选项 HTML
+    const modelOptions = AI_MODELS.map(m =>
+        `<option value="${m.id}">${m.name} (${Math.round(m.tokenLimit / 1024)}K)</option>`
+    ).join('');
+    
+    const contentHtml = `
+        <div style="padding:10px">
+            <div style="margin-bottom:16px;padding:12px;background:var(--cm-bg-hover);border-radius:6px">
+                <div style="font-size:14px;font-weight:600;margin-bottom:4px">📊 已选择 ${selectedCount} 个角色</div>
+                <div style="font-size:12px;color:var(--cm-text-sec)">AI 将为这些角色生成智能标签</div>
+            </div>
+            
+            <div class="cm-form-group" style="margin-bottom:12px">
+                <label style="font-size:13px;font-weight:600">处理模式</label>
+                <select id="cmAIModeSelect" class="cm-select-input" style="width:100%;margin-top:6px">
+                    <option value="serial">🔄 逐个处理（稳定，适合少量角色）</option>
+                    <option value="batch">⚡ 批量处理（快速，适合大量角色）</option>
+                </select>
+            </div>
+            
+            <div id="cmBatchModelGroup" class="cm-form-group" style="margin-bottom:12px;display:none">
+                <label style="font-size:13px;font-weight:600">
+                    模型选择
+                    <span style="font-size:11px;color:var(--cm-text-sec);font-weight:normal;margin-left:6px">（仅影响 Token 上限判断）</span>
+                </label>
+                <select id="cmAIModelSelect" class="cm-select-input" style="width:100%;margin-top:6px">
+                    ${modelOptions}
+                </select>
+            </div>
+            
+            <div id="cmCustomTokenGroup" class="cm-form-group" style="margin-bottom:12px;display:none">
+                <label style="font-size:13px;font-weight:600">自定义 Token 上限</label>
+                <input type="number" id="cmCustomTokenInput" class="cm-input" style="width:100%;margin-top:6px"
+                    value="4096" min="1024" max="2000000" step="1024"
+                    placeholder="输入 Token 上限">
+            </div>
+            
+            <div class="cm-form-group" style="margin-bottom:12px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                    <input type="checkbox" id="cmOverwriteCheckbox" style="width:16px;height:16px">
+                    <span style="font-size:13px">
+                        <span style="font-weight:600">覆盖已有标签</span>
+                        <span style="font-size:11px;color:var(--cm-text-sec);display:block;margin-top:2px">开启后将重新生成所有选中角色的标签</span>
+                    </span>
+                </label>
+            </div>
+        </div>
+    `;
+    
+    createBaseDialog('🪄 AI 标签生成', contentHtml, [
+        { text: '取消', cls: 'cm-btn-secondary', onClick: (ov, close) => close() },
+        { text: '开始生成', id: 'cmAIStartBtn', cls: 'cm-btn-primary', onClick: async (ov, close) => {
+            const mode = ov.querySelector('#cmAIModeSelect').value;
+            const overwriteExisting = ov.querySelector('#cmOverwriteCheckbox').checked;
+            
+            let tokenLimit = 4096;
+            if (mode === 'batch') {
+                const modelId = ov.querySelector('#cmAIModelSelect').value;
+                if (modelId === 'custom') {
+                    tokenLimit = parseInt(ov.querySelector('#cmCustomTokenInput').value) || 4096;
+                } else {
+                    tokenLimit = getModelTokenLimit(modelId);
+                }
+            }
+            
+            close();
+            await batchAIGenerateTags(mode, tokenLimit, overwriteExisting);
+        }}
+    ], (ov) => {
+        const modeSelect = ov.querySelector('#cmAIModeSelect');
+        const modelGroup = ov.querySelector('#cmBatchModelGroup');
+        const customTokenGroup = ov.querySelector('#cmCustomTokenGroup');
+        const modelSelect = ov.querySelector('#cmAIModelSelect');
+        
+        // 模式切换时显示/隐藏模型选择
+        const updateModelVisibility = () => {
+            const isBatch = modeSelect.value === 'batch';
+            modelGroup.style.display = isBatch ? 'block' : 'none';
+        };
+        
+        // 模型选择切换时显示/隐藏自定义输入
+        const updateCustomTokenVisibility = () => {
+            const isCustom = modelSelect.value === 'custom';
+            customTokenGroup.style.display = isCustom ? 'block' : 'none';
+        };
+        
+        modeSelect.onchange = updateModelVisibility;
+        modelSelect.onchange = updateCustomTokenVisibility;
+        
+        // 初始化状态
+        updateModelVisibility();
+        updateCustomTokenVisibility();
+    });
 }
 
 function showBatchTagDialog() {
@@ -2675,16 +2792,6 @@ function createModal() {
         '<button class="cm-btn cm-btn-secondary" id="cmClearSel">退出</button>' +
         '<button class="cm-btn cm-btn-primary" id="cmBatchTag">标签</button>' +
         '<button class="cm-btn cm-btn-success" id="cmBatchAIGenerate">🪄 AI 标签</button>' +
-        '<select class="cm-select-input" id="cmBatchModeSelect" title="批量模式" style="max-width:90px">' +
-        '<option value="serial">串行</option>' +
-        '<option value="batch">批量</option>' +
-        '</select>' +
-        '<select class="cm-select-input" id="cmTokenLimitSelect" title="Token 上限" style="max-width:80px">' +
-        '<option value="4096">4K</option>' +
-        '<option value="8192">8K</option>' +
-        '<option value="16384">16K</option>' +
-        '<option value="32768">32K</option>' +
-        '</select>' +
         '<button class="cm-btn cm-btn-secondary" id="cmBatchFav">' + ICONS.star + '</button>' +
         '<button class="cm-btn cm-btn-danger" id="cmDelSel">' + ICONS.trash + '</button>' +
         '<button class="cm-btn cm-btn-secondary" id="cmBackupSel">' + ICONS.download + '</button>' +
@@ -3154,17 +3261,7 @@ function createModal() {
 
     m.querySelector('#cmBatchTag').onclick = showBatchTagDialog;
 
-    m.querySelector('#cmBatchAIGenerate').onclick = async function () {
-        if (!state.selectedCards.size) {
-            notify('请先选择角色卡', 'warning');
-            return;
-        }
-
-        const mode = m.querySelector('#cmBatchModeSelect').value;
-        const tokenLimit = parseInt(m.querySelector('#cmTokenLimitSelect').value) || 4096;
-
-        await batchAIGenerateTags(mode, tokenLimit);
-    };
+    m.querySelector('#cmBatchAIGenerate').onclick = showAITagConfigDialog;
 
     m.querySelector('#cmBatchFav').onclick = async function () {
         if (!state.selectedCards.size) return;

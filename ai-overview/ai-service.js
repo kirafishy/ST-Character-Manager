@@ -72,9 +72,10 @@ export async function generateAIOverview(character, forceGenerateTags = false) {
  * @param {object[]} characters - 角色对象数组
  * @param {number} tokenLimit - Token 上限
  * @param {function} onProgress - 进度回调 (charName, success, error)
+ * @param {boolean} forceGenerateTags - 是否强制生成标签（覆盖已有标签）
  * @returns {Promise<{success: number, errors: number, results: object[]}>}
  */
-export async function generateBatchOverview(characters, tokenLimit, onProgress) {
+export async function generateBatchOverview(characters, tokenLimit, onProgress, forceGenerateTags = false) {
     const config = getAIConfig();
     
     if (!config.apiKey || !config.apiKey.trim()) {
@@ -95,9 +96,9 @@ export async function generateBatchOverview(characters, tokenLimit, onProgress) 
         const batch = batches[i];
         
         try {
-            const batchPrompt = buildBatchOverviewPrompt(batch.map(extractCharacterData), state.tags.map(t => t.name));
+            const batchPrompt = buildBatchOverviewPrompt(batch.map(extractCharacterData), state.tags.map(t => t.name), forceGenerateTags);
             const response = await callOpenAI(config, batchPrompt, 4096);
-            const batchResults = await parseBatchOverviewResult(response, batch);
+            const batchResults = await parseBatchOverviewResult(response, batch, forceGenerateTags);
             
             for (const result of batchResults) {
                 if (result.success) {
