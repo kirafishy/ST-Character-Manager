@@ -409,3 +409,37 @@ export async function parsePNG(buf) {
     } catch (e) { }
     return null;
 }
+
+/**
+ * 获取角色文件名（统一回退逻辑）
+ * @param {object} character - 角色对象
+ * @returns {string} 文件名或 avatar，失败时返回 'unknown'
+ */
+export function getCharacterFileName(character) {
+    return character.fileName || character.avatar || 'unknown';
+}
+
+/**
+ * 检查角色是否有有效标签
+ * 优先读取插件主数据源 cm_manager.tags，再回退到 data.tags
+ * @param {object} character - 角色对象
+ * @returns {boolean} 是否有有效标签
+ */
+export function checkCharHasTags(character) {
+    const data = character.data || character;
+    
+    // 优先检查 cm_manager.tags（插件主数据源）
+    const cmManagerTags = data.extensions?.cm_manager?.tags;
+    if (Array.isArray(cmManagerTags)) {
+        // cm_manager.tags 存在时，以其为准（包括空数组表示"已确认为无标签"）
+        return cmManagerTags.length > 0 && cmManagerTags[0] !== '';
+    }
+    
+    // 回退到 data.tags（V2/V3 角色卡原生标签）
+    const dataTags = data.tags;
+    if (Array.isArray(dataTags)) {
+        return dataTags.length > 0 && dataTags[0] !== '';
+    }
+    
+    return false;
+}

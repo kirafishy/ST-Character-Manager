@@ -89,11 +89,14 @@ export const Z_INDEX = {
  * 用于批量 AI 标签功能的模型选择
  * name: 显示名称
  * tokenLimit: 该模型的 Token 上限（用于批量分组）
+ *
+ * 注：Gemini 2.5 系列实际支持 2M token，但此处保守设置为 1M，
+ * 原因是：输入 + 输出共享 token 池，需为 AI 生成的概览和标签预留约 500-1000 tokens 输出空间
  */
 export const AI_MODELS = [
-  { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "tokenLimit": 2097152 },
-  { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "tokenLimit": 2097152 },
-  { "id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash-Lite", "tokenLimit": 1048576 },
+  // Gemini 2.5 系列：tokenLimit 设为 1M（实际支持 2M，保守设置以预留输出空间）
+  { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "tokenLimit": 1048576 },
+  { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "tokenLimit": 1048576 },
   { "id": "gemini-3-pro-preview", "name": "Gemini 3 Pro Preview", "tokenLimit": 2097152 },
   { "id": "gemini-3-flash-preview", "name": "Gemini 3 Flash Preview", "tokenLimit": 2097152 },
   { "id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview", "tokenLimit": 2097152 },

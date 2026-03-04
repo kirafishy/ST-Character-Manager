@@ -3,8 +3,8 @@
  * 解析 AI 返回的 JSON 结果并保存到角色卡
  */
 import { saveCharacterData, applyTagsByNames } from '../data.js';
-import { getCmManager } from '../st-tags.js';
-import { sanitizeTags } from '../utils.js';
+import { sanitizeTags, checkCharHasTags } from '../utils.js';
+import { state } from '../state.js';
 
 /**
  * 安全解析 JSON，处理可能存在的格式问题
@@ -42,8 +42,8 @@ function safeParseJson(text) {
             
             return JSON.parse(cleanText);
         } catch (e2) {
-            console.error('[AI Overview] JSON Parse Error:', e2);
-            console.error('[AI Overview] Original text:', text);
+            console.error('[CharManager] [AI Overview] JSON Parse Error:', e2);
+            console.error('[CharManager] [AI Overview] Original text:', text);
             return null;
         }
     }
@@ -84,7 +84,7 @@ export async function parseOverviewResult(aiResponse, character, hasTags) {
         const applyResult = await applyTagsByNames(fileName, sanitizedTags, { replace: true });
         tagNamesGenerated.push(...sanitizedTags);
         
-        console.log(`[AI Overview] Tags applied to ${fileName}: +${applyResult.added} -${applyResult.removed} created:${applyResult.created}`);
+        console.log(`[CharManager] [AI Overview] Tags applied to ${fileName}: +${applyResult.added} -${applyResult.removed} created:${applyResult.created}`);
     }
     
     return {
@@ -98,9 +98,10 @@ export async function parseOverviewResult(aiResponse, character, hasTags) {
  * 解析批量角色的 AI 响应并保存
  * @param {string} aiResponse - AI 返回的原始文本
  * @param {object[]} characters - 角色对象数组
+ * @param {boolean} forceGenerateTags - 是否强制生成标签（覆盖已有标签）
  * @returns {Promise<object[]>}
  */
-export async function parseBatchOverviewResult(aiResponse, characters) {
+export async function parseBatchOverviewResult(aiResponse, characters, forceGenerateTags = false) {
     const results = safeParseJson(aiResponse);
     
     if (!results) {
@@ -112,6 +113,7 @@ export async function parseBatchOverviewResult(aiResponse, characters) {
     }
     
     const outputResults = [];
+    const processedFileNames = new Set(); // 记录已处理的角色文件名
     
     for (const item of results) {
         const char = characters.find(c => (c.fileName || c.avatar) === item.fileName);
@@ -126,6 +128,9 @@ export async function parseBatchOverviewResult(aiResponse, characters) {
             continue;
         }
         
+        // 记录已处理的角色
+        processedFileNames.add(char.fileName || char.avatar);
+        
         if (!item.summary) {
             outputResults.push({
                 fileName: item.fileName,
@@ -138,6 +143,7 @@ export async function parseBatchOverviewResult(aiResponse, characters) {
         
         const fileName = char.fileName || char.avatar;
         
+        // 角色级错误隔离：每个角色的保存操作独立 try-catch
         try {
             // 1. 先保存 summary
             await saveCharacterData(fileName, (data) => {
@@ -146,11 +152,16 @@ export async function parseBatchOverviewResult(aiResponse, characters) {
             });
             
             // 2. 使用统一入口应用标签，确保 state.tags/state.tagMap 同步更新
-            if (item.tags && Array.isArray(item.tags)) {
+            // forceGenerateTags=true 时总是应用标签（replace=true），否则检查是否已有标签
+            const shouldApplyTags = forceGenerateTags || !checkCharHasTags(char);
+            
+            if (item.tags && Array.isArray(item.tags) && shouldApplyTags) {
                 const sanitizedTags = sanitizeTags(item.tags);
-                const applyResult = await applyTagsByNames(fileName, sanitizedTags, { replace: true });
+                // forceGenerateTags=true 时使用 replace:true 覆盖现有标签，否则使用 replace:false 合并
+                const applyResult = await applyTagsByNames(fileName, sanitizedTags, { replace: forceGenerateTags });
                 
-                console.log(`[AI Batch] ${char.name}: +${applyResult.added} -${applyResult.removed} created:${applyResult.created}`);
+                console.log(`[CharManager] [AI Batch] ${char.name}: +${applyResult.added} -${applyResult.removed} created:${applyResult.created}`);
+                console.log(`[CharManager] [AI Batch] ${char.name} tagMap:`, state.tagMap[fileName]);
             }
             
             outputResults.push({
@@ -161,12 +172,26 @@ export async function parseBatchOverviewResult(aiResponse, characters) {
                 tags: item.tags || []
             });
         } catch (e) {
-            console.error(`[AI Batch] Failed for ${char.name}:`, e);
+            console.error(`[CharManager] [AI Batch] Failed for ${char.name}:`, e);
             outputResults.push({
                 fileName: item.fileName,
                 charName: char.name,
                 success: false,
                 error: `保存失败：${e.message}`
+            });
+        }
+    }
+    
+    // 覆盖率校验：检查是否有角色被 AI 遗漏
+    for (const char of characters) {
+        const charFileName = char.fileName || char.avatar;
+        if (!processedFileNames.has(charFileName)) {
+            console.warn(`[CharManager] [AI Batch] AI 响应缺失角色: ${char.name} (${charFileName})`);
+            outputResults.push({
+                fileName: charFileName,
+                charName: char.name,
+                success: false,
+                error: 'AI 响应缺失该角色的处理结果'
             });
         }
     }

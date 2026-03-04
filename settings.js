@@ -302,9 +302,9 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                  </div>
             </div>
 
-            <!-- AI API 设置 (通用) -->
+            <!-- API 设置 (通用) -->
             <div class="cm-settings-group">
-                <h4 class="cm-settings-title">${ICONS.robot || '🤖'} AI API 设置</h4>
+                <h4 class="cm-settings-title">${ICONS.robot || '🤖'} API 设置</h4>
                 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
@@ -342,6 +342,17 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                             <div id="cmSetModelStatusMain" class="cm-setting-status"></div>
                         </div>
                     </div>
+                </div>
+                
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>Debug Mode</span>
+                        <small>在控制台输出 AI 请求和响应信息（翻译、概览、标签生成）</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetDebugMode" ${settings.debugMode ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
                 </div>
             </div>
 
@@ -503,98 +514,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
             showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm });
         }, notify);
 
-        // AI API 设置事件绑定
-        const aiApiSelect = ov.querySelector('#cmSetAiApi');
-        if (aiApiSelect) {
-            aiApiSelect.onchange = (e) => {
-                state.settings.translationApi = e.target.value;
-                saveSettings();
-            };
-        }
-
-        const bindMainInput = (id, key) => {
-            const el = ov.querySelector('#' + id);
-            if (el) {
-                el.onchange = (e) => {
-                    state.settings[key] = e.target.value;
-                    saveSettings();
-                };
-            }
-        };
-
-        bindMainInput('cmSetOpenaiUrlMain', 'openaiBaseUrl');
-        bindMainInput('cmSetOpenaiKeyMain', 'openaiApiKey');
-
-        // 模型下拉列表变化
-        const mainModelSelect = ov.querySelector('#cmSetOpenaiModelMain');
-        if (mainModelSelect) {
-            mainModelSelect.onchange = (e) => {
-                state.settings.openaiModel = e.target.value;
-                saveSettings();
-            };
-        }
-
-        // 连接按钮 - 获取模型列表
-        const mainFetchModelsBtn = ov.querySelector('#cmSetFetchModelsMain');
-        if (mainFetchModelsBtn) {
-            mainFetchModelsBtn.onclick = async () => {
-                const urlInput = ov.querySelector('#cmSetOpenaiUrlMain');
-                const keyInput = ov.querySelector('#cmSetOpenaiKeyMain');
-                const statusEl = ov.querySelector('#cmSetModelStatusMain');
-                const modelSel = ov.querySelector('#cmSetOpenaiModelMain');
-                
-                const baseUrl = (urlInput?.value || 'https://api.openai.com/v1').replace(/\/$/, '');
-                const apiKey = keyInput?.value || '';
-
-                if (!apiKey) {
-                    if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444">❌ 请先填写 API Key</span>';
-                    return;
-                }
-
-                mainFetchModelsBtn.disabled = true;
-                mainFetchModelsBtn.textContent = '⏳ 连接中...';
-                if (statusEl) statusEl.textContent = '正在获取模型列表...';
-
-                try {
-                    const res = await fetch(baseUrl + '/models', {
-                        headers: { 'Authorization': 'Bearer ' + apiKey }
-                    });
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    const data = await res.json();
-                    
-                    let models = [];
-                    if (data.data && Array.isArray(data.data)) {
-                        models = data.data.map(m => m.id).sort();
-                    } else if (Array.isArray(data)) {
-                        models = data.map(m => m.id || m).sort();
-                    }
-
-                    if (models.length === 0) throw new Error('未获取到模型列表');
-
-                    // 填充下拉列表
-                    if (modelSel) {
-                        modelSel.innerHTML = models.map(m =>
-                            '<option value="' + m + '"' + (m === state.settings.openaiModel ? ' selected' : '') + '>' + m + '</option>'
-                        ).join('');
-                        
-                        // 如果当前选中的模型不在列表中，选择第一个
-                        if (!models.includes(state.settings.openaiModel) && models.length > 0) {
-                            state.settings.openaiModel = models[0];
-                            modelSel.value = models[0];
-                            saveSettings();
-                        }
-                    }
-
-                    if (statusEl) statusEl.innerHTML = '<span style="color:#10b981">✅ 已获取 ' + models.length + ' 个模型</span>';
-                } catch (e) {
-                    console.error('[Settings] Fetch models error:', e);
-                    if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444">❌ 连接失败：' + e.message + '</span>';
-                } finally {
-                    mainFetchModelsBtn.disabled = false;
-                    mainFetchModelsBtn.textContent = '🔗 连接';
-                }
-            };
-        }
+        // 绑定 API 设置事件（统一入口，避免重复代码）
+        bindApiSettingsEvents(ov, notify);
 
         // Theme Toggle
         const themeBtn = ov.querySelector('#cmSetThemeBtn');
@@ -977,17 +898,6 @@ function getTranslationSettingsHTML(settings, hideApiConfig = false) {
 
         <!-- 翻译行为设置 -->
         <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--cm-border)">
-            <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
-                <div class="cm-setting-label">
-                    <span style="font-size:12px">Debug Mode</span>
-                    <small>${settings.translationUILanguage === 'en' ? 'Output raw API requests/responses to console' : '在控制台输出原始 API 请求和响应信息'}</small>
-                </div>
-                <label class="cm-switch" style="transform:scale(0.8);margin-right:-5px">
-                    <input type="checkbox" id="cmSetDebugMode" ${settings.debugMode ? 'checked' : ''}>
-                    <span class="cm-slider"></span>
-                </label>
-            </div>
-
             <!-- Retry Count -->
             <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
                 <div class="cm-setting-label">
@@ -1107,6 +1017,61 @@ export function showTranslationSettingsDialog(createBaseDialog, notify, onSettin
     
     const content = `
         <div class="cm-settings-container" style="padding: 10px 0;">
+            <!-- API 设置 -->
+            <div class="cm-settings-group" style="margin-bottom: 12px;">
+                <h4 class="cm-settings-title">${ICONS.robot || '🤖'} API 设置</h4>
+                
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>API 协议</span>
+                    </div>
+                    <select id="cmSetAiApi" class="cm-select-input">
+                        <option value="openai" ${settings.translationApi === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
+                    </select>
+                </div>
+
+                <div id="cmSetOpenaiMainConfig">
+                    <div class="cm-setting-item">
+                        <div class="cm-setting-label">
+                            <span>API Base URL</span>
+                        </div>
+                        <input type="text" id="cmSetOpenaiUrlMain" class="cm-input" value="${settings.openaiBaseUrl || ''}" placeholder="https://api.openai.com/v1" style="width:100%;box-sizing:border-box">
+                    </div>
+                    <div class="cm-setting-item">
+                        <div class="cm-setting-label">
+                            <span>API Key</span>
+                        </div>
+                        <input type="password" id="cmSetOpenaiKeyMain" class="cm-input" value="${settings.openaiApiKey || ''}" placeholder="sk-..." style="width:100%;box-sizing:border-box">
+                    </div>
+                    <div class="cm-setting-item">
+                        <div class="cm-setting-label">
+                            <span>模型</span>
+                        </div>
+                        <div class="cm-setting-control cm-setting-control-stack">
+                            <div class="cm-setting-inline-controls">
+                                <select id="cmSetOpenaiModelMain" class="cm-select-input">
+                                    ${settings.openaiModel ? '<option value="' + settings.openaiModel + '" selected>' + settings.openaiModel + '</option>' : '<option value="">请先连接获取模型列表</option>'}
+                                </select>
+                                <button id="cmSetFetchModelsMain" class="cm-btn cm-btn-primary">🔗 连接</button>
+                            </div>
+                            <div id="cmSetModelStatusMain" class="cm-setting-status"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>Debug Mode</span>
+                        <small>在控制台输出 AI 请求和响应信息</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetDebugModeTrans" ${settings.debugMode ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- 翻译设置 -->
             <div id="cmTransSettings" style="padding:10px;background:var(--cm-bg-ter);border-radius:8px;">
                 ${getTranslationSettingsHTML(settings)}
             </div>
@@ -1124,6 +1089,10 @@ export function showTranslationSettingsDialog(createBaseDialog, notify, onSettin
             }
         }
     ], (ov) => {
+        // 绑定 API 设置事件
+        bindApiSettingsEvents(ov, notify);
+        
+        // 绑定翻译设置事件
         bindTranslationSettingsEvents(ov, () => {
             // UI 语言改变时，重新打开弹窗以刷新文本
             ov.remove();
@@ -1131,6 +1100,148 @@ export function showTranslationSettingsDialog(createBaseDialog, notify, onSettin
             if (onSettingsChanged) onSettingsChanged();
         }, notify);
     }, { stack: true });
+}
+
+/**
+ * 绑定 API 输入字段事件（Debug Mode、API 协议、URL、Key、模型选择）
+ * @param {HTMLElement} ov - 包含设置元素的容器
+ */
+function bindApiInputEvents(ov) {
+    // Debug Mode 开关（兼容主设置和翻译设置对话框的不同 ID）
+    const debugModeCheck = ov.querySelector('#cmSetDebugMode') || ov.querySelector('#cmSetDebugModeTrans');
+    if (debugModeCheck) {
+        debugModeCheck.onchange = (e) => {
+            state.settings.debugMode = e.target.checked;
+            saveSettings();
+        };
+    }
+    
+    // API 协议选择
+    const aiApiSelect = ov.querySelector('#cmSetAiApi');
+    if (aiApiSelect) {
+        aiApiSelect.onchange = (e) => {
+            state.settings.translationApi = e.target.value;
+            saveSettings();
+        };
+    }
+    
+    // API URL 输入
+    const urlInput = ov.querySelector('#cmSetOpenaiUrlMain');
+    if (urlInput) {
+        urlInput.onchange = (e) => {
+            state.settings.openaiBaseUrl = e.target.value.trim();
+            saveSettings();
+        };
+    }
+    
+    // API Key 输入
+    const keyInput = ov.querySelector('#cmSetOpenaiKeyMain');
+    if (keyInput) {
+        keyInput.onchange = (e) => {
+            state.settings.openaiApiKey = e.target.value.trim();
+            saveSettings();
+        };
+    }
+    
+    // 模型选择
+    const modelSel = ov.querySelector('#cmSetOpenaiModelMain');
+    if (modelSel) {
+        modelSel.onchange = (e) => {
+            state.settings.openaiModel = e.target.value;
+            saveSettings();
+        };
+    }
+}
+
+/**
+ * 绑定连接按钮事件（获取模型列表）
+ * @param {HTMLElement} ov - 包含设置元素的容器
+ * @param {Function} notify - 通知函数
+ */
+function bindFetchModelsButton(ov, notify) {
+    const mainFetchModelsBtn = ov.querySelector('#cmSetFetchModelsMain');
+    if (!mainFetchModelsBtn) return;
+    
+    mainFetchModelsBtn.onclick = async () => {
+        const urlInputEl = ov.querySelector('#cmSetOpenaiUrlMain');
+        const keyInputEl = ov.querySelector('#cmSetOpenaiKeyMain');
+        const statusEl = ov.querySelector('#cmSetModelStatusMain');
+        const modelSelEl = ov.querySelector('#cmSetOpenaiModelMain');
+        
+        const baseUrl = (urlInputEl?.value || 'https://api.openai.com/v1').replace(/\/$/, '');
+        const apiKey = keyInputEl?.value || '';
+
+        if (!apiKey) {
+            if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444">❌ 请先填写 API Key</span>';
+            return;
+        }
+
+        mainFetchModelsBtn.disabled = true;
+        mainFetchModelsBtn.textContent = '⏳ 连接中...';
+        if (statusEl) statusEl.textContent = '正在获取模型列表...';
+
+        try {
+            // 安全检查：非 HTTPS 连接时警告
+            if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost') && !baseUrl.includes('127.0.0.1')) {
+                console.warn('[CharManager] [Settings] 警告：使用非 HTTPS 连接，API Key 可能不安全');
+                if (statusEl) statusEl.innerHTML = '<span style="color:#f59e0b">⚠️ 警告：非 HTTPS 连接，API Key 可能不安全</span>';
+            }
+            
+            const res = await fetch(baseUrl + '/models', {
+                headers: { 'Authorization': 'Bearer ' + apiKey }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            
+            let models = [];
+            if (data.data && Array.isArray(data.data)) {
+                models = data.data.map(m => m.id).sort();
+            } else if (Array.isArray(data)) {
+                models = data.map(m => m.id || m).sort();
+            }
+
+            if (models.length === 0) throw new Error('未获取到模型列表');
+
+            // 填充下拉列表（使用 DOM API 避免注入风险）
+            if (modelSelEl) {
+                modelSelEl.innerHTML = ''; // 清空现有选项
+                models.forEach(m => {
+                    const option = document.createElement('option');
+                    option.value = m;
+                    option.textContent = m;
+                    if (m === state.settings.openaiModel) {
+                        option.selected = true;
+                    }
+                    modelSelEl.appendChild(option);
+                });
+                
+                // 如果当前选中的模型不在列表中，选择第一个
+                if (!models.includes(state.settings.openaiModel) && models.length > 0) {
+                    state.settings.openaiModel = models[0];
+                    modelSelEl.value = models[0];
+                    saveSettings();
+                }
+            }
+
+            if (statusEl) statusEl.innerHTML = '<span style="color:#10b981">✅ 已获取 ' + models.length + ' 个模型</span>';
+        } catch (e) {
+            console.error('[CharManager] [Settings] Fetch models error:', e);
+            if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444">❌ 连接失败：' + e.message + '</span>';
+        } finally {
+            mainFetchModelsBtn.disabled = false;
+            mainFetchModelsBtn.textContent = '🔗 连接';
+        }
+    };
+}
+
+/**
+ * 绑定 API 设置事件（用于设置对话框和翻译设置对话框）
+ * @param {HTMLElement} ov - 包含设置元素的容器
+ * @param {Function} notify - 通知函数
+ */
+function bindApiSettingsEvents(ov, notify) {
+    bindApiInputEvents(ov);
+    bindFetchModelsButton(ov, notify);
 }
 
 // ========== 版权提示与免责声明弹窗 ==========

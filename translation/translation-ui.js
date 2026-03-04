@@ -110,7 +110,7 @@ export async function openTranslationDialog(char) {
     }
 
     if (!_createBaseDialog) {
-        console.error('[Translation] UI 未初始化，请先调用 initTranslationUI');
+        console.error('[CharManager] [Translation] UI 未初始化，请先调用 initTranslationUI');
         return;
     }
 
@@ -124,7 +124,7 @@ export async function openTranslationDialog(char) {
         });
         if (!getRes.ok) throw new Error('无法读取角色数据');
         originalCharData = await getRes.json();
-        console.log('[Translation Debug] source post_history_instructions', {
+        console.log('[CharManager] [Translation] source post_history_instructions', {
             file: char.fileName,
             root: originalCharData?.post_history_instructions,
             data: originalCharData?.data?.post_history_instructions,
@@ -139,13 +139,13 @@ export async function openTranslationDialog(char) {
                 originalPngBuffer = await imgRes.arrayBuffer();
             }
         } catch (e) {
-            console.warn('[Translation] 无法获取原始 PNG:', e);
+            console.warn('[CharManager] [Translation] 无法获取原始 PNG:', e);
             originalPngBuffer = null;
         }
 
         // 3. 提取可翻译数据
         const rawData = extractTranslatableData(originalCharData);
-        console.log('[Translation Debug] extracted system fields', {
+        console.log('[CharManager] [Translation] extracted system fields', {
             system_keys: rawData?.system ? Object.keys(rawData.system) : [],
             system_prompt: rawData?.system?.system_prompt,
             post_history_instructions: rawData?.system?.post_history_instructions
@@ -189,7 +189,7 @@ export async function openTranslationDialog(char) {
         renderMainDialog();
 
     } catch (e) {
-        console.error('[Translation]', e);
+        console.error('[CharManager] [Translation]', e);
         _notify(t('notifyTranslationError', { error: e.message }), 'error');
     }
 }
@@ -882,7 +882,7 @@ async function runTranslation(ov, mode, groupFilter) {
     // MVU 框架保护：检测并注入变量保护提示
     if (!mvuAnalysis && detectMVU(originalCharData)) {
         mvuAnalysis = analyzeMVUStructure(originalCharData);
-        console.log('[Translation] 检测到 MVU 框架，锁定变量路径:', [...mvuAnalysis.lockedPaths]);
+        console.log('[CharManager] [Translation] 检测到 MVU 框架，锁定变量路径:', [...mvuAnalysis.lockedPaths]);
     }
     if (mvuAnalysis && mvuAnalysis.lockedPaths.size > 0) {
         const mvuPrompt = generateMVUProtectionPrompt(mvuAnalysis);
@@ -1124,7 +1124,7 @@ function doExportPng() {
         downloadBlob(pngBlob, `${translatedName}_translated.png`);
         _notify(t('notifyExportPNGSuccess'), 'success');
     } catch (e) {
-        console.error('[Translation] PNG Export Error:', e);
+        console.error('[CharManager] [Translation] PNG Export Error:', e);
         _notify(t('notifySaveFailed', { error: e.message }), 'error');
     }
 }
@@ -1208,7 +1208,7 @@ async function doOverwriteOriginal(ov) {
         isDirty = false;
         _notify(t('notifyOverwriteSuccess'), 'success');
     } catch (e) {
-        console.error('[Translation] Overwrite Error:', e);
+        console.error('[CharManager] [Translation] Overwrite Error:', e);
         _notify(t('notifySaveFailed', { error: e.message }), 'error');
     } finally {
         hideOperationLoading(ov);
@@ -1249,7 +1249,7 @@ async function doImportAsNew(ov) {
                 const pngBlob = writePngText(originalPngBuffer, key, base64Data);
                 importFile = new File([pngBlob], `${safeName}.png`, { type: 'image/png' });
             } catch (pngErr) {
-                console.warn('[Translation] PNG 写入失败，降级为 JSON 导入:', pngErr);
+                console.warn('[CharManager] [Translation] PNG 写入失败，降级为 JSON 导入:', pngErr);
                 const jsonBlob = new Blob([jsonStr], { type: 'application/json' });
                 importFile = new File([jsonBlob], `${safeName}.json`, { type: 'application/json' });
             }
@@ -1267,7 +1267,7 @@ async function doImportAsNew(ov) {
         }
         
     } catch (e) {
-        console.error('[Translation] Import New Error:', e);
+        console.error('[CharManager] [Translation] Import New Error:', e);
         _notify(t('notifySaveFailed', { error: e.message }), 'error');
     } finally {
         hideOperationLoading(ov);

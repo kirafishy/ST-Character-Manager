@@ -1542,7 +1542,7 @@ export class CharacterDetails {
                 detail: { fileName: this.char.fileName }
             }));
         } catch (e) {
-            console.error('[AI Overview] Generation failed:', e);
+            console.error('[CharManager] [AI Overview] Generation failed:', e);
             notify(`生成失败：${e.message}`, 'error');
         } finally {
             btn.disabled = false;

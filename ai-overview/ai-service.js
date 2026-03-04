@@ -6,18 +6,22 @@ import { state } from '../state.js';
 import { authFetch } from '../api.js';
 import { buildOverviewPrompt, buildBatchOverviewPrompt } from './prompt-builder.js';
 import { parseOverviewResult, parseBatchOverviewResult } from './result-parser.js';
-import { getCmManager } from '../st-tags.js';
 import { saveCharacterData } from '../data.js';
+import { checkCharHasTags, getCharacterFileName } from '../utils.js';
 
 /**
- * 检查角色是否有标签
- * @param {object} character - 角色对象
- * @returns {boolean}
+ * @typedef {Object} ProgressEvent
+ * @property {'batch_start'|'batch_end'|'char_success'|'char_error'} type - 事件类型
+ * @property {number} batchIndex - 当前批次索引（从1开始）
+ * @property {number} totalBatches - 总批次数
+ * @property {number} [charIndex] - 角色在批次中的索引（从1开始）
+ * @property {number} [charCount] - 批次内角色总数
+ * @property {string} [charName] - 角色名
+ * @property {string} [error] - 错误信息
+ * @property {number} [successCount] - 批次成功数（batch_end 时）
+ * @property {number} [errorCount] - 批次失败数（batch_end 时）
  */
-function checkHasTags(character) {
-    const cm = getCmManager(character);
-    return cm.tags && cm.tags.length > 0;
-}
+
 
 /**
  * 提取角色卡数据用于 Prompt 构建
@@ -57,7 +61,7 @@ export async function generateAIOverview(character, forceGenerateTags = false) {
         throw new Error('未配置 AI API Base URL，请在设置中配置 OpenAI 渠道');
     }
     
-    const hasTags = !forceGenerateTags && checkHasTags(character);
+    const hasTags = !forceGenerateTags && checkCharHasTags(character);
     const cardData = extractCharacterData(character);
     const systemTags = hasTags ? [] : state.tags.map(t => t.name);
     
@@ -71,11 +75,12 @@ export async function generateAIOverview(character, forceGenerateTags = false) {
  * 批量生成角色概览（打包模式）
  * @param {object[]} characters - 角色对象数组
  * @param {number} tokenLimit - Token 上限
- * @param {function} onProgress - 进度回调 (charName, success, error)
+ * @param {function} onProgress - 进度回调 (event: ProgressEvent) => void
  * @param {boolean} forceGenerateTags - 是否强制生成标签（覆盖已有标签）
- * @returns {Promise<{success: number, errors: number, results: object[]}>}
+ * @param {function} [shouldCancel] - 取消检查回调，返回 true 时中断执行
+ * @returns {Promise<{success: number, errors: number, results: object[], batchInfo: {total: number, failed: number}, cancelled: boolean}>}
  */
-export async function generateBatchOverview(characters, tokenLimit, onProgress, forceGenerateTags = false) {
+export async function generateBatchOverview(characters, tokenLimit, onProgress, forceGenerateTags = false, shouldCancel = null) {
     const config = getAIConfig();
     
     if (!config.apiKey || !config.apiKey.trim()) {
@@ -89,42 +94,130 @@ export async function generateBatchOverview(characters, tokenLimit, onProgress, 
     const results = [];
     let success = 0;
     let errors = 0;
+    let failedBatches = 0;
     
     const batches = groupCharactersByTokenLimit(characters, tokenLimit);
+    const totalBatches = batches.length;
+    let cancelled = false;
     
     for (let i = 0; i < batches.length; i++) {
+        // 取消检查点：批次开始前
+        if (shouldCancel && shouldCancel()) {
+            cancelled = true;
+            break;
+        }
+        
         const batch = batches[i];
+        const batchIndex = i + 1;
+        
+        // 批次开始事件
+        if (onProgress) {
+            onProgress({
+                type: 'batch_start',
+                batchIndex,
+                totalBatches,
+                charCount: batch.length
+            });
+        }
+        
+        let batchSuccess = 0;
+        let batchErrors = 0;
         
         try {
+            // 取消检查点：API 调用前
+            if (shouldCancel && shouldCancel()) {
+                cancelled = true;
+                break;
+            }
+            
             const batchPrompt = buildBatchOverviewPrompt(batch.map(extractCharacterData), state.tags.map(t => t.name), forceGenerateTags);
             const response = await callOpenAI(config, batchPrompt, 4096);
+            // 注：解析结果是本地同步操作，通常很快完成，无需取消检查点
+            
             const batchResults = await parseBatchOverviewResult(response, batch, forceGenerateTags);
             
-            for (const result of batchResults) {
+            for (let j = 0; j < batchResults.length; j++) {
+                const result = batchResults[j];
                 if (result.success) {
                     success++;
-                    if (onProgress) onProgress(result.charName, true, null);
+                    batchSuccess++;
+                    if (onProgress) {
+                        onProgress({
+                            type: 'char_success',
+                            batchIndex,
+                            totalBatches,
+                            charIndex: j + 1,
+                            charCount: batch.length,
+                            charName: result.charName
+                        });
+                    }
                 } else {
                     errors++;
-                    if (onProgress) onProgress(result.charName, false, result.error);
+                    batchErrors++;
+                    if (onProgress) {
+                        onProgress({
+                            type: 'char_error',
+                            batchIndex,
+                            totalBatches,
+                            charIndex: j + 1,
+                            charCount: batch.length,
+                            charName: result.charName,
+                            error: result.error
+                        });
+                    }
                 }
                 results.push(result);
             }
         } catch (e) {
+            // 批次级失败：整个批次 API 调用失败
+            failedBatches++;
+            batchErrors = batch.length;
             errors += batch.length;
-            for (const char of batch) {
-                if (onProgress) onProgress(char.name, false, e.message);
+            
+            for (let j = 0; j < batch.length; j++) {
+                const char = batch[j];
+                if (onProgress) {
+                    onProgress({
+                        type: 'char_error',
+                        batchIndex,
+                        totalBatches,
+                        charIndex: j + 1,
+                        charCount: batch.length,
+                        charName: char.name,
+                        error: e.message
+                    });
+                }
                 results.push({
-                    fileName: char.fileName,
+                    fileName: getCharacterFileName(char),
                     charName: char.name,
                     success: false,
                     error: e.message
                 });
             }
         }
+        
+        // 批次结束事件
+        if (onProgress) {
+            onProgress({
+                type: 'batch_end',
+                batchIndex,
+                totalBatches,
+                successCount: batchSuccess,
+                errorCount: batchErrors
+            });
+        }
     }
     
-    return { success, errors, results };
+    return {
+        success,
+        errors,
+        results,
+        batchInfo: {
+            total: totalBatches,
+            failed: failedBatches
+        },
+        cancelled
+    };
 }
 
 /**
@@ -163,7 +256,7 @@ async function callOpenAI(config, prompt, maxTokens = 2048) {
     };
     
     if (state.settings.debugMode) {
-        console.log('[AI Overview] Request:', JSON.stringify(body, null, 2));
+        console.log('[CharManager] [AI Overview] Request:', JSON.stringify(body, null, 2));
     }
     
     const res = await authFetch(url, {
@@ -183,8 +276,10 @@ async function callOpenAI(config, prompt, maxTokens = 2048) {
     const json = await res.json();
     const content = json.choices?.[0]?.message?.content || '';
     
-    if (state.settings.debugMode) {
-        console.log('[AI Overview] Response:', content);
+    // 输出 Token 使用情况（仅在 debugMode 下）
+    if (state.settings.debugMode && json.usage) {
+        console.log(`[CharManager] [AI Overview] Token 使用: prompt=${json.usage.prompt_tokens}, completion=${json.usage.completion_tokens}, total=${json.usage.total_tokens}`);
+        console.log('[CharManager] [AI Overview] Response:', content);
     }
     
     return content;
@@ -224,6 +319,7 @@ function groupCharactersByTokenLimit(characters, tokenLimit) {
 /**
  * 估算角色卡的 Token 数
  * 使用启发式方法：中文按 1.5 字符/token，英文按 4 字符/token
+ * 增加安全系数和输出预留空间
  * @param {object} char - 角色对象
  * @returns {number} 估算的 token 数
  */
@@ -246,6 +342,14 @@ function estimateCharTokens(char) {
     // 中文约 1.5 字符/token，英文约 4 字符/token
     const estimatedTokens = Math.ceil(chineseChars / 1.5 + nonChineseChars / 4);
     
-    // 加上 prompt 模板的基础开销（约 200 token）
-    return Math.max(estimatedTokens + 200, 100);
+    // 应用安全系数 1.4（防止估算偏低，增加安全边际）
+    const safeEstimate = Math.ceil(estimatedTokens * 1.4);
+    
+    // 为输出预留空间（概览150字 + 标签约100字 ≈ 500 tokens）
+    const outputReserve = 500;
+    
+    // Prompt 模板基础开销
+    const promptOverhead = 200;
+    
+    return Math.max(safeEstimate + outputReserve + promptOverhead, 100);
 }

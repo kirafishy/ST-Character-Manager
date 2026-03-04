@@ -2287,6 +2287,8 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
     try {
         const { generateAIOverview, generateBatchOverview, extractCharacterData } = await import('./ai-overview/ai-service.js');
         
+        let result = { success: 0, errors: 0, batchInfo: { total: 0, failed: 0 } };
+        
         if (mode === 'serial') {
             // 逐个处理模式
             for (let i = 0; i < targetChars.length; i++) {
@@ -2314,35 +2316,83 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                     await new Promise(r => setTimeout(r, 800));
                 }
             }
+            // serial 模式下更新 result 结构
+            result.success = success;
+            result.errors = errors;
         } else {
             // 批量处理模式
-            const result = await generateBatchOverview(targetChars, tokenLimit, (charName, successFlag, error) => {
+            let processedCount = 0;
+            let batchSuccess = 0;
+            let batchErrors = 0;
+            
+            result = await generateBatchOverview(targetChars, tokenLimit, (event) => {
                 if (cancelled) return;
-                if (successFlag) {
-                    success++;
-                    notify(`✅ ${charName}: 生成成功`, 'success', 1000);
-                } else {
-                    errors++;
-                    notify(`❌ ${charName}: ${error}`, 'error', 1500);
+                
+                switch (event.type) {
+                    case 'batch_start':
+                        updateProgressBar(
+                            Math.round((processedCount / total) * 100),
+                            `正在处理第 ${event.batchIndex}/${event.totalBatches} 批次（共 ${event.charCount} 个角色）`,
+                            `✅ 成功：${batchSuccess} | ❌ 失败：${batchErrors}`
+                        );
+                        break;
+                        
+                    case 'char_success':
+                        processedCount++;
+                        batchSuccess++;
+                        notify(`✅ ${event.charName}: 生成成功`, 'success', 1000);
+                        updateProgressBar(
+                            Math.round((processedCount / total) * 100),
+                            `正在处理第 ${event.batchIndex}/${event.totalBatches} 批次`,
+                            `✅ 成功：${batchSuccess} | ❌ 失败：${batchErrors}`
+                        );
+                        break;
+                        
+                    case 'char_error':
+                        processedCount++;
+                        batchErrors++;
+                        notify(`❌ ${event.charName}: ${event.error}`, 'error', 1500);
+                        updateProgressBar(
+                            Math.round((processedCount / total) * 100),
+                            `正在处理第 ${event.batchIndex}/${event.totalBatches} 批次`,
+                            `✅ 成功：${batchSuccess} | ❌ 失败：${batchErrors}`
+                        );
+                        break;
+                        
+                    case 'batch_end':
+                        // 批次完成，可以在这里添加额外处理
+                        break;
+                        
+                    default:
+                        // 未知事件类型，记录警告日志
+                        console.warn(`[CharManager] [AI Batch] 未知事件类型：${event.type}`);
                 }
-            }, overwriteExisting);
+            }, overwriteExisting, () => cancelled); // 传入取消检查回调
             
             success = result.success;
             errors = result.errors;
+            
+            // 如果是后台取消，更新 UI 状态
+            if (result.cancelled) {
+                cancelled = true;
+            }
         }
         
         if (!cancelled) {
-            updateProgressBar(100, '批量处理完成！', `成功：${success} | 失败：${errors}`);
+            const batchInfoStr = result.batchInfo && result.batchInfo.failed > 0
+                ? `（${result.batchInfo.failed} 个批次失败）`
+                : '';
+            updateProgressBar(100, '批量处理完成！' + batchInfoStr, `成功：${success} | 失败：${errors}`);
             setTimeout(() => hideProgressBar(), 2000);
             
             // 刷新界面
             renderView();
             renderTagSidebar();
             
-            notify(`批量完成：成功 ${success}, 失败 ${errors}`, 'success');
+            notify(`批量完成：成功 ${success}, 失败 ${errors}${batchInfoStr}`, 'success');
         }
     } catch (e) {
-        console.error('[AI Batch] Error:', e);
+        console.error('[CharManager] [AI Batch] Error:', e);
         hideProgressBar();
         notify(`批量处理失败：${e.message}`, 'error');
     }

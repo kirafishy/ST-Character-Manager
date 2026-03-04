@@ -25,7 +25,7 @@ export function safeParseJson(text) {
             }
             return JSON.parse(cleanText);
         } catch (e2) {
-            console.error('[Translation] JSON Parse Error:', e2);
+            console.error('[CharManager] [Translation] JSON Parse Error:', e2);
             return null;
         }
     }
@@ -192,7 +192,7 @@ export class TranslationService {
         ];
 
         if (this.settings.debugMode) {
-            console.log('[Translation Debug] Request Messages:', JSON.parse(JSON.stringify(messages)));
+            console.log('[CharManager] [Translation] Request Messages:', JSON.parse(JSON.stringify(messages)));
         }
 
         let lastError = null;
@@ -201,7 +201,7 @@ export class TranslationService {
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 if (attempt > 0) {
-                    console.log(`[Translation] Retry attempt ${attempt}/${maxRetries}...`);
+                    console.log(`[CharManager] [Translation] Retry attempt ${attempt}/${maxRetries}...`);
                     const isRateLimit = lastError && lastError.message && lastError.message.includes('429');
                     await exponentialBackoff(attempt, 1000, isRateLimit);
                 }
@@ -216,7 +216,7 @@ export class TranslationService {
                 }
 
                 if (this.settings.debugMode) {
-                    console.log('[Translation Debug] Raw Response:', responseText);
+                    console.log('[CharManager] [Translation] Raw Response:', responseText);
                 }
 
                 const result = safeParseJson(responseText);
@@ -229,7 +229,7 @@ export class TranslationService {
                 for (const key of keys) {
                     if (result[key] === undefined) {
                         // 如果缺失，尝试保留原文
-                        console.warn(`[Translation] Key '${key}' missing in response, keeping original.`);
+                        console.warn(`[CharManager] [Translation] Key '${key}' missing in response, keeping original.`);
                         result[key] = dataToTranslate[key];
                     }
                 }
@@ -237,12 +237,12 @@ export class TranslationService {
                 return result;
 
             } catch (e) {
-                console.error(`[Translation] Error (Attempt ${attempt + 1}):`, e);
+                console.error(`[CharManager] [Translation] Error (Attempt ${attempt + 1}):`, e);
                 lastError = e;
 
                 // 如果是用户主动中断（关闭翻译界面），直接抛出，不再重试
                 if (e.name === 'AbortError' || (e.message && e.message.includes('aborted'))) {
-                    console.log('[Translation] Request aborted by user');
+                    console.log('[CharManager] [Translation] Request aborted by user');
                     throw e;
                 }
 
@@ -387,7 +387,7 @@ export class TranslationService {
         }
 
         if (this.settings.debugMode) {
-            console.log('[Translation Debug] API Request:', JSON.parse(JSON.stringify(messages)));
+            console.log('[CharManager] [Translation] API Request:', JSON.parse(JSON.stringify(messages)));
         }
 
         let lastError = null;
@@ -396,7 +396,7 @@ export class TranslationService {
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 if (attempt > 0) {
-                    console.log(`[Translation] API Retry attempt ${attempt}/${maxRetries}...`);
+                    console.log(`[CharManager] [Translation] API Retry attempt ${attempt}/${maxRetries}...`);
                     const isRateLimit = lastError && lastError.message && lastError.message.includes('429');
                     await exponentialBackoff(attempt, 1000, isRateLimit);
                 }
@@ -410,7 +410,7 @@ export class TranslationService {
                 }
 
                 if (this.settings.debugMode) {
-                    console.log('[Translation Debug] API Response:', responseText);
+                    console.log('[CharManager] [Translation] API Response:', responseText);
                 }
 
                 const result = safeParseJson(responseText);
@@ -419,7 +419,7 @@ export class TranslationService {
                 }
                 return result;
             } catch (e) {
-                console.error(`[Translation] API Error (Attempt ${attempt + 1}):`, e);
+                console.error(`[CharManager] [Translation] API Error (Attempt ${attempt + 1}):`, e);
                 lastError = e;
                 
                 if (e.message.includes('400') || e.message.includes('401')) {
