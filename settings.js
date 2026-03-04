@@ -332,13 +332,15 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <div class="cm-setting-label">
                             <span>模型</span>
                         </div>
-                        <div style="display:flex;gap:6px;align-items:center">
-                            <select id="cmSetOpenaiModelMain" class="cm-select-input" style="flex:1;min-width:0">
-                                ${settings.openaiModel ? '<option value="' + settings.openaiModel + '" selected>' + settings.openaiModel + '</option>' : '<option value="">请先连接获取模型列表</option>'}
-                            </select>
-                            <button id="cmSetFetchModelsMain" class="cm-btn cm-btn-primary" style="flex-shrink:0;font-size:12px;padding:6px 12px;white-space:nowrap">🔗 连接</button>
+                        <div class="cm-setting-control cm-setting-control-stack">
+                            <div class="cm-setting-inline-controls">
+                                <select id="cmSetOpenaiModelMain" class="cm-select-input">
+                                    ${settings.openaiModel ? '<option value="' + settings.openaiModel + '" selected>' + settings.openaiModel + '</option>' : '<option value="">请先连接获取模型列表</option>'}
+                                </select>
+                                <button id="cmSetFetchModelsMain" class="cm-btn cm-btn-primary">🔗 连接</button>
+                            </div>
+                            <div id="cmSetModelStatusMain" class="cm-setting-status"></div>
                         </div>
-                        <div id="cmSetModelStatusMain" style="font-size:11px;margin-top:4px;color:var(--cm-text-sec)"></div>
                     </div>
                 </div>
             </div>
