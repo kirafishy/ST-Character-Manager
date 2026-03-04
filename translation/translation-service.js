@@ -143,6 +143,16 @@ export class TranslationService {
      * @returns {Promise<object>} 翻译后的键值对对象
      */
     async translate(dataToTranslate, charContext, options = {}) {
+        // API 配置验证
+        if (this.settings.translationApi === 'openai') {
+            if (!this.settings.openaiApiKey || !this.settings.openaiApiKey.trim()) {
+                throw new Error('未配置 API Key，请在设置中配置 OpenAI 渠道');
+            }
+            if (!this.settings.openaiBaseUrl || !this.settings.openaiBaseUrl.trim()) {
+                throw new Error('未配置 API Base URL，请在设置中配置 OpenAI 渠道');
+            }
+        }
+        
         // 清理上一次请求残留的 controller（防止内存泄漏）
         if (this.abortController) {
             this.abortController.abort();
@@ -360,6 +370,16 @@ export class TranslationService {
      * @returns {Promise<object>} 解析后的 JSON 对象
      */
     async callAPI(messages) {
+        // API 配置验证
+        if (this.settings.translationApi === 'openai') {
+            if (!this.settings.openaiApiKey || !this.settings.openaiApiKey.trim()) {
+                throw new Error('未配置 API Key，请在设置中配置 OpenAI 渠道');
+            }
+            if (!this.settings.openaiBaseUrl || !this.settings.openaiBaseUrl.trim()) {
+                throw new Error('未配置 API Base URL，请在设置中配置 OpenAI 渠道');
+            }
+        }
+        
         // 清理上一次请求残留的 controller（防止内存泄漏）
         if (this.abortController) {
             this.abortController.abort();

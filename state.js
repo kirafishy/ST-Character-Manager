@@ -74,6 +74,9 @@ Identity Confirmation: 你是一名专业的角色扮演内容翻译专家，非
     customTargetLanguage: '', // 自定义目标语言名称（当 targetLanguage 为 'custom' 时使用）
     // --- 翻译模块界面语言 ---
     translationUILanguage: 'zh-CN', // 'zh-CN' | 'en'
+    // --- AI 概览批量模式设置 ---
+    aiBatchMode: 'serial', // 'serial' (串行) | 'batch' (批量)
+    aiBatchTokenLimit: 4096, // 批量模式的 Token 上限
 };
 
 // 读取已保存的设置
@@ -81,9 +84,10 @@ const savedSettings = (() => {
     try { return JSON.parse(localStorage.getItem('cm_settings') || '{}'); } catch (e) { return {}; }
 })();
 
-// 旧版引号颜色主题迁移到新版本的映射
-const migrateQuoteColorTheme = (settings) => {
-    const oldToNew = {
+// 设置迁移：处理版本升级时的设置兼容性
+const migrateSettings = (settings) => {
+    // 旧版引号颜色主题迁移到新版本的映射
+    const quoteColorThemeMap = {
         'purple': 'lavender',   // 紫色 -> 薰衣草影
         'blue': 'seaSalt',      // 蓝色 -> 海盐青灰
         'green': 'mint',        // 绿色 -> 薄荷苔绿
@@ -91,15 +95,23 @@ const migrateQuoteColorTheme = (settings) => {
         'pink': 'wisteria'      // 粉色 -> 紫藤轻语
     };
     
-    if (settings.quoteColorTheme && oldToNew[settings.quoteColorTheme]) {
-        settings.quoteColorTheme = oldToNew[settings.quoteColorTheme];
+    if (settings.quoteColorTheme && quoteColorThemeMap[settings.quoteColorTheme]) {
+        settings.quoteColorTheme = quoteColorThemeMap[settings.quoteColorTheme];
+    }
+    
+    // 新增设置项的默认值迁移（确保旧用户升级后新字段有值）
+    if (settings.aiBatchMode === undefined || settings.aiBatchMode === null) {
+        settings.aiBatchMode = 'serial';
+    }
+    if (settings.aiBatchTokenLimit === undefined || settings.aiBatchTokenLimit === null) {
+        settings.aiBatchTokenLimit = 4096;
     }
     
     return settings;
 };
 
 export const state = {
-    settings: migrateQuoteColorTheme({ ...defaultSettings, ...savedSettings }),
+    settings: migrateSettings({ ...defaultSettings, ...savedSettings }),
     hasUnsyncedTags: false, // 是否有未同步的标签
     unsyncedCards: new Set(), // 记录哪些卡片有未同步的标签
     characters: [], // 改为异步加载

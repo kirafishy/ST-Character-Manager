@@ -1479,3 +1479,89 @@ export async function deleteChar(char, { deleteChats = false, deleteWi = false }
     // 4. 持久化到 IndexedDB，确保重启后数据一致
     await persistCharacterState(true);
 }
+
+/**
+ * 统一标签应用入口（按标签名称数组应用到指定角色）
+ * 内部处理：规范化标签名 -> 创建缺失标签 -> 计算差异 -> 增删关联 -> 持久化
+ *
+ * @param {string} fileName - 角色文件名
+ * @param {string[]} tagNames - 标签名称数组
+ * @param {object} [options] - 选项
+ * @param {boolean} [options.replace=true] - 是否替换现有标签（true: 替换; false: 合并）
+ * @param {boolean} [options.skipSync=true] - 是否跳过自动同步到 data.tags
+ * @returns {Promise<{ added: number, removed: number, created: number }>}
+ */
+export async function applyTagsByNames(fileName, tagNames, options = {}) {
+    const { replace = true, skipSync = true } = options;
+    
+    // 结果统计
+    const result = { added: 0, removed: 0, created: 0 };
+    
+    // 1. 规范化标签名（去重、去空、trim）
+    const normalizedNames = [...new Set(
+        tagNames
+            .map(t => String(t).trim())
+            .filter(t => t && t.length > 0)
+    )];
+    
+    if (normalizedNames.length === 0 && !replace) {
+        // 无标签且非替换模式，直接返回
+        return result;
+    }
+    
+    // 2. 获取当前角色的标签 ID 列表
+    const currentTagIds = state.tagMap[fileName] || [];
+    const currentTagNames = currentTagIds
+        .map(id => state.tags.find(t => t.id === id)?.name)
+        .filter(Boolean);
+    
+    // 3. 计算目标标签 ID（名称 -> ID，不存在则创建）
+    const targetTagIds = [];
+    for (const name of normalizedNames) {
+        let tag = state.tags.find(t => t.name.toLowerCase() === name.toLowerCase());
+        if (!tag) {
+            // 创建新标签
+            tag = createTag(name);
+            if (tag) {
+                result.created++;
+            } else {
+                // 创建失败（可能重名），尝试再次查找
+                tag = state.tags.find(t => t.name.toLowerCase() === name.toLowerCase());
+            }
+        }
+        if (tag) {
+            targetTagIds.push(tag.id);
+        }
+    }
+    
+    // 4. 计算差异
+    const toAdd = targetTagIds.filter(id => !currentTagIds.includes(id));
+    const toRemove = replace
+        ? currentTagIds.filter(id => !targetTagIds.includes(id))
+        : [];
+    
+    // 5. 执行增删（复用现有函数，skipSaveToFile=true 避免逐个写文件）
+    for (const tagId of toAdd) {
+        if (await addTagToChar(fileName, tagId, skipSync, true, true)) {
+            result.added++;
+        }
+    }
+    
+    for (const tagId of toRemove) {
+        if (await removeTagFromChar(fileName, tagId, skipSync, true, true)) {
+            result.removed++;
+        }
+    }
+    
+    // 6. 统一保存 cm_manager.tags 到文件（仅一次）
+    if (result.added > 0 || result.removed > 0) {
+        const finalTagNames = targetTagIds.map(id => {
+            const tag = state.tags.find(t => t.id === id);
+            return tag ? tag.name : null;
+        }).filter(Boolean);
+        
+        await saveCmManagerTagsToCard(fileName, finalTagNames);
+    }
+    
+    return result;
+}

@@ -18,7 +18,8 @@ import { calculateTokens } from './utils.js';
 // 标签页定义
 const TABS = [
     { id: 'details', label: '详情', icon: ICONS.menu },
-    { id: 'history', label: '聊天记录', icon: ICONS.chat },
+    { id: 'greetings', label: '开场白', icon: ICONS.chat },
+    { id: 'history', label: '聊天记录', icon: ICONS.time },
     { id: 'extended', label: '扩展', icon: ICONS.settings },
     { id: 'edit', label: '编辑', icon: ICONS.pencil }
 ];
@@ -125,8 +126,9 @@ export class CharacterDetails {
                 this.tabContents[tab.id] = tabContent;
             });
 
-            // 渲染各标签页内容
+// 渲染各标签页内容
             this.renderDetailsTab();
+            this.renderGreetingsTab();
             this.renderHistoryTab();
             this.renderExtendedTab();
             this.renderEditTab();
@@ -174,6 +176,7 @@ export class CharacterDetails {
                     }
                 } else {
                     this.renderDetailsTab();
+                    this.renderGreetingsTab();
                     this.renderHistoryTab();
                     this.renderExtendedTab();
                     this.renderEditTab();
@@ -1462,14 +1465,154 @@ export class CharacterDetails {
         }
     }
 
+    /**
+     * 渲染 AI 智能概览区块
+     * @returns {HTMLDivElement|null}
+     */
+    renderAIOOverviewSection() {
+        const char = this.char;
+        const cm = getCmManager(char);
+        const summary = cm.summary || '';
+        const tags = cm.tags || [];
+
+        const aiSection = doc.createElement('div');
+        aiSection.className = 'cm-section cm-section-ai-overview';
+
+        const headerHtml = summary ? `
+            <div class="cm-ai-overview-content">
+                <div class="cm-ai-summary">${escapeHtml(summary)}</div>
+                ${tags.length > 0 ? `
+                    <div class="cm-ai-tags">
+                        ${tags.map(t => `<span class="cm-ai-tag">${escapeHtml(t)}</span>`).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        ` : `<div class="cm-ai-overview-content cm-ai-overview-empty">点击"生成概览"按钮，使用 AI 分析角色卡内容...</div>`;
+
+        aiSection.innerHTML = `
+            <div class="cm-section-header">
+                <span>📊 AI 智能概览</span>
+                <button class="cm-btn cm-btn-primary" id="cmAIGenerateBtn">
+                    🪄 生成概览
+                </button>
+                <button class="cm-btn cm-btn-secondary" id="cmAIEditBtn" style="display:${summary ? 'inline-block' : 'none'}">
+                    📝 编辑
+                </button>
+            </div>
+            ${headerHtml}
+        `;
+
+        // 绑定事件
+        aiSection.querySelector('#cmAIGenerateBtn').onclick = () => {
+            this.generateAIOverview();
+        };
+
+        const editBtn = aiSection.querySelector('#cmAIEditBtn');
+        if (editBtn) {
+            editBtn.onclick = () => {
+                this.editAIOOverview();
+            };
+        }
+
+        return aiSection;
+    }
+
+    /**
+     * 生成 AI 概览
+     */
+    async generateAIOverview() {
+        const btn = this.container.querySelector('#cmAIGenerateBtn');
+        if (!btn || btn.disabled) return;
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '生成中...';
+
+        try {
+            const { generateAIOverview } = await import('./ai-overview/ai-service.js');
+            const result = await generateAIOverview(this.char, false);
+
+            notify(`概览生成成功${result.tags.length > 0 ? `，已生成${result.tags.length}个标签` : ''}`, 'success');
+
+            // 重新渲染详情页
+            this.renderDetailsTab();
+            
+            // 触发标签刷新事件，通知列表页刷新（只要生成了概览就触发）
+            window.dispatchEvent(new CustomEvent('cm-tags-updated', {
+                detail: { fileName: this.char.fileName }
+            }));
+        } catch (e) {
+            console.error('[AI Overview] Generation failed:', e);
+            notify(`生成失败：${e.message}`, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+
+    /**
+     * 编辑 AI 概览
+     */
+    async editAIOOverview() {
+        const cm = getCmManager(this.char);
+        const currentSummary = cm.summary || '';
+
+        createBaseDialog('编辑 AI 概览', `
+            <div style="padding:10px">
+                <div style="margin-bottom:10px;font-size:12px;color:var(--cm-text-sec)">
+                    编辑概览内容，修改后将保存到角色卡
+                </div>
+                <textarea class="cm-input" id="cmAIEditSummary" style="width:100%;min-height:200px;box-sizing:border-box;font-family:monospace;font-size:12px;padding:8px">${escapeHtml(currentSummary)}</textarea>
+            </div>
+        `, [
+            { text: '取消', cls: 'cm-btn-secondary', onClick: (ov, close) => close() },
+            { text: '保存', cls: 'cm-btn-primary', id: 'cmAIEditSaveBtn', onClick: async (ov, close) => {
+                const saveBtn = ov.querySelector('#cmAIEditSaveBtn');
+                const newSummary = ov.querySelector('#cmAIEditSummary').value.trim();
+                
+                if (!newSummary) {
+                    notify('概览内容不能为空', 'warning');
+                    return;
+                }
+
+                // 防止重复提交：禁用按钮
+                if (saveBtn.disabled) return;
+                saveBtn.disabled = true;
+                saveBtn.textContent = '保存中...';
+
+                try {
+                    await saveCharacterData(this.char.fileName, (data) => {
+                        const dataCm = getCmManager({ data });
+                        dataCm.summary = newSummary;
+                    });
+
+                    notify('概览已保存', 'success');
+                    this.renderDetailsTab();
+                    close();
+                } catch (e) {
+                    notify(`保存失败：${e.message}`, 'error');
+                    // 恢复按钮状态
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '保存';
+                }
+            }}
+        ]);
+    }
+
     renderDetailsTab() {
         const container = this.tabContents['details'];
         container.innerHTML = '';
-        container.style.padding = '0'; // Remove padding to match legacy style
+        container.style.padding = '0';
 
         const char = this.char;
         const isExpand = state.settings.detailContentMode === 'expand';
         const maxHeightStyle = isExpand ? 'max-height:none;overflow-y:visible;' : 'max-height:300px;overflow-y:auto;';
+
+        // AI 智能概览区块（新增）
+        const aiSection = this.renderAIOOverviewSection();
+        if (aiSection) {
+            container.appendChild(aiSection);
+        }
 
         // 1. 作者注释
         const commentSection = doc.createElement('div');
@@ -1582,26 +1725,7 @@ export class CharacterDetails {
         descSection.appendChild(descContent);
         container.appendChild(descSection);
 
-        // 3. 开场白
-        const firstSection = doc.createElement('div');
-        firstSection.className = 'cm-section cm-section-first';
-        const firstMes = this.getCharProp('first_mes') || this.getCharProp('first_message');
-        const firstHeader = doc.createElement('h4');
-        firstHeader.className = 'cm-section-header';
-        firstHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
-        firstHeader.innerHTML = `<span>${ICONS.chat} 主开场白</span>`;
-        const firstContentResult = this.createToggleableContent(firstMes || '(无)', 'first-message');
-        const firstContent = firstContentResult.container;
-        const firstToggleBtn = firstContentResult.toggleBtn;
-        
-        // 将按钮放在标题旁边
-        firstHeader.appendChild(firstToggleBtn);
-        
-        firstSection.appendChild(firstHeader);
-        firstSection.appendChild(firstContent);
-        container.appendChild(firstSection);
-
-        // 3.5 历史后指令
+        // 历史后指令
         const phi = this.getCharProp('post_history_instructions');
         if (phi) {
             const phiSection = doc.createElement('div');
@@ -1614,27 +1738,50 @@ export class CharacterDetails {
             const phiContent = phiContentResult.container;
             const phiToggleBtn = phiContentResult.toggleBtn;
             
-            // 将按钮放在标题旁边
             phiHeader.appendChild(phiToggleBtn);
             
             phiSection.appendChild(phiHeader);
             phiSection.appendChild(phiContent);
             container.appendChild(phiSection);
         }
+    }
 
-        // 4. 备选开场白
+    renderGreetingsTab() {
+        const container = this.tabContents['greetings'];
+        if (!container) return;
+        
+        container.innerHTML = '';
+        container.style.padding = '0';
+
+        const char = this.char;
+
+        // 1. 主开场白
+        const firstSection = doc.createElement('div');
+        firstSection.className = 'cm-section cm-section-first';
+        const firstMes = this.getCharProp('first_mes') || this.getCharProp('first_message');
+        const firstHeader = doc.createElement('h4');
+        firstHeader.className = 'cm-section-header';
+        firstHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
+        firstHeader.innerHTML = `<span>${ICONS.chat} 主开场白</span>`;
+        const firstContentResult = this.createToggleableContent(firstMes || '(无)', 'first-message');
+        const firstContent = firstContentResult.container;
+        const firstToggleBtn = firstContentResult.toggleBtn;
+        
+        firstHeader.appendChild(firstToggleBtn);
+        firstSection.appendChild(firstHeader);
+        firstSection.appendChild(firstContent);
+        container.appendChild(firstSection);
+
+        // 2. 备选开场白
         if (char.alternate_greetings && char.alternate_greetings.length > 0) {
             const altSection = doc.createElement('div');
             altSection.className = 'cm-section';
+            altSection.setAttribute('data-section-type', 'alt-greetings');
             
             const altHeader = doc.createElement('h4');
-            altHeader.setAttribute('data-section-type', 'alt-greetings');
-            altHeader.style.cssText = 'cursor:pointer;display:flex;align-items:center;gap:8px;';
-            
-            const altTitleDiv = doc.createElement('div');
-            altTitleDiv.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1';
-            altTitleDiv.innerHTML = `<span class="cm-alt-arrow" style="display:inline-block;width:16px;transition:transform 0.2s">▶</span><span>📝 备选开场白 (${char.alternate_greetings.length})</span>`;
-            altHeader.appendChild(altTitleDiv);
+            altHeader.className = 'cm-section-header';
+            altHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
+            altHeader.innerHTML = `<span>🪙 备选开场白 (${char.alternate_greetings.length})</span>`;
 
             const maxBtn = doc.createElement('button');
             maxBtn.innerHTML = ICONS.maximize || '⛶';
@@ -1648,47 +1795,34 @@ export class CharacterDetails {
             
             const contentDiv = doc.createElement('div');
             contentDiv.className = 'cm-greetings-list';
-            contentDiv.style.display = 'none'; // 默认折叠
             
-            let altItems = [];
             char.alternate_greetings.forEach((g, i) => {
                 const greetingTokens = calculateTokens(g);
                 const item = doc.createElement('div');
                 item.className = 'cm-greeting-item';
-                item.style.position = 'relative';
                 const greetingHeader = doc.createElement('div');
                 greetingHeader.className = 'cm-greeting-header';
                 greetingHeader.style.cssText = 'display:flex;align-items:center;gap:8px';
-                greetingHeader.innerHTML = `<span>#${i + 1} 🪙 ${greetingTokens}</span>`;
+                greetingHeader.innerHTML = `<span>#${i + 1}</span>`;
                 const greetingContentResult = this.createToggleableContent(g, `alt-greeting-${i}`, true, 200);
                 const greetingContent = greetingContentResult.container;
                 const greetingToggleBtn = greetingContentResult.toggleBtn;
                 
-                // 将按钮放在标题旁边
                 greetingHeader.appendChild(greetingToggleBtn);
-                
                 item.appendChild(greetingHeader);
                 item.appendChild(greetingContent);
-                altItems.push(item);
+                contentDiv.appendChild(item);
             });
-            
-            altItems.forEach(item => contentDiv.appendChild(item));
-
-            // Toggle logic
-            altHeader.onclick = () => {
-                const icon = altHeader.querySelector('.cm-alt-arrow');
-                if (contentDiv.style.display === 'none') {
-                    contentDiv.style.display = 'flex';
-                    if (icon) icon.style.transform = 'rotate(90deg)';
-                } else {
-                    contentDiv.style.display = 'none';
-                    if (icon) icon.style.transform = 'rotate(0deg)';
-                }
-            };
 
             altSection.appendChild(altHeader);
             altSection.appendChild(contentDiv);
             container.appendChild(altSection);
+        } else {
+            // 无备选开场白时显示提示
+            const emptySection = doc.createElement('div');
+            emptySection.className = 'cm-section';
+            emptySection.innerHTML = '<div style="padding:40px;text-align:center;color:var(--cm-text-sec);font-size:14px">暂无备选开场白</div>';
+            container.appendChild(emptySection);
         }
     }
 

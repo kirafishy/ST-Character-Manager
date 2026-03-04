@@ -959,9 +959,18 @@ function updateProgressBar(progress, text, subtext = '') {
     }
 }
 
-function showProgressBar(initialText = '处理中...') {
+/**
+ * 显示进度条
+ * @param {string} initialText - 初始文本
+ * @param {boolean|function} showCancelOrCallback - 是否显示取消按钮，或取消回调函数
+ * @returns {HTMLElement|null} 返回取消按钮元素（如果存在）
+ */
+function showProgressBar(initialText = '处理中...', showCancelOrCallback = false) {
     const existing = doc.getElementById('cmProgressOverlay');
     if (existing) existing.remove();
+
+    const showCancel = !!showCancelOrCallback;
+    const cancelCallback = typeof showCancelOrCallback === 'function' ? showCancelOrCallback : null;
 
     const ov = doc.createElement('div');
     ov.id = 'cmProgressOverlay';
@@ -971,8 +980,17 @@ function showProgressBar(initialText = '处理中...') {
         '<div class="cm-progress-text">' + initialText + '</div>' +
         '<div class="cm-progress-bar-wrap"><div class="cm-progress-bar-fill"></div></div>' +
         '<div class="cm-progress-sub"></div>' +
+        (showCancel ? '<button id="cmProgressBarCancel" class="cm-btn cm-btn-secondary" style="margin-top:12px;font-size:12px;padding:6px 16px">取消</button>' : '') +
         '</div>';
     doc.body.appendChild(ov);
+
+    // 如果提供了取消回调，立即绑定
+    const cancelBtn = ov.querySelector('#cmProgressBarCancel');
+    if (cancelBtn && cancelCallback) {
+        cancelBtn.onclick = cancelCallback;
+    }
+
+    return cancelBtn;
 }
 
 function hideProgressBar() {
@@ -1457,6 +1475,48 @@ export function renderView() {
     else if (state.currentView === 'tags') { renderByTag(); }
     else if (state.currentView === 'tagManager') { renderTagManager(); }
     updateActiveTab();
+}
+
+/**
+ * 刷新单张卡片的标签显示（用于 AI 概览生成后）
+ * @param {string} fileName - 角色文件名
+ */
+export function refreshCardTags(fileName) {
+    // 标签显示相关常量
+    const MAX_VISIBLE_TAGS = 3;           // 最多显示的标签数量
+    const TAG_OVERFLOW_THRESHOLD = 4;     // 触发溢出提示的标签数量阈值
+    
+    const card = doc.querySelector(`.cm-card[data-file="${CSS.escape(fileName)}"]`);
+    if (!card) return;
+    
+    const char = state.characters.find(c => c.fileName === fileName);
+    if (!char) return;
+    
+    const charTags = getCharTags(fileName);
+    let tagsHtml = '';
+    if (charTags.length > 0) {
+        tagsHtml = '<div class="cm-card-tags">';
+        const maxVisible = charTags.length > TAG_OVERFLOW_THRESHOLD ? MAX_VISIBLE_TAGS : charTags.length;
+        charTags.slice(0, maxVisible).forEach(t => {
+            tagsHtml += '<span class="cm-card-tag" style="background:' + (t.color || '#666') + '">' + escapeHtml(truncate(t.name, 4)) + '</span>';
+        });
+        if (charTags.length > TAG_OVERFLOW_THRESHOLD) {
+            tagsHtml += '<span class="cm-card-tag-more">+' + (charTags.length - MAX_VISIBLE_TAGS) + '</span>';
+        }
+        tagsHtml += '</div>';
+    }
+    
+    const tagsContainer = card.querySelector('.cm-card-info');
+    if (tagsContainer) {
+        const existingTags = tagsContainer.querySelector('.cm-card-tags');
+        if (existingTags) {
+            existingTags.remove();
+        }
+        // 统一插入到 tagsContainer 开头位置
+        if (tagsHtml) {
+            tagsContainer.insertAdjacentHTML('afterbegin', tagsHtml);
+        }
+    }
 }
 
 function updateActiveTab() {
@@ -2175,6 +2235,108 @@ function showTagEditor(tag) {
     );
 }
 
+/**
+ * 批量 AI 生成标签
+ * @param {string} mode - 'serial' | 'batch'
+ * @param {number} tokenLimit - Token 上限
+ */
+async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096) {
+    const selectedAvatars = Array.from(state.selectedCards);
+    const characters = state.characters.filter(c =>
+        selectedAvatars.includes(c.fileName || c.avatar)
+    );
+    
+    // 过滤出无标签的角色（包括 tags 为 null、空数组或空字符串的情况）
+    const targetChars = characters.filter(c => {
+        const cm = getCmManager(c);
+        return !cm.tags || cm.tags.length === 0 || (cm.tags.length === 1 && cm.tags[0] === '');
+    });
+    
+    if (targetChars.length === 0) {
+        notify('所有选中角色已有标签，无需生成', 'info');
+        return;
+    }
+    
+    const confirmed = await showConfirm(
+        `将对 ${targetChars.length} 个角色生成 AI 标签\n（跳过 ${characters.length - targetChars.length} 个已有标签的角色）\n\n模式：${mode === 'serial' ? '串行（1 个/次）' : `批量（Token 上限：${tokenLimit}）`}`
+    );
+    
+    if (!confirmed) return;
+    
+    let success = 0, errors = 0;
+    const total = targetChars.length;
+    let cancelled = false;
+    
+    // 显示进度条（带取消按钮和回调）
+    showProgressBar('准备开始批量处理...', () => {
+        cancelled = true;
+        hideProgressBar();
+        notify('批量处理已取消', 'info');
+    });
+    
+    try {
+        const { generateAIOverview, generateBatchOverview, extractCharacterData } = await import('./ai-overview/ai-service.js');
+        
+        if (mode === 'serial') {
+            // 串行模式
+            for (let i = 0; i < targetChars.length; i++) {
+                if (cancelled) break;
+                
+                const char = targetChars[i];
+                updateProgressBar(
+                    Math.round((i / total) * 100),
+                    `正在处理：${char.name} (${i + 1}/${total})`,
+                    `成功：${success} | 失败：${errors}`
+                );
+                
+                try {
+                    await generateAIOverview(char, true);
+                    success++;
+                    notify(`✅ ${char.name}: 生成成功`, 'success', 1500);
+                } catch (e) {
+                    errors++;
+                    notify(`❌ ${char.name}: ${e.message}`, 'error', 2000);
+                }
+                
+                // 添加小延迟防止限流
+                if (i < targetChars.length - 1) {
+                    await new Promise(r => setTimeout(r, 800));
+                }
+            }
+        } else {
+            // 批量模式
+            const result = await generateBatchOverview(targetChars, tokenLimit, (charName, successFlag, error) => {
+                if (cancelled) return;
+                if (successFlag) {
+                    success++;
+                    notify(`✅ ${charName}: 生成成功`, 'success', 1000);
+                } else {
+                    errors++;
+                    notify(`❌ ${charName}: ${error}`, 'error', 1500);
+                }
+            });
+            
+            success = result.success;
+            errors = result.errors;
+        }
+        
+        if (!cancelled) {
+            updateProgressBar(100, '批量处理完成！', `成功：${success} | 失败：${errors}`);
+            setTimeout(() => hideProgressBar(), 2000);
+            
+            // 刷新界面
+            renderView();
+            renderTagSidebar();
+            
+            notify(`批量完成：成功 ${success}, 失败 ${errors}`, 'success');
+        }
+    } catch (e) {
+        console.error('[AI Batch] Error:', e);
+        hideProgressBar();
+        notify(`批量处理失败：${e.message}`, 'error');
+    }
+}
+
 function showBatchTagDialog() {
     if (state.selectedCards.size === 0) { notify('请先选择角色', 'warning'); return; }
 
@@ -2512,6 +2674,17 @@ function createModal() {
         '<button class="cm-btn cm-btn-secondary" id="cmSelectAll">全选</button>' +
         '<button class="cm-btn cm-btn-secondary" id="cmClearSel">退出</button>' +
         '<button class="cm-btn cm-btn-primary" id="cmBatchTag">标签</button>' +
+        '<button class="cm-btn cm-btn-success" id="cmBatchAIGenerate">🪄 AI 标签</button>' +
+        '<select class="cm-select-input" id="cmBatchModeSelect" title="批量模式" style="max-width:90px">' +
+        '<option value="serial">串行</option>' +
+        '<option value="batch">批量</option>' +
+        '</select>' +
+        '<select class="cm-select-input" id="cmTokenLimitSelect" title="Token 上限" style="max-width:80px">' +
+        '<option value="4096">4K</option>' +
+        '<option value="8192">8K</option>' +
+        '<option value="16384">16K</option>' +
+        '<option value="32768">32K</option>' +
+        '</select>' +
         '<button class="cm-btn cm-btn-secondary" id="cmBatchFav">' + ICONS.star + '</button>' +
         '<button class="cm-btn cm-btn-danger" id="cmDelSel">' + ICONS.trash + '</button>' +
         '<button class="cm-btn cm-btn-secondary" id="cmBackupSel">' + ICONS.download + '</button>' +
@@ -2981,6 +3154,18 @@ function createModal() {
 
     m.querySelector('#cmBatchTag').onclick = showBatchTagDialog;
 
+    m.querySelector('#cmBatchAIGenerate').onclick = async function () {
+        if (!state.selectedCards.size) {
+            notify('请先选择角色卡', 'warning');
+            return;
+        }
+
+        const mode = m.querySelector('#cmBatchModeSelect').value;
+        const tokenLimit = parseInt(m.querySelector('#cmTokenLimitSelect').value) || 4096;
+
+        await batchAIGenerateTags(mode, tokenLimit);
+    };
+
     m.querySelector('#cmBatchFav').onclick = async function () {
         if (!state.selectedCards.size) return;
         const files = Array.from(state.selectedCards);
@@ -3216,6 +3401,14 @@ async function init() {
     
     // 初始化翻译模块
     initTranslationUI({ createBaseDialog, notify, showConfirm, scan, importFiles, updateCharacter, refreshSingleCard });
+    
+    // 监听 AI 概览生成标签事件，刷新列表页 tag DOM
+    window.addEventListener('cm-tags-updated', (e) => {
+        const { fileName } = e.detail || {};
+        if (fileName) {
+            refreshCardTags(fileName);
+        }
+    });
     
     // 异步加载缓存数据
     try {

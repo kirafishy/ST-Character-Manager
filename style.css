@@ -4809,6 +4809,149 @@ body.hide-card-note .cm-note {
     color: var(--cm-text-sec);
 }
 
+/* ========== AI 智能概览区块 ========== */
+.cm-section-ai-overview {
+    border-left: 3px solid #8b5cf6;
+    background: linear-gradient(90deg, rgba(139, 92, 246, 0.08) 0%, rgba(139, 92, 246, 0.02) 60%, transparent 100%);
+    position: relative;
+    margin-bottom: 16px;
+}
+
+.cm-section-ai-overview .cm-section-header {
+    color: #8b5cf6;
+    padding: 10px 14px;
+    font-size: 13px;
+    background: var(--cm-bg-sec);
+    border-bottom: 1px solid var(--cm-border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cm-section-ai-overview .cm-section-header #cmAIGenerateBtn,
+.cm-section-ai-overview .cm-section-header #cmAIEditBtn {
+    margin-left: auto;
+    padding: 6px 12px;
+    font-size: 13px;
+    height: auto;
+    min-width: 60px;
+    width: auto;
+}
+
+.cm-ai-overview-content {
+    padding: 14px 16px 14px 20px;
+}
+
+.cm-ai-overview-content.cm-ai-overview-empty {
+    color: var(--cm-text-sec);
+    font-size: 13px;
+}
+
+.cm-ai-summary {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--cm-text);
+    white-space: pre-wrap;
+    margin-bottom: 14px;
+}
+
+.cm-ai-tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.cm-ai-tag {
+    padding: 5px 12px;
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.cm-ai-tag:hover {
+    background: rgba(139, 92, 246, 0.25);
+    border-color: rgba(139, 92, 246, 0.5);
+    transform: translateY(-1px);
+}
+
+/* ========== 开场白标签页 ========== */
+.cm-greetings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+}
+
+.cm-greeting-item {
+    background: var(--cm-bg-sec);
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid var(--cm-border);
+    transition: all 0.2s ease;
+}
+
+.cm-greeting-item:hover {
+    border-color: rgba(139, 92, 246, 0.4);
+    background: rgba(139, 92, 246, 0.05);
+}
+
+.cm-greeting-header {
+    font-size: 12px;
+    color: var(--cm-text-sec);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+}
+
+/* ========== 批量操作栏按钮 ========== */
+.cm-btn-success {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    color: #fff;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.cm-btn-success:hover {
+    background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+    box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
+}
+
+.cm-btn-success:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--cm-text-sec);
+}
+
+/* ========== 标签预设导入 ========== */
+.cm-preset-btn {
+    text-align: left;
+    padding: 10px 14px;
+    height: auto;
+    min-height: 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+}
+
+.cm-preset-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.cm-preset-btn small {
+    font-size: 10px;
+    opacity: 0.8;
+}
+
 @media (max-width: 768px) {
     .cm-lorebook-modal {
         width: 98vw !important;
