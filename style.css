@@ -2983,6 +2983,8 @@ body.cm-resizing * {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 120px;
+    flex-shrink: 0;
 }
 
 .cm-setting-label span {

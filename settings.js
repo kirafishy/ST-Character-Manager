@@ -309,7 +309,6 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>API 协议</span>
-                        <small>选择使用的 AI API 类型（翻译、AI 概览等功能共用）</small>
                     </div>
                     <select id="cmSetAiApi" class="cm-select-input">
                         <option value="openai" ${settings.translationApi === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
@@ -320,21 +319,18 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     <div class="cm-setting-item">
                         <div class="cm-setting-label">
                             <span>API Base URL</span>
-                            <small>OpenAI 兼容接口地址</small>
                         </div>
                         <input type="text" id="cmSetOpenaiUrlMain" class="cm-input" value="${settings.openaiBaseUrl || ''}" placeholder="https://api.openai.com/v1" style="width:100%;box-sizing:border-box">
                     </div>
                     <div class="cm-setting-item">
                         <div class="cm-setting-label">
                             <span>API Key</span>
-                            <small>您的 API 密钥</small>
                         </div>
                         <input type="password" id="cmSetOpenaiKeyMain" class="cm-input" value="${settings.openaiApiKey || ''}" placeholder="sk-..." style="width:100%;box-sizing:border-box">
                     </div>
                     <div class="cm-setting-item">
                         <div class="cm-setting-label">
                             <span>模型</span>
-                            <small>选择使用的 AI 模型</small>
                         </div>
                         <div style="display:flex;gap:6px;align-items:center">
                             <select id="cmSetOpenaiModelMain" class="cm-select-input" style="flex:1;min-width:0">
