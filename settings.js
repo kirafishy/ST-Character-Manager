@@ -1246,11 +1246,44 @@ function showTranslationDisclaimer(_unused, onAccept, onReject) {
 async function showImportTagPresetDialog(createBaseDialog, notify, onImportComplete) {
     // 默认预设
     const defaultPresets = [
-        { name: '通用标签', tags: ['原创', '同人', '奇幻', '科幻', '校园', '职场', '历史', '架空'] },
-        { name: '风格标签', tags: ['轻松', '严肃', '搞笑', '治愈', '暗黑', '热血', '温馨', '虐心'] },
-        { name: '题材标签', tags: ['冒险', '战斗', '恋爱', '推理', '悬疑', '恐怖', '日常', '异世界'] },
-        { name: '角色标签', tags: ['主角', '配角', '反派', '英雄', '魔法使', '战士', '学生', '老师'] }
-    ];
+  {
+    "name": "世界观与时代",
+    "tags": ["原创", "同人", "奇幻", "科幻", "校园", "职场", "历史", "架空", "古代", "中世纪", "维多利亚", "现代都市", "赛博朋克", "蒸汽朋克", "末世", "未来", "太空殖民", "仙侠", "武侠", "民国", "二战", "近未来", "异世界转生", "末世废土", "规则类怪谈", "无限流", "ABO", "哨兵向导", "克苏鲁", "宫斗"]
+  },
+  {
+    "name": "风格与题材",
+    "tags": ["轻松", "严肃", "搞笑", "治愈", "暗黑", "热血", "温馨", "虐心", "冒险", "战斗", "恋爱", "推理", "悬疑", "恐怖", "日常", "异世界", "胃疼", "慢热", "救赎", "欢喜冤家", "文艺", "白话", "古风", "翻译腔", "沉浸式", "极简叙事"]
+  },
+  {
+    "name": "种族与生物特征",
+    "tags": ["人类", "精灵", "兽人", "兽耳", "吸血鬼", "狼人", "龙族", "天使", "恶魔", "外星人", "机器人", "史莱姆", "触手种族", "半人马", "魅魔", "狐妖", "猫娘", "犬娘", "人鱼", "AI", "拟人", "克苏鲁神话", "数据删除", "御姐", "肌肉男", "大叔", "少年", "半兽耳"]
+  },
+  {
+    "name": "职业与身份",
+    "tags": ["主角", "配角", "反派", "英雄", "魔法使", "战士", "学生", "老师", "骑士", "法师", "刺客", "侦探", "医生", "教师", "偶像", "歌手", "演员", "程序员", "黑客", "商人", "杀手", "佣兵", "贵族", "公主", "王子", "神官", "魔王", "科学家", "记者", "警察", "律师", "机甲驾驶员", "炼金术士", "召唤师"]
+  },
+  {
+    "name": "性格萌点",
+    "tags": ["温柔", "傲娇", "病娇", "腹黑", "元气", "毒舌", "女王", "抖S", "抖M", "天然呆", "冷静", "热血笨蛋", "腹黑温柔", "黑化", "反差萌", "病弱", "高冷", "粘人", "口是心非", "三无", "忠犬"]
+  },
+  {
+    "name": "关系动态",
+    "tags": ["青梅竹马", "宿敌", "主仆", "主人×奴隶", "上司×下属", "师生", "竞争对手", "恋人", "未婚妻", "前任", "兄妹", "姐弟", "养成对象", "守护者", "被守护者", "召唤者×被召唤物", "契约关系", "陌生人", "朋友", "同学", "同事", "师徒", "雇佣关系", "搭档", "对手", "监护人", "队友", "同居", "网友", "家人"]
+  },
+  {
+    "name": "能力特质",
+    "tags": ["超能力", "武术高手", "黑客天才", "预知未来", "时间停止", "变形", "不死身", "读心", "控火", "吸血", "诅咒", "治愈能力", "隐身"]
+  },
+  {
+    "name": "内容分级与NSFW",
+    "tags": ["全年龄（SFW）", "成人向（NSFW）", "暴力倾向", "纯爱", "后宫", "NTR", "调教", "强制爱", "触手", "SM", "足控", "耳语", "催眠", "药play", "大小差", "年龄差", "百合", "耽美", "扶她", "伪娘", "多P", "露出", "凌辱", "甜宠R18", "黑暗R18"]
+  },
+  {
+    "name": "视角与玩法",
+    "tags": ["第一人称视角", "第三人称视角", "多角色混杂", "轻剧情", "重剧情", "沉浸RP", "跑团风", "主持人型", "陪聊型", "任务发布", "队伍协作", "养成"]
+  },
+  { "name": "类脑角色卡标签", "tags": ["NTL", "NTR", "纯爱", "女性视角", "人外", "伪娘/男娘", "御姐/人妻/熟女", "数据删除", "乱伦", "系统/工具", "同人/二创", "古风", "调教", "母系/妈妈", "前端/美化", "百合", "纯文字", "多路线"] }
+];
     
     // 读取用户自定义预设
     let userPresets = [];
@@ -1269,11 +1302,14 @@ async function showImportTagPresetDialog(createBaseDialog, notify, onImportCompl
     const html = `
         <div style="padding:10px;max-height:60vh;overflow-y:auto">
             <div style="margin-bottom:15px">
-                <h4 style="margin:0 0 10px 0;font-size:13px;color:var(--cm-text)">📦 预设标签包</h4>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                    <h4 style="margin:0;font-size:13px;color:var(--cm-text)">📦 预设标签包</h4>
+                    <button class="cm-btn cm-btn-primary" id="cmImportAllPresets" style="font-size:12px;padding:4px 12px">导入全部预设</button>
+                </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
                     ${presets.map(p => `
                         <button class="cm-btn cm-btn-secondary cm-preset-btn" data-preset="${p.name}" data-tags='${JSON.stringify(p.tags)}' style="flex:1;min-width:120px">
-                            ${p.name}<br><small style="font-size:11px;color:var(--cm-text-sec)">(${p.tags.length}个标签)</small>
+                            <span class="cm-preset-name">${p.name}</span><br><small style="font-size:11px;color:var(--cm-text-sec)">(${p.tags.length}个标签)</small>
                         </button>
                     `).join('')}
                 </div>
@@ -1294,16 +1330,55 @@ async function showImportTagPresetDialog(createBaseDialog, notify, onImportCompl
     createBaseDialog('导入标签预设', html, [
         { text: '关闭', cls: 'cm-btn-secondary', onClick: (ov, close) => close() }
     ], (ov, close) => {
+        // 标记按钮为已导入状态的辅助函数
+        const markBtnImported = (btn) => {
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.style.cursor = 'default';
+            const nameSpan = btn.querySelector('.cm-preset-name');
+            if (nameSpan) nameSpan.textContent = `${btn.dataset.preset} ✓`;
+        };
+
         // 绑定预设按钮事件
         ov.querySelectorAll('.cm-preset-btn').forEach(btn => {
             btn.onclick = async () => {
                 const tagNames = JSON.parse(btn.dataset.tags);
                 await importTagsBatch(tagNames);
                 notify(`已导入"${btn.dataset.preset}"共${tagNames.length}个标签`, 'success');
-                close();
+                markBtnImported(btn);
                 if (onImportComplete) onImportComplete();
             };
         });
+
+        // 绑定"导入全部预设"按钮事件
+        const importAllBtn = ov.querySelector('#cmImportAllPresets');
+        if (importAllBtn) {
+            importAllBtn.onclick = async () => {
+                let totalImported = 0;
+                let totalSkipped = 0;
+                
+                // 收集所有预设的标签
+                const allTags = [];
+                presets.forEach(p => allTags.push(...p.tags));
+                
+                // 批量导入
+                const result = await importTagsBatch(allTags);
+                totalImported = result.imported;
+                totalSkipped = result.skipped;
+                
+                // 标记所有预设按钮为已导入
+                ov.querySelectorAll('.cm-preset-btn').forEach(btn => markBtnImported(btn));
+                
+                // 禁用导入全部按钮
+                importAllBtn.disabled = true;
+                importAllBtn.style.opacity = '0.6';
+                importAllBtn.style.cursor = 'default';
+                importAllBtn.textContent = '已全部导入 ✓';
+                
+                notify(`已导入全部预设共${totalImported}个新标签${totalSkipped > 0 ? `（跳过${totalSkipped}个已存在）` : ''}`, 'success');
+                if (onImportComplete) onImportComplete();
+            };
+        }
 
         // 绑定自定义导入事件
         ov.querySelector('#cmImportCustomTags').onclick = async () => {
@@ -1315,21 +1390,21 @@ async function showImportTagPresetDialog(createBaseDialog, notify, onImportCompl
             }
             await importTagsBatch(tagNames);
             notify(`已导入${tagNames.length}个自定义标签`, 'success');
-            close();
             if (onImportComplete) onImportComplete();
         };
-    });
+    }, { stack: true });
 }
 
 /**
  * 批量导入标签
  * @param {string[]} tagNames - 标签名称数组
+ * @returns {Promise<{imported: number, skipped: number}>} 导入结果
  */
 async function importTagsBatch(tagNames) {
+    let imported = 0, skipped = 0;
     try {
         const { createTag } = await import('./data.js');
         const { state } = await import('./state.js');
-        let imported = 0, skipped = 0;
         
         for (const name of tagNames) {
             const exists = state.tags.some(t => t.name.toLowerCase() === name.toLowerCase());
@@ -1350,6 +1425,7 @@ async function importTagsBatch(tagNames) {
         console.error('[ImportTags] Error:', e);
         notify(`导入失败：${e.message}`, 'error');
     }
+    return { imported, skipped };
 }
 
 /**
