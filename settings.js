@@ -1,6 +1,6 @@
 import { state, saveSettings, defaultSettings } from './state.js';
 import { ICONS, Z_INDEX } from './constants.js';
-import { escapeHtml } from './utils.js';
+import { escapeHtml, notify } from './utils.js';
 import { syncAllTags } from './data.js';
 import { clearAllCache } from './db.js';
 import { galleryCountCache } from './gallery.js';
