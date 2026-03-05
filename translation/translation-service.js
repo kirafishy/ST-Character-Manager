@@ -272,7 +272,14 @@ export class TranslationService {
         const body = {
             model: model,
             messages: messages,
-            temperature: 0.7
+            temperature: 0.7,
+            // Gemini 安全设置：禁用所有内容过滤，避免翻译内容被拦截
+            safety_settings: [
+                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+            ]
         };
 
         // 创建新的 AbortController

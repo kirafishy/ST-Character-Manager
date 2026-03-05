@@ -251,8 +251,15 @@ async function callOpenAI(config, prompt, maxTokens = 2048) {
             },
             { role: 'user', content: prompt }
         ],
-        temperature: 0.7,
-        max_tokens: maxTokens
+        temperature: 1.0,
+        max_tokens: maxTokens,
+        // Gemini 安全设置：禁用所有内容过滤，避免角色卡内容被拦截
+        safety_settings: [
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+        ]
     };
     
     if (state.settings.debugMode) {
