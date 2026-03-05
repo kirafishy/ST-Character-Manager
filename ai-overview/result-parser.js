@@ -5,6 +5,7 @@
 import { saveCharacterData, applyTagsByNames } from '../data.js';
 import { sanitizeTags, checkCharHasTags } from '../utils.js';
 import { state } from '../state.js';
+import { getCmManager } from '../st-tags.js';
 
 /**
  * 安全解析 JSON，处理可能存在的格式问题
@@ -102,14 +103,20 @@ export async function parseOverviewResult(aiResponse, character, hasTags) {
  * @returns {Promise<object[]>}
  */
 export async function parseBatchOverviewResult(aiResponse, characters, forceGenerateTags = false) {
-    const results = safeParseJson(aiResponse);
+    const parsed = safeParseJson(aiResponse);
     
-    if (!results) {
+    if (!parsed) {
         throw new Error('AI 响应解析失败：无法解析为 JSON');
     }
     
-    if (!Array.isArray(results)) {
-        throw new Error('AI 响应格式错误：期望数组');
+    // 两阶段解析：优先取 results 字段，回退为数组
+    let results;
+    if (parsed.results && Array.isArray(parsed.results)) {
+        results = parsed.results;
+    } else if (Array.isArray(parsed)) {
+        results = parsed;
+    } else {
+        throw new Error('AI 响应格式错误：期望 {"results":[...]} 或 [...]');
     }
     
     const outputResults = [];
@@ -155,8 +162,11 @@ export async function parseBatchOverviewResult(aiResponse, characters, forceGene
             // forceGenerateTags=true 时总是应用标签（replace=true），否则检查是否已有标签
             const shouldApplyTags = forceGenerateTags || !checkCharHasTags(char);
             
-            if (item.tags && Array.isArray(item.tags) && shouldApplyTags) {
-                const sanitizedTags = sanitizeTags(item.tags);
+            // tags 字段标准化：非数组时置为空数组
+            const normalizedTags = (item.tags && Array.isArray(item.tags)) ? item.tags : [];
+            
+            if (normalizedTags.length > 0 && shouldApplyTags) {
+                const sanitizedTags = sanitizeTags(normalizedTags);
                 // forceGenerateTags=true 时使用 replace:true 覆盖现有标签，否则使用 replace:false 合并
                 const applyResult = await applyTagsByNames(fileName, sanitizedTags, { replace: forceGenerateTags });
                 

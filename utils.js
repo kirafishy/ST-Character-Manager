@@ -28,14 +28,16 @@ export function escapeHtml(t) {
  * 标签数据清洗工具函数
  * 过滤无效标签并限制数量
  * @param {any} tags - 待清洗的标签数据（可能是数组或其他类型）
- * @param {number} [maxCount=5] - 最大保留数量
+ * @param {number} [maxCount] - 最大保留数量（默认读取设置中的 aiMaxTags）
  * @returns {string[]} 清洗后的标签数组
  */
-export function sanitizeTags(tags, maxCount = 5) {
+export function sanitizeTags(tags, maxCount) {
     if (!Array.isArray(tags)) return [];
+    // 默认使用设置中的最大标签数
+    const limit = maxCount ?? state.settings.aiMaxTags ?? 5;
     return tags
         .filter(t => t && typeof t === 'string')
-        .slice(0, maxCount);
+        .slice(0, limit);
 }
 
 export function formatRichText(text, charName = '', preserveHtml = false) {

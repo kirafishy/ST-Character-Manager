@@ -2,6 +2,7 @@
  * Prompt 构建器
  * 为 AI 概览生成构建结构化提示词
  */
+import { state } from '../state.js';
 
 /**
  * 构建单个角色的概览 Prompt
@@ -25,13 +26,14 @@ ${baseData}
 [回复格式] 严格仅返回JSON，不要markdown标记：
 {"summary": "..."}`;
     } else {
+        const maxTags = state.settings.aiMaxTags || 5;
         return `你是一位专业的角色卡分析师。请分析以下角色卡数据，生成概览和标签。
 
 ${baseData}
 
 [任务要求]
 1. 概览：150字以内，精炼概括角色核心特征
-2. 标签：最多5个，优先从以下[系统标签库]中选择匹配标签，仅当无匹配时才创建新标签
+2. 标签：最多${maxTags}个，优先从以下[系统标签库]中选择匹配标签，仅当无匹配时才创建新标签
 
 [系统标签库]
 ${JSON.stringify(systemTags)}
@@ -56,9 +58,8 @@ export function buildBatchOverviewPrompt(cardDataList, systemTags, forceGenerate
 ${buildCharacterDataSection(card)}`;
     }).join('\n');
     
-    const tagRequirement = forceGenerateTags
-        ? '2. 为每个角色生成标签：最多5个，优先从[系统标签库]中选择匹配标签，仅当无匹配时才创建新标签'
-        : '2. 为每个角色生成标签：最多5个，优先从[系统标签库]中选择匹配标签，仅当无匹配时才创建新标签';
+    const maxTags = state.settings.aiMaxTags || 5;
+    const tagRequirement = `2. 为每个角色生成标签：最多${maxTags}个，优先从[系统标签库]中选择匹配标签，仅当无匹配时才创建新标签`;
     
     return `你是一位专业的角色卡分析师。请分析以下${cardDataList.length}个角色卡数据，为每个角色生成概览和标签。
 
@@ -71,11 +72,23 @@ ${tagRequirement}
 [系统标签库]
 ${JSON.stringify(systemTags)}
 
-[回复格式] 严格仅返回JSON数组，不要markdown标记：
+[回复格式] 严格仅返回JSON，不要markdown标记。主格式为 {"results":[...]}，若无法返回包裹格式则纯数组 [...] 也可接受：
+{
+  "results": [
+    {"fileName": "角色1的fileName", "summary": "...", "tags": ["标签1", "标签2"]},
+    {"fileName": "角色2的fileName", "summary": "...", "tags": ["标签1"]}
+  ]
+}
+或回退格式：
 [
   {"fileName": "角色1的fileName", "summary": "...", "tags": ["标签1", "标签2"]},
   {"fileName": "角色2的fileName", "summary": "...", "tags": ["标签1"]}
-]`;
+]
+
+[字段约束] 必须使用以下键名：
+- fileName: 角色文件名（用于匹配）
+- summary: 概览内容（必填）
+- tags: 标签数组（可选）`;
 }
 
 /**
@@ -90,35 +103,35 @@ function buildCharacterDataSection(cardData) {
     sections.push(`Name: ${cardData.name || '未知'}`);
     
     if (cardData.description) {
-        sections.push(`Description: ${truncateText(cardData.description, 500)}`);
+        sections.push(`Description: ${truncateText(cardData.description, 1500)}`);
     }
     
     if (cardData.personality) {
-        sections.push(`Personality: ${truncateText(cardData.personality, 300)}`);
+        sections.push(`Personality: ${truncateText(cardData.personality, 900)}`);
     }
     
     if (cardData.scenario) {
-        sections.push(`Scenario: ${truncateText(cardData.scenario, 300)}`);
+        sections.push(`Scenario: ${truncateText(cardData.scenario, 900)}`);
     }
     
     if (cardData.first_mes) {
-        sections.push(`First Message: ${truncateText(cardData.first_mes, 500)}`);
+        sections.push(`First Message: ${truncateText(cardData.first_mes, 1500)}`);
     }
     
     if (cardData.mes_example) {
-        sections.push(`Example Dialogue: ${truncateText(cardData.mes_example, 500)}`);
+        sections.push(`Example Dialogue: ${truncateText(cardData.mes_example, 1500)}`);
     }
     
     if (cardData.system_prompt) {
-        sections.push(`System Prompt: ${truncateText(cardData.system_prompt, 200)}`);
+        sections.push(`System Prompt: ${truncateText(cardData.system_prompt, 600)}`);
     }
     
     if (cardData.post_history_instructions) {
-        sections.push(`Post Instructions: ${truncateText(cardData.post_history_instructions, 200)}`);
+        sections.push(`Post Instructions: ${truncateText(cardData.post_history_instructions, 600)}`);
     }
     
     if (cardData.creatorcomment) {
-        sections.push(`Creator Comment: ${truncateText(cardData.creatorcomment, 300)}`);
+        sections.push(`Creator Comment: ${truncateText(cardData.creatorcomment, 900)}`);
     }
     
     return sections.join('\n');

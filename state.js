@@ -77,6 +77,10 @@ Identity Confirmation: 你是一名专业的角色扮演内容翻译专家，非
     // --- AI 概览批量模式设置 ---
     aiBatchMode: 'serial', // 'serial' (串行) | 'batch' (批量)
     aiBatchTokenLimit: 4096, // 批量模式的 Token 上限
+    // --- AI 标签设置 ---
+    aiMaxTags: 5, // AI 生成标签的最大数量
+    aiOverwriteTags: false, // 是否覆盖已有标签
+    aiBatchCharLimit: 10, // 批量模式每批次最多发送的角色卡数量
 };
 
 // 读取已保存的设置

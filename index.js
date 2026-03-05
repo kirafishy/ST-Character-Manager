@@ -2332,7 +2332,7 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                     case 'batch_start':
                         updateProgressBar(
                             Math.round((processedCount / total) * 100),
-                            `正在处理第 ${event.batchIndex}/${event.totalBatches} 批次（共 ${event.charCount} 个角色）`,
+                            `正在处理第 ${event.batchIndex}/${event.totalBatches} 批次（共 ${total} 个角色）`,
                             `✅ 成功：${batchSuccess} | ❌ 失败：${batchErrors}`
                         );
                         break;
@@ -2448,7 +2448,7 @@ function showAITagConfigDialog() {
             
             <div class="cm-form-group" style="margin-bottom:12px">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                    <input type="checkbox" id="cmOverwriteCheckbox" style="width:16px;height:16px">
+                    <input type="checkbox" id="cmOverwriteCheckbox" style="width:16px;height:16px" ${state.settings.aiOverwriteTags ? 'checked' : ''}>
                     <span style="font-size:13px">
                         <span style="font-weight:600">覆盖已有标签</span>
                         <span style="font-size:11px;color:var(--cm-text-sec);display:block;margin-top:2px">开启后将重新生成所有选中角色的标签</span>

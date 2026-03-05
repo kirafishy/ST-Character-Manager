@@ -279,6 +279,44 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </div>
                     <button id="cmImportTagPresetsBtn" class="cm-btn cm-btn-secondary">导入标签</button>
                 </div>
+
+                <!-- AI 标签设置子项 -->
+                <div style="margin-top:12px;padding:10px;background:var(--cm-bg-ter);border-radius:8px">
+                    <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--cm-text)">🤖 AI 标签生成</div>
+                    
+                    <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                        <div class="cm-setting-label">
+                            <span style="font-size:12px">最大标签数</span>
+                            <small>AI 为每个角色生成的最大标签数量 (${settings.aiMaxTags || 5})</small>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <input type="range" id="cmSetAiMaxTags" min="1" max="10" step="1" value="${settings.aiMaxTags || 5}" style="width:80px">
+                            <span id="cmSetAiMaxTagsVal" style="font-size:12px;width:20px;text-align:right">${settings.aiMaxTags || 5}</span>
+                        </div>
+                    </div>
+
+                    <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                        <div class="cm-setting-label">
+                            <span style="font-size:12px">覆盖已有标签</span>
+                            <small>启用后 AI 生成的标签将覆盖角色现有的标签</small>
+                        </div>
+                        <label class="cm-switch">
+                            <input type="checkbox" id="cmSetAiOverwriteTags" ${settings.aiOverwriteTags ? 'checked' : ''}>
+                            <span class="cm-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="cm-setting-item" style="margin:0">
+                        <div class="cm-setting-label">
+                            <span style="font-size:12px">批量模式每批上限</span>
+                            <small>批量 AI 标签生成时每批次最多处理的角色数 (${settings.aiBatchCharLimit || 10})<br><span style="color:var(--cm-text-sec);font-size:11px">⚠️ 过高可能导致 Token 超限或响应超时</span></small>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <input type="range" id="cmSetAiBatchCharLimit" min="1" max="30" step="1" value="${settings.aiBatchCharLimit || 10}" style="width:80px">
+                            <span id="cmSetAiBatchCharLimitVal" style="font-size:12px;width:20px;text-align:right">${settings.aiBatchCharLimit || 10}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- 翻译设置 -->
@@ -436,6 +474,41 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindCheck('cmSetAutoScan', 'autoScan');
         bindCheck('cmSetAutoSyncTags', 'autoSyncTags');
         bindCheck('cmSetDebugMode', 'debugMode');
+        bindCheck('cmSetAiOverwriteTags', 'aiOverwriteTags');
+
+        // AI 最大标签数滑块
+        const aiMaxTagsSlider = ov.querySelector('#cmSetAiMaxTags');
+        const aiMaxTagsVal = ov.querySelector('#cmSetAiMaxTagsVal');
+        if (aiMaxTagsSlider && aiMaxTagsVal) {
+            aiMaxTagsSlider.oninput = (e) => {
+                aiMaxTagsVal.textContent = e.target.value;
+            };
+            aiMaxTagsSlider.onchange = (e) => {
+                state.settings.aiMaxTags = parseInt(e.target.value, 10);
+                saveSettings();
+                // 更新标签说明文字
+                const labelSmall = e.target.closest('.cm-setting-item')?.querySelector('small');
+                if (labelSmall) labelSmall.textContent = `AI 为每个角色生成的最大标签数量 (${e.target.value})`;
+            };
+        }
+
+        // AI 批量角色数上限滑块
+        const aiBatchCharLimitSlider = ov.querySelector('#cmSetAiBatchCharLimit');
+        const aiBatchCharLimitVal = ov.querySelector('#cmSetAiBatchCharLimitVal');
+        if (aiBatchCharLimitSlider && aiBatchCharLimitVal) {
+            aiBatchCharLimitSlider.oninput = (e) => {
+                aiBatchCharLimitVal.textContent = e.target.value;
+            };
+            aiBatchCharLimitSlider.onchange = (e) => {
+                state.settings.aiBatchCharLimit = parseInt(e.target.value, 10);
+                saveSettings();
+                // 更新标签说明文字
+                const labelSmall = e.target.closest('.cm-setting-item')?.querySelector('small');
+                if (labelSmall) {
+                    labelSmall.innerHTML = `批量 AI 标签生成时每批次最多处理的角色数 (${e.target.value})<br><span style="color:var(--cm-text-sec);font-size:11px">⚠️ 过高可能导致 Token 超限或响应超时</span>`;
+                }
+            };
+        }
 
         // 扫描批次大小滑块
         const scanBatchSizeSlider = ov.querySelector('#cmSetScanBatchSize');

@@ -286,12 +286,13 @@ async function callOpenAI(config, prompt, maxTokens = 2048) {
 }
 
 /**
- * 按 Token 上限对角色进行分组
+ * 按 Token 上限和角色数量上限对角色进行分组
  * @param {object[]} characters - 角色数组
  * @param {number} tokenLimit - Token 上限
  * @returns {object[][]}
  */
 function groupCharactersByTokenLimit(characters, tokenLimit) {
+    const maxCharsPerBatch = state.settings.aiBatchCharLimit || 10;
     const batches = [];
     let currentBatch = [];
     let currentTokens = 0;
@@ -299,7 +300,11 @@ function groupCharactersByTokenLimit(characters, tokenLimit) {
     for (const char of characters) {
         const charTokens = estimateCharTokens(char);
         
-        if (currentTokens + charTokens > tokenLimit && currentBatch.length > 0) {
+        // 检查是否需要新开批次：Token 超限 或 角色数量达到上限
+        const tokenExceeded = currentTokens + charTokens > tokenLimit;
+        const charCountExceeded = currentBatch.length >= maxCharsPerBatch;
+        
+        if ((tokenExceeded || charCountExceeded) && currentBatch.length > 0) {
             batches.push(currentBatch);
             currentBatch = [];
             currentTokens = 0;
