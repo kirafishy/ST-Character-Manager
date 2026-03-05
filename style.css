@@ -5003,6 +5003,195 @@ body.hide-card-note .cm-note {
     transition: all 0.2s ease;
 }
 
+/* ========== 批量 AI 标签结果弹窗 ========== */
+.cm-batch-result-modal {
+    max-width: 480px;
+    width: 90%;
+}
+
+/* 摘要统计区域 */
+.cm-batch-summary {
+    display: flex;
+    justify-content: space-around;
+    padding: 16px;
+    background: var(--cm-bg-ter);
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.cm-batch-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.cm-stat-icon {
+    font-size: 20px;
+}
+
+.cm-stat-label {
+    font-size: 12px;
+    color: var(--cm-text-sec);
+}
+
+.cm-stat-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.cm-batch-stat.success .cm-stat-value {
+    color: #10b981;
+}
+
+.cm-batch-stat.error .cm-stat-value {
+    color: #ef4444;
+}
+
+.cm-batch-stat.total .cm-stat-value {
+    color: var(--cm-accent);
+}
+
+/* 折叠按钮 */
+.cm-batch-toggle-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--cm-bg-hover);
+    border: 1px solid var(--cm-border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--cm-text);
+    transition: all 0.2s;
+}
+
+.cm-batch-toggle-btn:hover {
+    background: var(--cm-hover);
+}
+
+.cm-toggle-icon {
+    transition: transform 0.2s;
+}
+
+.cm-batch-toggle-btn[aria-expanded="true"] .cm-toggle-icon {
+    transform: rotate(180deg);
+}
+
+.cm-toggle-count {
+    margin-left: auto;
+    color: var(--cm-text-sec);
+    font-size: 12px;
+}
+
+/* 详情内容区域 */
+.cm-batch-details-content {
+    margin-top: 12px;
+    animation: cmFadeIn 0.2s ease;
+}
+
+/* 列表区域 */
+.cm-batch-list-section {
+    margin-bottom: 16px;
+}
+
+.cm-batch-list-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cm-batch-list-title.success {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+}
+
+.cm-batch-list-title.error {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.cm-batch-list-title small {
+    font-weight: 400;
+    opacity: 0.8;
+}
+
+/* 列表容器 - 限制高度 */
+.cm-batch-list {
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 8px;
+    background: var(--cm-bg-ter);
+    border-radius: 6px;
+    border: 1px solid var(--cm-border);
+}
+
+/* 列表项 */
+.cm-batch-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
+.cm-batch-item:last-child {
+    margin-bottom: 0;
+}
+
+.cm-batch-item.success {
+    background: transparent;
+}
+
+.cm-batch-item.error {
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.cm-batch-item-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+}
+
+.cm-batch-item-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cm-batch-item-error {
+    color: var(--cm-text-sec);
+    font-size: 12px;
+    margin-left: 8px;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 移动端适配 */
+@media (max-width: 480px) {
+    .cm-batch-list {
+        max-height: 200px;
+    }
+
+    .cm-batch-summary {
+        padding: 12px 8px;
+    }
+
+    .cm-stat-value {
+        font-size: 20px;
+    }
+}
+
 .cm-preset-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);

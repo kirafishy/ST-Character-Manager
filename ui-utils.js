@@ -1,7 +1,7 @@
 import { doc } from './context.js';
 import { state } from './state.js';
-import { ICONS } from './constants.js';
-import { escapeHtml } from './utils.js';
+import { ICONS, Z_INDEX } from './constants.js';
+import { escapeHtml, notify } from './utils.js';
 
 export function createBaseDialog(title, bodyContent, footerButtons = [], onOpen = null, options = {}) {
     const { stack = false } = options;
@@ -105,5 +105,199 @@ export function showDeleteConfirm(count, wiCount) {
                 }
             }
         ], null, { stack: true });
+    });
+}
+
+/**
+ * 显示批量 AI 标签结果弹窗
+ * @param {object} result - 处理结果对象
+ * @param {number} result.success - 成功数量
+ * @param {number} result.errors - 失败数量
+ * @param {Array<{name: string, success: boolean, error?: string}>} result.details - 详细信息数组
+ * @returns {Promise<void>}
+ */
+/**
+ * 显示批量 AI 标签结果弹窗
+ * @param {object} result - 处理结果对象
+ * @param {number} result.success - 成功数量
+ * @param {number} result.errors - 失败数量
+ * @param {Array<{name: string, success: boolean, error?: string}>} [result.details] - 详细信息数组
+ * @returns {Promise<void>}
+ */
+export function showBatchResultModal(result) {
+    return new Promise(resolve => {
+        const total = result.success + result.errors;
+        const hasErrors = result.errors > 0;
+        // P2: 增加 details 默认化处理，增强健壮性
+        const details = Array.isArray(result.details) ? result.details : [];
+        
+        const ov = doc.createElement('div');
+        ov.className = state.isDarkMode
+            ? 'cm-tag-editor-overlay cm-theme-dark'
+            : 'cm-tag-editor-overlay cm-theme-light';
+        ov.style.zIndex = String(Z_INDEX.DYNAMIC_OVERLAY_MAX);
+        
+        ov.innerHTML = `
+            <div class="cm-tag-editor cm-batch-result-modal">
+                <div class="cm-tag-editor-header">
+                    <h3>📊 批量 AI 标签完成</h3>
+                    <button class="cm-tag-editor-close">×</button>
+                </div>
+                
+                <div class="cm-tag-editor-body">
+                    <!-- 摘要统计 -->
+                    <div class="cm-batch-summary">
+                        <div class="cm-batch-stat success">
+                            <span class="cm-stat-icon">✅</span>
+                            <span class="cm-stat-label">成功</span>
+                            <span class="cm-stat-value">${result.success}</span>
+                        </div>
+                        <div class="cm-batch-stat error">
+                            <span class="cm-stat-icon">❌</span>
+                            <span class="cm-stat-label">失败</span>
+                            <span class="cm-stat-value">${result.errors}</span>
+                        </div>
+                        <div class="cm-batch-stat total">
+                            <span class="cm-stat-icon">📁</span>
+                            <span class="cm-stat-label">总计</span>
+                            <span class="cm-stat-value">${total}</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 折叠详情 -->
+                    <div class="cm-batch-details-section">
+                        <button class="cm-batch-toggle-btn" aria-expanded="false">
+                            <span class="cm-toggle-icon">▼</span>
+                            <span class="cm-toggle-text">查看详情</span>
+                            <span class="cm-toggle-count">(${total} 个角色)</span>
+                        </button>
+                        
+                        <div class="cm-batch-details-content" hidden>
+                            ${result.success > 0 ? `
+                            <div class="cm-batch-list-section">
+                                <h4 class="cm-batch-list-title success">
+                                    ✅ 成功列表 <small>(${result.success})</small>
+                                </h4>
+                                <div class="cm-batch-list" id="cm-batch-success-list">
+                                    ${details
+                                        .filter(d => d.success)
+                                        .map(d => `
+                                            <div class="cm-batch-item success">
+                                                <span class="cm-batch-item-icon">✅</span>
+                                                <span class="cm-batch-item-name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</span>
+                                            </div>
+                                        `).join('')}
+                                </div>
+                            </div>
+                            ` : ''}
+                            
+                            ${hasErrors ? `
+                            <div class="cm-batch-list-section">
+                                <h4 class="cm-batch-list-title error">
+                                    ❌ 失败列表 <small>(${result.errors})</small>
+                                </h4>
+                                <div class="cm-batch-list" id="cm-batch-error-list">
+                                    ${details
+                                        .filter(d => !d.success)
+                                        .map(d => `
+                                            <div class="cm-batch-item error">
+                                                <span class="cm-batch-item-icon">❌</span>
+                                                <span class="cm-batch-item-name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</span>
+                                                <span class="cm-batch-item-error" title="${escapeHtml(d.error || '未知错误')}">${escapeHtml(d.error || '未知错误')}</span>
+                                            </div>
+                                        `).join('')}
+                                </div>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="cm-tag-editor-footer">
+                    ${hasErrors ? `
+                    <button class="cm-btn cm-btn-secondary" id="cm-batch-copy-fail">复制失败列表</button>
+                    ` : ''}
+                    <button class="cm-btn cm-btn-secondary" id="cm-batch-export">导出结果</button>
+                    <button class="cm-btn cm-btn-primary" id="cm-batch-ok">确定</button>
+                </div>
+            </div>
+        `;
+        
+        doc.body.appendChild(ov);
+        
+        const closePopup = () => {
+            ov.remove();
+            resolve();
+        };
+        
+        // 关闭按钮
+        ov.querySelector('.cm-tag-editor-close').onclick = closePopup;
+        ov.onclick = (e) => { if (e.target === ov) closePopup(); };
+        
+        // 确定按钮
+        ov.querySelector('#cm-batch-ok').onclick = closePopup;
+        
+        // 折叠/展开按钮
+        const toggleBtn = ov.querySelector('.cm-batch-toggle-btn');
+        const detailsContent = ov.querySelector('.cm-batch-details-content');
+        
+        toggleBtn.onclick = () => {
+            const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+            toggleBtn.setAttribute('aria-expanded', String(!isExpanded));
+            detailsContent.hidden = isExpanded;
+        };
+        
+        // 复制失败列表 - P1: 增加剪贴板 API 能力探测
+        const copyFailBtn = ov.querySelector('#cm-batch-copy-fail');
+        if (copyFailBtn) {
+            copyFailBtn.onclick = () => {
+                const failedNames = details
+                    .filter(d => !d.success)
+                    .map(d => `${d.name}: ${d.error || '未知错误'}`)
+                    .join('\n');
+                
+                // P1: 检查剪贴板 API 是否可用
+                if (navigator?.clipboard?.writeText) {
+                    navigator.clipboard.writeText(failedNames).then(() => {
+                        notify('失败列表已复制到剪贴板', 'success');
+                    }).catch((e) => {
+                        console.error('[CharManager] 复制失败:', e);
+                        notify('复制失败，请手动选择复制', 'error');
+                    });
+                } else {
+                    // 降级方案：提示用户
+                    notify('当前环境不支持剪贴板 API，请手动复制', 'warning');
+                }
+            };
+        }
+        
+        // 导出结果
+        const exportBtn = ov.querySelector('#cm-batch-export');
+        exportBtn.onclick = () => {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const content = [
+                `批量 AI 标签结果 - ${timestamp}`,
+                `========================`,
+                `总计：${total} 个角色`,
+                `成功：${result.success} 个`,
+                `失败：${result.errors} 个`,
+                ``,
+                `--- 成功列表 ---`,
+                ...details.filter(d => d.success).map(d => `✅ ${d.name}`),
+                ``,
+                `--- 失败列表 ---`,
+                ...details.filter(d => !d.success).map(d => `❌ ${d.name} - ${d.error || '未知错误'}`)
+            ].join('\n');
+            
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = doc.createElement('a');
+            a.href = url;
+            a.download = `批量 AI 标签结果-${timestamp}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            notify('结果已导出', 'success');
+        };
     });
 }

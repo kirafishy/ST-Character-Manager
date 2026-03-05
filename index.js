@@ -2276,6 +2276,8 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
     let success = 0, errors = 0;
     const total = targetChars.length;
     let cancelled = false;
+    // 收集详细信息用于结果弹窗
+    let details = [];
     
     // 显示进度条（带取消按钮和回调）
     showProgressBar('准备开始批量处理...', () => {
@@ -2285,7 +2287,8 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
     });
     
     try {
-        const { generateAIOverview, generateBatchOverview, extractCharacterData } = await import('./ai-overview/ai-service.js');
+        const { generateAIOverview, generateBatchOverview } = await import('./ai-overview/ai-service.js');
+        const { showBatchResultModal } = await import('./ui-utils.js');
         
         let result = { success: 0, errors: 0, batchInfo: { total: 0, failed: 0 } };
         
@@ -2305,9 +2308,11 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                     // overwriteExisting=true 时强制生成标签
                     await generateAIOverview(char, overwriteExisting);
                     success++;
+                    details.push({ name: char.name, success: true });
                     notify(`✅ ${char.name}: 生成成功`, 'success', 1500);
                 } catch (e) {
                     errors++;
+                    details.push({ name: char.name, success: false, error: e.message });
                     notify(`❌ ${char.name}: ${e.message}`, 'error', 2000);
                 }
                 
@@ -2340,6 +2345,7 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                     case 'char_success':
                         processedCount++;
                         batchSuccess++;
+                        details.push({ name: event.charName, success: true });
                         notify(`✅ ${event.charName}: 生成成功`, 'success', 1000);
                         updateProgressBar(
                             Math.round((processedCount / total) * 100),
@@ -2351,6 +2357,7 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                     case 'char_error':
                         processedCount++;
                         batchErrors++;
+                        details.push({ name: event.charName, success: false, error: event.error });
                         notify(`❌ ${event.charName}: ${event.error}`, 'error', 1500);
                         updateProgressBar(
                             Math.round((processedCount / total) * 100),
@@ -2383,13 +2390,20 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                 ? `（${result.batchInfo.failed} 个批次失败）`
                 : '';
             updateProgressBar(100, '批量处理完成！' + batchInfoStr, `成功：${success} | 失败：${errors}`);
-            setTimeout(() => hideProgressBar(), 2000);
+            
+            // P1: 先关闭进度条，再显示结果弹窗，避免遮挡和交互干扰
+            hideProgressBar();
+            
+            // 显示结果弹窗
+            await showBatchResultModal({
+                success,
+                errors,
+                details
+            });
             
             // 刷新界面
             renderView();
             renderTagSidebar();
-            
-            notify(`批量完成：成功 ${success}, 失败 ${errors}${batchInfoStr}`, 'success');
         }
     } catch (e) {
         console.error('[CharManager] [AI Batch] Error:', e);
