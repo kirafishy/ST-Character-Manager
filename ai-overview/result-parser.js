@@ -3,9 +3,10 @@
  * 解析 AI 返回的 JSON 结果并保存到角色卡
  */
 import { saveCharacterData, applyTagsByNames } from '../data.js';
-import { sanitizeTags, checkCharHasTags } from '../utils.js';
+import { sanitizeTags, checkCharHasTags, getCharacterFileName } from '../utils.js';
 import { state } from '../state.js';
 import { getCmManager } from '../st-tags.js';
+import { parseStreamingOverviewChunk, StreamingParserState } from '../utils/streaming-parser.js';
 
 /**
  * 安全解析 JSON，处理可能存在的格式问题
@@ -205,6 +206,78 @@ export async function parseBatchOverviewResult(aiResponse, characters, forceGene
             });
         }
     }
-    
     return outputResults;
 }
+
+/**
+ * 流式解析批量概览结果（集成 streaming-parser）
+ * @param {string} chunk - 新增文本块
+ * @param {StreamingParserState} state - 解析器状态
+ * @param {boolean} isDone - 是否完成
+ * @param {Map<string, object>} characterMap - fileName -> 角色对象映射
+ * @param {boolean} forceGenerateTags - 是否强制生成标签
+ * @param {function} onCharComplete - 角色完成回调 (result) => void
+ * @returns {{ processed: number, errors: string[] }}
+ */
+export function parseStreamingBatchChunk(chunk, state, isDone, characterMap, forceGenerateTags, onCharComplete) {
+    const { completeObjects, errors } = parseStreamingOverviewChunk(chunk, state, isDone);
+    let processed = 0;
+    
+    for (const obj of completeObjects) {
+        const char = characterMap.get(obj.fileName);
+        if (char) {
+            const result = processOverviewResult(obj, char, forceGenerateTags);
+            if (onCharComplete) {
+                onCharComplete(result);
+            }
+            processed++;
+        } else {
+            errors.push(`未找到角色：${obj.fileName}`);
+        }
+    }
+    
+    return { processed, errors };
+}
+
+/**
+ * 处理单个概览结果（同步版本，用于流式处理）
+ * 注意：此函数仅更新 char.data 对象，不进行持久化操作
+ * @param {object} overview - AI 返回的概览对象
+ * @param {object} char - 角色对象
+ * @param {boolean} forceGenerateTags - 是否强制生成标签
+ * @returns {{ fileName: string, charName: string, success: boolean, error?: string }}
+ */
+export function processOverviewResult(overview, char, forceGenerateTags = false) {
+    try {
+        const data = char.data || {};
+        const hasExistingTags = data.tags && Array.isArray(data.tags) && data.tags.length > 0;
+        
+        // 更新概览（始终更新）
+        if (overview.summary !== undefined) {
+            data.creatorcomment = overview.summary;
+        }
+        
+        // 更新标签：根据 forceGenerateTags 参数决定是否覆盖已有标签
+        if (overview.tags && Array.isArray(overview.tags)) {
+            if (forceGenerateTags || !hasExistingTags) {
+                // 强制生成或角色无标签时，覆盖标签
+                data.tags = overview.tags;
+            }
+            // 否则保留已有标签，不覆盖
+        }
+        
+        return {
+            fileName: getCharacterFileName(char),
+            charName: char.name,
+            success: true
+        };
+    } catch (e) {
+        return {
+            fileName: getCharacterFileName(char),
+            charName: char.name,
+            success: false,
+            error: e.message
+        };
+    }
+}
+

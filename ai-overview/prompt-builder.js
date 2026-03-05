@@ -20,11 +20,11 @@ export function buildOverviewPrompt(cardData, hasTags, systemTags) {
 ${baseData}
 
 [任务要求]
-1. 概览：150字以内，精炼概括角色核心特征
+1. 概览：300字以内，精炼概括角色核心特征
 2. 该角色已有标签，不需要生成标签
 
-[回复格式] 严格仅返回JSON，不要markdown标记：
-{"summary": "..."}`;
+[回复格式] 直接返回纯JSON，禁止使用markdown代码块包裹（禁止使用\`\`\`json或\`\`\`），直接输出原始JSON：
+{"summary": "...", "tags": ["标签1", "标签2"]}`;
     } else {
         const maxTags = state.settings.aiMaxTags || 5;
         return `你是一位专业的角色卡分析师。请分析以下角色卡数据，生成概览和标签。
@@ -32,7 +32,7 @@ ${baseData}
 ${baseData}
 
 [任务要求]
-1. 概览：150字以内，精炼概括角色核心特征
+1. 概览：300字以内，精炼概括角色核心特征
 2. 标签：最多${maxTags}个，仅从以下[系统标签库]中选择匹配标签
 
 [标签生成顺序]
@@ -50,7 +50,7 @@ ${baseData}
 [系统标签库]
 ${JSON.stringify(systemTags)}
 
-[回复格式] 严格仅返回JSON，不要markdown标记：
+[回复格式] 直接返回纯JSON，禁止使用markdown代码块包裹（禁止使用\`\`\`json或\`\`\`），直接输出原始JSON：
 {"summary": "...", "tags": ["标签1", "标签2"]}`;
     }
 }
@@ -77,8 +77,8 @@ ${buildCharacterDataSection(card)}`;
 [角色卡列表]${charactersSection}
 
 [任务要求]
-1. 为每个角色生成概览：150字以内，精炼概括角色核心特征
-2. 为每个角色生成标签：最多${maxTags}个，仅从[系统标签库]中选择匹配标签
+1. 为每个角色卡生成概览：300字以内，精炼概括角色卡核心特征
+2. 为每个角色卡生成标签：最多${maxTags}个，仅从[系统标签库]中选择匹配标签
 
 [标签生成顺序]
 1. 先判定分级标签：仅在证据充分时输出（如内容分级 SFW/NSFW）
@@ -95,7 +95,7 @@ ${buildCharacterDataSection(card)}`;
 [系统标签库]
 ${JSON.stringify(systemTags)}
 
-[回复格式] 严格仅返回JSON，不要markdown标记。主格式为 {"results":[...]}，若无法返回包裹格式则纯数组 [...] 也可接受：
+[回复格式] 直接返回纯JSON，禁止使用markdown代码块包裹（禁止使用\`\`\`json或\`\`\`），直接输出原始JSON。主格式为 {"results":[...]}，若无法返回包裹格式则纯数组 [...] 也可接受：
 {
   "results": [
     {"fileName": "角色1的fileName", "summary": "...", "tags": ["标签1", "标签2"]},

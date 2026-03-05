@@ -7,3 +7,5 @@ version-bump.js
 .vscode/tasks.json
 CLAUDE.md
 .claude/
+# 开发文档（用户不需要下载）
+docs/

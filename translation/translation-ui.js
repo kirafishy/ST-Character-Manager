@@ -329,6 +329,9 @@ function buildDialogHTML() {
                     <button id="cmTransRunAll" class="cm-trans-btn cm-trans-btn-primary">
                         🚀 ${t('close') === 'Close' ? 'Translate All Pending' : '翻译全部未完成'}
                     </button>
+                    <button id="cmTransCancel" class="cm-trans-btn cm-trans-btn-danger" style="display:none;">
+                        ⏹️ ${t('close') === 'Close' ? 'Cancel' : '取消'}
+                    </button>
 
                     <button id="cmTransScanGlossary" class="cm-trans-btn cm-trans-btn-warning">
                         🔍 ${t('btnScanGlossary')}
@@ -637,6 +640,20 @@ function bindAllEvents(ov) {
         runAllBtn.onclick = () => runTranslation(ov, 'all');
     }
 
+    // 取消翻译按钮
+    const cancelBtn = ov.querySelector('#cmTransCancel');
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            if (service) {
+                // 设置取消状态，停止后续批次
+                translationState.cancel();
+                // 取消当前请求
+                service.cancelOngoingRequest();
+                _notify(t('close') === 'Close' ? 'Translation cancelled' : '翻译已取消', 'info');
+            }
+        };
+    }
+
     // === 进度下拉菜单 ===
     const exportProgressBtn = ov.querySelector('#cmTransExportProgress');
     if (exportProgressBtn) {
@@ -834,7 +851,43 @@ function updateProgressBar(ov) {
 
 // ========== 翻译逻辑 ==========
 
+/**
+ * 翻译状态管理器（封装取消状态，避免模块级变量泄漏）
+ *
+ * @单例限制 此对象为模块级单例，不支持多个翻译界面同时运行。
+ * 如果未来需要支持多实例翻译，需要将其改为与 UI 实例绑定的状态对象。
+ *
+ * @example
+ * // 开始翻译前重置状态
+ * translationState.reset();
+ * // 用户点击取消时调用
+ * translationState.cancel();
+ * // 处理循环中检查状态
+ * if (translationState.isCancelled()) break;
+ */
+const translationState = {
+    _cancelled: false,
+    
+    /** 重置取消状态 */
+    reset() {
+        this._cancelled = false;
+    },
+    
+    /** 设置取消状态 */
+    cancel() {
+        this._cancelled = true;
+    },
+    
+    /** 检查是否已取消 */
+    isCancelled() {
+        return this._cancelled;
+    }
+};
+
 async function runTranslation(ov, mode, groupFilter) {
+    // 重置取消状态
+    translationState.reset();
+    
     const tasks = [];
 
     Object.keys(currentTranslationData).forEach(group => {
@@ -891,38 +944,74 @@ async function runTranslation(ov, mode, groupFilter) {
 
     const isSingleMode = state.settings.singleGroupMode;
 
+    // 显示取消按钮，隐藏翻译按钮
+    const cancelBtn = ov.querySelector('#cmTransCancel');
+    const runSelectedBtn = ov.querySelector('#cmTransRunSelected');
+    const runAllBtn = ov.querySelector('#cmTransRunAll');
+    if (cancelBtn) cancelBtn.style.display = 'inline-block';
+    if (runSelectedBtn) runSelectedBtn.style.display = 'none';
+    if (runAllBtn) runAllBtn.style.display = 'none';
+
     _notify(t('notifyTranslationStarted'), 'info');
 
-    if (isSingleMode) {
-        for (const task of tasks) {
-            await translateSingleItem(ov, task.group, task.key, charContext, translateOptions);
-            await new Promise(r => setTimeout(r, 300));
-        }
-    } else {
-        const grouped = {};
-        tasks.forEach(t => {
-            if (!grouped[t.group]) grouped[t.group] = [];
-            grouped[t.group].push(t.key);
-        });
+    try {
+        if (isSingleMode) {
+            for (const task of tasks) {
+                // 检查取消状态
+                if (translationState.isCancelled()) {
+                    console.log('[CharManager] [Translation] 翻译已取消，停止处理');
+                    break;
+                }
+                await translateSingleItem(ov, task.group, task.key, charContext, translateOptions);
+                await new Promise(r => setTimeout(r, 300));
+            }
+        } else {
+            const grouped = {};
+            tasks.forEach(t => {
+                if (!grouped[t.group]) grouped[t.group] = [];
+                grouped[t.group].push(t.key);
+            });
 
-        for (const group of Object.keys(grouped)) {
-            // 针对每个组进行分批处理，避免单次请求过大
-            const keys = grouped[group];
-            const BATCH_SIZE = 15; // 限制每批次翻译的字段数量
-            
-            for (let i = 0; i < keys.length; i += BATCH_SIZE) {
-                const batchKeys = keys.slice(i, i + BATCH_SIZE);
-                await translateGroup(ov, group, batchKeys, charContext, translateOptions);
-                // 批次间短暂延迟
-                if (i + BATCH_SIZE < keys.length) {
-                    await new Promise(r => setTimeout(r, 500));
+            for (const group of Object.keys(grouped)) {
+                // 检查取消状态
+                if (translationState.isCancelled()) {
+                    console.log('[CharManager] [Translation] 翻译已取消，停止处理');
+                    break;
+                }
+                
+                // 针对每个组进行分批处理，避免单次请求过大
+                const keys = grouped[group];
+                const BATCH_SIZE = 15; // 限制每批次翻译的字段数量
+                
+                for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+                    // 检查取消状态
+                    if (translationState.isCancelled()) {
+                        console.log('[CharManager] [Translation] 翻译已取消，停止处理');
+                        break;
+                    }
+                    
+                    const batchKeys = keys.slice(i, i + BATCH_SIZE);
+                    await translateGroup(ov, group, batchKeys, charContext, translateOptions);
+                    // 批次间短暂延迟
+                    if (i + BATCH_SIZE < keys.length) {
+                        await new Promise(r => setTimeout(r, 500));
+                    }
                 }
             }
         }
-    }
 
-    _notify(t('notifyTranslationCompleted', { count: countItems('done') }), 'success');
-    updateProgressBar(ov);
+        if (!translationState.isCancelled()) {
+            _notify(t('notifyTranslationCompleted', { count: countItems('done') }), 'success');
+        }
+        updateProgressBar(ov);
+    } finally {
+        // 恢复按钮状态：隐藏取消按钮，显示翻译按钮
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        if (runSelectedBtn) runSelectedBtn.style.display = 'inline-block';
+        if (runAllBtn) runAllBtn.style.display = 'inline-block';
+        // 重置取消状态
+        translationState.reset();
+    }
 }
 
 async function translateSingleItem(ov, group, key, charContext, options = {}) {
@@ -943,7 +1032,19 @@ async function translateSingleItem(ov, group, key, charContext, options = {}) {
         }
 
         const dataToTranslate = { [key]: originalText };
-        const result = await service.translate(dataToTranslate, charContext, options);
+        const response = await service.translate(dataToTranslate, charContext, options);
+        
+        // 检查是否被取消
+        if (response.cancelled === true) {
+            // 取消时保持 IDLE 状态，不标记为成功或错误
+            item.status = STATUS.IDLE;
+            item.error = null;
+            updateItemUI(ov, group, key);
+            updateProgressBar(ov);
+            return;
+        }
+        
+        const result = response.data;
 
         if (result[key]) {
             // MVU 后处理：恢复被保护的变量名
@@ -978,7 +1079,7 @@ async function translateGroup(ov, group, keys, charContext, options = {}) {
         
         // MVU 预处理
         const isMVUContent = mvuAnalysis && (group === 'regex' || group === 'scripts') &&
-                             (k.includes('replaceString') || k.includes('content'));
+                             (k.includes('replaceString') || key.includes('content'));
         if (isMVUContent) {
             const { processed, markers } = preprocessMVUContent(text, mvuAnalysis.lockedPaths);
             text = processed;
@@ -989,11 +1090,56 @@ async function translateGroup(ov, group, keys, charContext, options = {}) {
     });
 
     try {
-        const result = await service.translate(dataToTranslate, charContext, options);
+        // 使用流式翻译，传递 onChunk 回调实现实时更新
+        const response = await service.translate(dataToTranslate, charContext, options, (progress) => {
+            if (progress.type === 'field_complete') {
+                const { completedKeys, partialResult } = progress;
+                
+                // 更新已完成字段的 UI
+                for (const key of completedKeys) {
+                    const item = currentTranslationData[group][key];
+                    if (partialResult[key]) {
+                        // MVU 后处理
+                        let translated = partialResult[key];
+                        if (mvuMarkersMap[key]) {
+                            translated = postprocessMVUContent(translated, mvuMarkersMap[key]);
+                        }
+                        
+                        item.translated = translated;
+                        item.status = STATUS.SUCCESS;
+                        item.error = null;
+                        updateItemUI(ov, group, key);
+                    }
+                }
+                
+                // 更新进度条：使用累计完成数计算百分比
+                const completedInGroup = keys.filter(k => {
+                    const it = currentTranslationData[group][k];
+                    return it.status === STATUS.SUCCESS && it.translated;
+                }).length;
+                const percent = Math.round((completedInGroup / keys.length) * 100);
+                updateProgressBarText(ov, `正在翻译 ${group} 组... ${percent}%`);
+            }
+        });
 
+        // 解构响应结果
+        const result = response.data;
+        const wasCancelled = response.cancelled === true;
+        
         keys.forEach(k => {
             const item = currentTranslationData[group][k];
-            if (result[k]) {
+            
+            // 如果该字段已经通过流式回调成功翻译，跳过
+            if (item.status === STATUS.SUCCESS && item.translated) {
+                updateItemUI(ov, group, k);
+                return;
+            }
+            
+            // 取消时，不处理 result 中的补齐数据，保持 IDLE 状态
+            if (wasCancelled) {
+                item.status = STATUS.IDLE;
+                item.error = null;
+            } else if (result[k]) {
                 // MVU 后处理
                 let translated = result[k];
                 if (mvuMarkersMap[k]) {
@@ -1013,6 +1159,13 @@ async function translateGroup(ov, group, keys, charContext, options = {}) {
         const wasAborted = handleTranslationError({ status: null, error: null }, e);
         keys.forEach(k => {
             const item = currentTranslationData[group][k];
+            
+            // 如果该字段已经通过流式回调成功翻译，保留结果
+            if (item.status === STATUS.SUCCESS && item.translated) {
+                updateItemUI(ov, group, k);
+                return;
+            }
+            
             if (wasAborted) {
                 item.status = STATUS.IDLE;
                 item.error = null;
@@ -1024,6 +1177,26 @@ async function translateGroup(ov, group, keys, charContext, options = {}) {
         });
     }
     updateProgressBar(ov);
+}
+
+/**
+ * 更新进度条文本
+ * @param {HTMLElement} ov - 弹窗元素
+ * @param {string} text - 进度文本
+ */
+function updateProgressBarText(ov, text) {
+    // 优先查找进度文本元素，确保准确的 DOM 更新
+    const progressText = ov.querySelector('.cm-progress-bar .cm-progress-text');
+    if (progressText) {
+        progressText.textContent = text;
+        return;
+    }
+    
+    // 回退：直接查找进度条容器（兼容旧版本 HTML）
+    const progressBar = ov.querySelector('.cm-progress-bar');
+    if (progressBar) {
+        progressBar.textContent = text;
+    }
 }
 
 function setItemStatus(ov, group, key, status) {

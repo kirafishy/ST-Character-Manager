@@ -1,5 +1,6 @@
 import { getSTContext } from '../context.js';
 import { getAuthHeaders, authFetch } from '../api.js';
+import { parseSSELines, parseSSELine, extractSSEContent, StreamingParserState, parseStreamingTranslationChunk } from '../utils/streaming-parser.js';
 
 /**
  * 安全解析 JSON，处理可能存在的 Markdown 代码块或非标准格式
@@ -140,9 +141,10 @@ export class TranslationService {
      * @param {object} charContext - 角色上下文 (name, personality, etc.)
      * @param {object} [options] - 可选参数
      * @param {string} [options.glossaryText] - 术语表文本
-     * @returns {Promise<object>} 翻译后的键值对对象
+     * @param {function} [onChunk] - chunk 回调 (progress: { type: 'field_complete', completedKeys: string[], allKeys: string[], partialResult: object }) => void
+     * @returns {Promise<{ data: object, cancelled: boolean }>} 翻译结果对象，包含 data（翻译后的键值对）和 cancelled（是否被取消）字段
      */
-    async translate(dataToTranslate, charContext, options = {}) {
+    async translate(dataToTranslate, charContext, options = {}, onChunk = null) {
         // API 配置验证
         if (this.settings.translationApi === 'openai') {
             if (!this.settings.openaiApiKey || !this.settings.openaiApiKey.trim()) {
@@ -158,6 +160,11 @@ export class TranslationService {
             this.abortController.abort();
             this.abortController = null;
         }
+
+        // 创建解析器状态
+        const expectedKeys = Object.keys(dataToTranslate);
+        const parserState = new StreamingParserState();
+        const result = {};
 
         const prompt = this.getSystemPrompt(options);
         
@@ -209,9 +216,50 @@ export class TranslationService {
                 let responseText = '';
 
                 if (this.settings.translationApi === 'openai') {
-                    responseText = await this._callOpenAI(messages);
+                    // 使用流式调用（带 onChunk 回调）
+                    if (onChunk) {
+                        // 确保清理可能残留的 controller（双重保护）
+                        if (this.abortController) {
+                            this.abortController.abort();
+                        }
+                        // 创建 AbortController 用于流式调用
+                        this.abortController = new AbortController();
+                        responseText = await this._callOpenAIStreaming(
+                            messages,
+                            (chunk) => {
+                                // 增量解析
+                                const { completePairs } = parseStreamingTranslationChunk(chunk, parserState, expectedKeys, false);
+                                
+                                // 只在有新完成的字段时才处理
+                                const newKeys = Object.keys(completePairs).filter(k => !result[k]);
+                                if (newKeys.length === 0) return;
+                                
+                                // 调试日志：只打印新完成的字段
+                                if (this.settings.debugMode) {
+                                    const newPairs = {};
+                                    newKeys.forEach(k => newPairs[k] = completePairs[k]);
+                                    console.log('[CharManager] [Translation] 新完成字段:', newKeys.join(', '));
+                                }
+                                
+                                // 合并到结果
+                                Object.assign(result, completePairs);
+                                // 回调通知 UI
+                                if (onChunk) {
+                                    onChunk({
+                                        type: 'field_complete',
+                                        completedKeys: newKeys,
+                                        allKeys: expectedKeys,
+                                        partialResult: { ...result }
+                                    });
+                                }
+                            },
+                            this.abortController.signal
+                        );
+                    } else {
+                        responseText = await this._callOpenAI(messages);
+                    }
                 } else {
-                    // 默认为酒馆原生 API
+                    // 默认为酒馆原生 API（非流式）
                     responseText = await this._callTavernAPI(messages);
                 }
 
@@ -219,9 +267,34 @@ export class TranslationService {
                     console.log('[CharManager] [Translation] Raw Response:', responseText);
                 }
 
-                const result = safeParseJson(responseText);
-                if (!result) {
-                    throw new Error('Failed to parse JSON response');
+                // 如果使用了流式回调，result 已经有部分数据
+                // 现在处理最终响应
+                if (onChunk) {
+                    // 最终解析（处理剩余缓冲区）
+                    const { completePairs, incompleteKeys, errors } = parseStreamingTranslationChunk('', parserState, expectedKeys, true);
+                    Object.assign(result, completePairs);
+                    
+                    // 处理未完成的字段（标记错误）
+                    for (const key of incompleteKeys) {
+                        result[key] = dataToTranslate[key]; // 保留原文
+                        console.warn(`[Translation] 字段 "${key}" 未完成，保留原文`);
+                    }
+                    
+                    // 验证并填充缺失字段
+                    for (const key of expectedKeys) {
+                        if (result[key] === undefined) {
+                            result[key] = dataToTranslate[key];
+                        }
+                    }
+                    
+                    // 流式模式已完成，跳过 safeParseJson
+                } else {
+                    // 非流式模式，使用原有逻辑
+                    const parsedResult = safeParseJson(responseText);
+                    if (!parsedResult) {
+                        throw new Error('Failed to parse JSON response');
+                    }
+                    Object.assign(result, parsedResult);
                 }
                 
                 // 简单的验证：确保所有 key 都存在
@@ -234,7 +307,7 @@ export class TranslationService {
                     }
                 }
 
-                return result;
+                return { data: result, cancelled: false };
 
             } catch (e) {
                 console.error(`[CharManager] [Translation] Error (Attempt ${attempt + 1}):`, e);
@@ -243,11 +316,12 @@ export class TranslationService {
                 // 如果是用户主动中断（关闭翻译界面），直接抛出，不再重试
                 if (e.name === 'AbortError' || (e.message && e.message.includes('aborted'))) {
                     console.log('[CharManager] [Translation] Request aborted by user');
-                    throw e;
+                    // 返回已解析的数据，使用明确的结构
+                    return { data: { ...dataToTranslate, ...result }, cancelled: true };
                 }
 
                 // 如果不是网络错误或 503，可能不需要重试 (视情况而定，这里简单处理都重试)
-                if (e.message.includes('400') || e.message.includes('401')) {
+                if (e.message && (e.message.includes('400') || e.message.includes('401'))) {
                     throw e; // 认证或请求错误不重试
                 }
             }
@@ -299,6 +373,11 @@ export class TranslationService {
             }
 
             const data = await res.json();
+            // 防御性编程：检查 choices 是否存在
+            if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                console.error('[CharManager] [Translation] Invalid API response:', JSON.stringify(data).slice(0, 500));
+                throw new Error('API 返回数据格式异常：缺少 choices 字段');
+            }
             return data.choices[0].message.content;
         } catch (e) {
             // 重新抛出错误，让上层处理
@@ -306,6 +385,94 @@ export class TranslationService {
         } finally {
             // 请求完成后（无论成功、失败或中断）清除 controller
             this.abortController = null;
+        }
+    }
+
+    /**
+     * 流式调用 OpenAI API（带自动降级）
+     * @param {object[]} messages - 消息数组
+     * @param {function} onChunk - chunk 回调 (content: string) => void
+     * @param {AbortSignal} signal - 取消信号
+     * @returns {Promise<string>}
+     */
+    async _callOpenAIStreaming(messages, onChunk, signal) {
+        const url = (this.settings.openaiBaseUrl || 'https://api.openai.com/v1').replace(/\/$/, '') + '/chat/completions';
+        const apiKey = this.settings.openaiApiKey || '';
+        const model = this.settings.openaiModel || 'gpt-3.5-turbo';
+
+        const body = {
+            model,
+            messages,
+            temperature: 0.7,
+            stream: true,
+            safety_settings: [
+                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+            ]
+        };
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify(body),
+                signal
+            });
+
+            if (!res.ok) {
+                // 降级到非流式
+                if (res.status === 400 || res.status === 501) {
+                    return await this._callOpenAI(messages);
+                }
+                const txt = await res.text();
+                throw new Error(`OpenAI API Error: ${res.status} - ${txt}`);
+            }
+
+            // 检查响应类型
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.includes('text/event-stream')) {
+                const json = await res.json();
+                return json.choices?.[0]?.message?.content || '';
+            }
+
+            // 流式读取
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let fullContent = '';
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const { lines, remaining } = parseSSELines(buffer);
+                buffer = remaining;
+
+                for (const line of lines) {
+                    const parsed = parseSSELine(line);
+                    if (parsed.type === 'data') {
+                        const content = extractSSEContent(parsed.content);
+                        if (content) {
+                            fullContent += content;
+                            if (onChunk) onChunk(content);
+                        }
+                    }
+                }
+            }
+
+            return fullContent;
+
+        } catch (e) {
+            if (e.name === 'AbortError') throw e;
+            // 降级到非流式
+            console.warn('[Translation] 流式请求失败，降级:', e.message);
+            return await this._callOpenAI(messages);
         }
     }
 

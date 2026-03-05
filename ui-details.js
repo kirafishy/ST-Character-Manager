@@ -1530,7 +1530,9 @@ export class CharacterDetails {
 
         try {
             const { generateAIOverview } = await import('./ai-overview/ai-service.js');
-            const result = await generateAIOverview(this.char, false);
+            // 使用设置中的 aiOverwriteTags 决定是否覆盖已有标签
+            const forceGenerateTags = state.settings.aiOverwriteTags || false;
+            const result = await generateAIOverview(this.char, forceGenerateTags);
 
             notify(`概览生成成功${result.tags.length > 0 ? `，已生成${result.tags.length}个标签` : ''}`, 'success');
 
