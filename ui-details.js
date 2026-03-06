@@ -2475,6 +2475,10 @@ export class CharacterDetails {
             const changes = {};
             let hasChanges = false;
 
+            // 预先获取当前世界书对象和新编辑器数据（用于处理 character_book 变化时保留 entries）
+            const currentCharBook = this.getCharProp('character_book');
+            const newBookFromEditor = getCharacterBookFromEditor();
+
             fields.forEach(f => {
                 const newVal = inputs[f.key].value.trim();
                 let oldVal = this.getCharProp(f.key);
@@ -2484,7 +2488,23 @@ export class CharacterDetails {
                 }
 
                 if (newVal !== (oldVal || '')) {
-                    changes[f.key] = newVal;
+                    // 关键修复：character_book 必须始终写为完整对象，保留 entries
+                    if (f.key === 'character_book') {
+                        // 获取当前 entries（保留原有词条），确保不会返回 undefined
+                        const existingEntries = (currentCharBook?.entries) || (newBookFromEditor?.entries) || [];
+                        
+                        // 构建完整世界书对象
+                        changes[f.key] = {
+                            name: newVal,  // 名称来自输入框
+                            description: currentCharBook?.description || '',
+                            scan_depth: currentCharBook?.scan_depth ?? 2,
+                            token_budget: currentCharBook?.token_budget ?? 512,
+                            recursive_scanning: currentCharBook?.recursive_scanning ?? false,
+                            entries: existingEntries,  // 保留原有词条
+                        };
+                    } else {
+                        changes[f.key] = newVal;
+                    }
                     hasChanges = true;
                 }
             });
@@ -2497,16 +2517,28 @@ export class CharacterDetails {
             }
 
             const oldBookComparable = normalizeComparableBook(this.getCharProp('character_book'));
-            const newBook = getCharacterBookFromEditor();
-            const newBookComparable = normalizeComparableBook(newBook);
+            const newBookComparable = normalizeComparableBook(newBookFromEditor);
             if (JSON.stringify(oldBookComparable) !== JSON.stringify(newBookComparable)) {
-                changes['character_book'] = newBook;
+                changes['character_book'] = newBookFromEditor;
                 hasChanges = true;
             }
 
             if (!hasChanges) {
                 notify('没有检测到更改', 'info');
                 return;
+            }
+
+            // 防抖：保存进行中时禁用按钮并显示 loading 状态
+            const originalBtnText = saveBtn.innerHTML;
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="cm-spinner" style="display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;margin-right:6px;vertical-align:middle;"></span> 保存中...';
+            
+            // 添加 spinner 旋转动画（仅添加一次）
+            if (!doc.getElementById('cm-spinner-style')) {
+                const style = doc.createElement('style');
+                style.id = 'cm-spinner-style';
+                style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+                doc.head.appendChild(style);
             }
 
             try {
@@ -2547,6 +2579,10 @@ export class CharacterDetails {
 
             } catch (e) {
                 notify('保存失败: ' + e.message, 'error');
+            } finally {
+                // 恢复保存按钮状态
+                saveBtn.disabled = !unlockCheck.checked;
+                saveBtn.innerHTML = originalBtnText;
             }
         };
     }

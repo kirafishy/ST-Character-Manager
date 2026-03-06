@@ -847,6 +847,17 @@ export async function saveCharacterData(fileName, updateCallback) {
         // 2. 同步更新酒馆内存中的角色数据
         syncCharDataToMemory(fileName, charData);
         
+        // 3. 刷新酒馆的角色列表缓存，确保原生操作能读取到最新数据
+        // 这是关键：酒馆内部有自己的角色缓存，不刷新的话会被旧数据覆盖
+        try {
+            const ctx = getSTContext();
+            if (ctx && typeof ctx.getCharacters === 'function') {
+                await ctx.getCharacters();
+            }
+        } catch (e) {
+            console.warn('[CharManager] 刷新酒馆角色列表失败:', e);
+        }
+        
         // 持久化到 IndexedDB，确保重启后数据一致
         await persistCharacterState(true);
         
@@ -1026,6 +1037,16 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
         
         // 9. 同步更新酒馆内存中的角色数据，防止刷新时被旧数据覆盖
         syncCharDataToMemory(fileName, newCharData);
+        
+        // 10. 刷新酒馆的角色列表缓存，确保原生操作能读取到最新数据
+        try {
+            const ctx = getSTContext();
+            if (ctx && typeof ctx.getCharacters === 'function') {
+                await ctx.getCharacters();
+            }
+        } catch (e) {
+            console.warn('[CharManager] 刷新酒馆角色列表失败:', e);
+        }
         
         // 持久化到 IndexedDB，确保重启后数据一致
         await persistCharacterState(true);
