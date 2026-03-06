@@ -157,6 +157,10 @@ function buildCharacterDataSection(cardData) {
         sections.push(`Creator Comment: ${truncateText(cardData.creatorcomment, 900)}`);
     }
     
+    if (cardData.note) {
+        sections.push(`User Note: ${truncateText(cardData.note, 900)}`);
+    }
+    
     return sections.join('\n');
 }
 

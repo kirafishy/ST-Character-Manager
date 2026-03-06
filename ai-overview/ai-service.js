@@ -9,6 +9,7 @@ import { parseOverviewResult, parseBatchOverviewResult, processOverviewResult } 
 import { parseSSELines, parseSSELine, extractSSEContent, StreamingParserState, parseStreamingOverviewChunk } from '../utils/streaming-parser.js';
 import { saveCharacterData } from '../data.js';
 import { checkCharHasTags, getCharacterFileName } from '../utils.js';
+import { getCmManager } from '../st-tags.js';
 
 /**
  * @typedef {Object} ProgressEvent
@@ -31,6 +32,7 @@ import { checkCharHasTags, getCharacterFileName } from '../utils.js';
  */
 export function extractCharacterData(char) {
     const data = char.data || {};
+    const cm = getCmManager(char);
     return {
         fileName: char.fileName || char.avatar,
         name: char.name || (data.name || '未知角色'),
@@ -41,7 +43,8 @@ export function extractCharacterData(char) {
         mes_example: data.mes_example || '',
         system_prompt: data.system_prompt || (data.extensions && data.extensions.system_prompt) || '',
         post_history_instructions: data.post_history_instructions || (data.extensions && data.extensions.post_history_instructions) || '',
-        creatorcomment: data.creator_notes || data.creatorcomment || ''
+        creatorcomment: data.creator_notes || data.creatorcomment || '',
+        note: cm.note || ''
     };
 }
 
