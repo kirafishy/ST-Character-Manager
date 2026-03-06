@@ -269,18 +269,21 @@ export class TranslationService {
 
                 // 如果使用了流式回调，result 已经有部分数据
                 // 现在处理最终响应
+                let incompleteKeys = [];
                 if (onChunk) {
                     // 最终解析（处理剩余缓冲区）
-                    const { completePairs, incompleteKeys, errors } = parseStreamingTranslationChunk('', parserState, expectedKeys, true);
+                    const parseResult = parseStreamingTranslationChunk('', parserState, expectedKeys, true);
+                    const { completePairs, incompleteKeys: truncatedKeys, errors } = parseResult;
+                    incompleteKeys = truncatedKeys;
                     Object.assign(result, completePairs);
-                    
+
                     // 处理未完成的字段（截断时保留 undefined，不填充原文）
                     // 这样 UI 层可以标记为错误状态，用户可以重新翻译
                     for (const key of incompleteKeys) {
                         console.warn(`[Translation] 字段 "${key}" 翻译截断，未返回结果`);
                         // 不填充原文，保持 undefined，让 UI 层标记为错误
                     }
-                    
+
                     // 验证并填充缺失字段：只有当字段确实缺失时才填充原文
                     // 但如果是因为截断导致的缺失（incompleteKeys），不应填充原文
                     for (const key of expectedKeys) {
@@ -289,7 +292,7 @@ export class TranslationService {
                             result[key] = dataToTranslate[key];
                         }
                     }
-                    
+
                     // 流式模式已完成，跳过 safeParseJson
                 } else {
                     // 非流式模式，使用原有逻辑
@@ -299,14 +302,21 @@ export class TranslationService {
                     }
                     Object.assign(result, parsedResult);
                 }
-                
+
                 // 简单的验证：确保所有 key 都存在
+                // 关键修复：截断的字段不应填充原文
                 const keys = Object.keys(dataToTranslate);
                 for (const key of keys) {
                     if (result[key] === undefined) {
-                        // 如果缺失，尝试保留原文
-                        console.warn(`[CharManager] [Translation] Key '${key}' missing in response, keeping original.`);
-                        result[key] = dataToTranslate[key];
+                        // 如果是流式模式且该字段在 incompleteKeys 中，不填充原文
+                        if (onChunk && incompleteKeys.includes(key)) {
+                            console.warn(`[CharManager] [Translation] Key '${key}' 因截断无翻译结果，保持空值`);
+                            // 保持 undefined，让 UI 层标记为错误
+                        } else {
+                            // 非流式模式或非截断字段，填充原文
+                            console.warn(`[CharManager] [Translation] Key '${key}' missing in response, keeping original.`);
+                            result[key] = dataToTranslate[key];
+                        }
                     }
                 }
 

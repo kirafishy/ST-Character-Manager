@@ -328,17 +328,39 @@ export function parseStreamingTranslationChunk(chunk, state, expectedKeys = null
     // 正则匹配 "key": "value" 模式（value 中的引号已转义）
     const keyValueRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
     let match;
-    
+    const matchedKeys = new Set();
+
     while ((match = keyValueRegex.exec(state.buffer)) !== null) {
         const key = match[1];
-        const value = match[2]
+        const rawValue = match[2];
+        
+        // 关键修复：验证 value 是否是完整闭合的
+        // 如果 rawValue 以奇数个反斜杠结尾，说明最后一个引号被转义了，字符串未闭合
+        let isComplete = true;
+        if (rawValue) {
+            let backslashCount = 0;
+            for (let i = rawValue.length - 1; i >= 0 && rawValue[i] === '\\'; i--) {
+                backslashCount++;
+            }
+            // 如果反斜杠数量为奇数，说明最后一个引号被转义，字符串未闭合
+            if (backslashCount % 2 === 1) {
+                isComplete = false;
+                if (debugMode) {
+                    console.log('[CharManager] [StreamingParser] 检测到未闭合的 value，跳过:', key);
+                }
+                continue;
+            }
+        }
+
+        const value = rawValue
             .replace(/\\"/g, '"')
             .replace(/\\n/g, '\n')
             .replace(/\\t/g, '\t')
             .replace(/\\\\/g, '\\');
-        
-        if (key && !completePairs[key]) {
+
+        if (key && !completePairs[key] && !matchedKeys.has(key)) {
             completePairs[key] = value;
+            matchedKeys.add(key);
         }
     }
     
