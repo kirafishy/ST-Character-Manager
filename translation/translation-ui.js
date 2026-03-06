@@ -1150,8 +1150,9 @@ async function translateGroup(ov, group, keys, charContext, options = {}) {
                 item.status = STATUS.SUCCESS;
                 item.error = null;
             } else {
+                // 字段没有翻译结果（可能是流式传输截断导致）
                 item.status = STATUS.ERROR;
-                item.error = '翻译结果缺失';
+                item.error = '翻译截断，请重新翻译';
             }
             updateItemUI(ov, group, k);
         });

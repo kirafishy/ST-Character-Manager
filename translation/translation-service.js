@@ -274,15 +274,18 @@ export class TranslationService {
                     const { completePairs, incompleteKeys, errors } = parseStreamingTranslationChunk('', parserState, expectedKeys, true);
                     Object.assign(result, completePairs);
                     
-                    // 处理未完成的字段（标记错误）
+                    // 处理未完成的字段（截断时保留 undefined，不填充原文）
+                    // 这样 UI 层可以标记为错误状态，用户可以重新翻译
                     for (const key of incompleteKeys) {
-                        result[key] = dataToTranslate[key]; // 保留原文
-                        console.warn(`[Translation] 字段 "${key}" 未完成，保留原文`);
+                        console.warn(`[Translation] 字段 "${key}" 翻译截断，未返回结果`);
+                        // 不填充原文，保持 undefined，让 UI 层标记为错误
                     }
                     
-                    // 验证并填充缺失字段
+                    // 验证并填充缺失字段：只有当字段确实缺失时才填充原文
+                    // 但如果是因为截断导致的缺失（incompleteKeys），不应填充原文
                     for (const key of expectedKeys) {
-                        if (result[key] === undefined) {
+                        if (result[key] === undefined && !incompleteKeys.includes(key)) {
+                            // 只有在 AI 返回中完全缺失该字段时才填充原文
                             result[key] = dataToTranslate[key];
                         }
                     }
