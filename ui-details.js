@@ -15,6 +15,53 @@ import { getGalleryItems, showGallery, renderGallery } from './gallery.js';
 import { openTranslationDialog } from './translation/translation-ui.js';
 import { calculateTokens } from './utils.js';
 
+/**
+ * 从 SillyTavern 上下文获取指定函数
+ * @param {string} name - 函数名称
+ * @returns {Function|null}
+ */
+function getSTFunction(name) {
+    const ctx = getSTContext();
+    if (ctx && typeof ctx[name] === 'function') {
+        return ctx[name];
+    }
+    if (parentWin && typeof parentWin[name] === 'function') {
+        return parentWin[name];
+    }
+    return null;
+}
+
+/**
+ * 获取 SillyTavern 的 selectCharacterById 函数用于切换角色
+ * @returns {Function|null}
+ */
+function getSelectCharacterById() {
+    return getSTFunction('selectCharacterById');
+}
+
+/**
+ * 获取 SillyTavern 的 openCharacterChat 函数用于打开或创建聊天
+ * @returns {Function|null}
+ */
+function getOpenCharacterChat() {
+    return getSTFunction('openCharacterChat');
+}
+
+/**
+ * 获取 humanizedDateTime 函数用于生成聊天文件名
+ * @returns {Function|null}
+ */
+function getHumanizedDateTime() {
+    const ctx = getSTContext();
+    if (ctx && typeof ctx.humanizedDateTime === 'function') {
+        return ctx.humanizedDateTime;
+    }
+    if (parentWin && typeof parentWin.humanizedDateTime === 'function') {
+        return parentWin.humanizedDateTime;
+    }
+    return null;
+}
+
 // 标签页定义
 const TABS = [
     { id: 'details', label: '详情', icon: ICONS.menu },
@@ -242,11 +289,50 @@ export class CharacterDetails {
             }
         }
 
+        // 开始新对话 vs 加载存档
+        if (!chatFile) {
+            // 开始新对话
+            this.close();
+            closeModal();
+
+            // 获取角色索引
+            const targetFileName = this.char.fileName;
+            const stChars = getSTCharacters();
+            const chIndex = stChars.findIndex(c => c.avatar === targetFileName);
+
+            if (chIndex === -1) {
+                console.error('[CharManager] 角色未找到:', targetFileName);
+                notify('启动失败：内存中未找到该角色', 'error');
+                return;
+            }
+
+            // 先切换到该角色（设置 this_chid）
+            const selectChar = getSelectCharacterById();
+            if (selectChar) {
+                await selectChar(chIndex);
+            }
+
+            // 然后创建新聊天
+            const openChat = getOpenCharacterChat();
+            if (openChat) {
+                // 生成新聊天文件名：角色名 - 时间戳
+                const humanizedDateTime = getHumanizedDateTime();
+                const baseName = this.char.fileName.replace(/\.[^/.]+$/, '');
+                const newChatFile = `${baseName} - ${humanizedDateTime ? humanizedDateTime() : new Date().toISOString()}`;
+                await openChat(newChatFile);
+                notify('已创建新对话', 'success');
+            } else {
+                console.error('[CharManager] openCharacterChat not found');
+                notify('启动失败：无法创建新对话', 'error');
+            }
+            return;
+        }
+
+        // 加载存档
         this.close();
         closeModal(); // 关闭管理器主弹窗
-        
+
         const switchChatAfterLoad = async () => {
-            if (!chatFile) return;
             await new Promise(r => setTimeout(r, 500));
             try {
                 const ctx = getSTContext();
