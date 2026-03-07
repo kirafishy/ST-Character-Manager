@@ -847,13 +847,11 @@ async function showTagImportPopup(character, existingTags, newTags) {
             <div class="cm-tag-editor">
                 <div class="cm-tag-editor-header">
                     <h3>导入标签 - ${escapeHtml(character.name)}</h3>
-                    <button class="cm-tag-editor-close">×</button>
                 </div>
                 <div class="cm-tag-editor-body">
                     ${bodyHtml}
                 </div>
                 <div class="cm-tag-editor-footer">
-                    <button class="cm-btn cm-btn-secondary" id="cm-tag-import-cancel">取消</button>
                     <button class="cm-btn cm-btn-secondary" id="cm-tag-import-none">不导入</button>
                     ${existingTags.length > 0 ? '<button class="cm-btn cm-btn-secondary" id="cm-tag-import-existing">仅导入已存在</button>' : ''}
                     <button class="cm-btn cm-btn-primary" id="cm-tag-import-all">导入选中</button>
@@ -867,22 +865,11 @@ async function showTagImportPopup(character, existingTags, newTags) {
         let selectedExisting = [...existingTags];
         let selectedNew = [...newTags];
 
-        // 关闭弹窗的函数
+        // 关闭弹窗的函数（用户必须通过底部按钮明确选择）
         const closePopup = (result) => {
             overlay.remove();
             resolve(result);
         };
-
-        // 点击遮罩层关闭
-        overlay.onclick = (e) => {
-            if (e.target === overlay) closePopup([]);
-        };
-
-        // 关闭按钮
-        overlay.querySelector('.cm-tag-editor-close').onclick = () => closePopup([]);
-
-        // 取消按钮
-        overlay.querySelector('#cm-tag-import-cancel').onclick = () => closePopup([]);
 
         // 不导入按钮
         overlay.querySelector('#cm-tag-import-none').onclick = () => closePopup([]);
