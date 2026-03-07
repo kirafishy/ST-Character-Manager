@@ -352,15 +352,24 @@ export async function importTags(character, { importSetting = null, skipSave = f
     // Save user selection to cm_manager.tags
     const selectedTagNames = tagsToApply.map(t => t.name);
     cm.tags = selectedTagNames;
-    
+
     // Save cm_manager.tags to character card file
+    // 关键修改：即使 skipSave=true，对于明确决策（不导入/导入）也必须持久化
+    // 只有未触发用户交互的内部调用才允许跳过
+    const isExplicitDecision = setting === tag_import_setting.ASK || setting === tag_import_setting.NONE;
     if (!skipSave) {
         await saveCmManagerTags(avatar, selectedTagNames);
+    } else if (isExplicitDecision) {
+        // 对于明确决策（NONE 策略或 ASK 策略返回空数组），强制持久化
+        await saveCmManagerTags(avatar, selectedTagNames);
     }
-    
-    // Apply tags
+
+    // Apply tags (清空标签关联当用户选择不导入时)
     if (tagsToApply && tagsToApply.length > 0) {
         await applyTags(avatar, tagsToApply, skipSave, true);
+    } else if (tagsToApply.length === 0 && setting === tag_import_setting.ASK) {
+        // 用户明确选择"不导入"，清空内存中的标签关联
+        clearCharTags(avatar);
     }
 }
 
