@@ -330,59 +330,35 @@ export class CharacterDetails {
 
         // 加载存档
         this.close();
-        closeModal(); // 关闭管理器主弹窗
+        closeModal();
 
-        const switchChatAfterLoad = async () => {
-            await new Promise(r => setTimeout(r, 500));
-            try {
-                const ctx = getSTContext();
-                if (ctx.loadChat) {
-                    await ctx.loadChat(chatFile);
-                    notify('已加载存档: ' + chatFile, 'success');
-                } else if (parentWin.loadChat) {
-                    parentWin.loadChat(chatFile);
-                    notify('已加载存档: ' + chatFile, 'success');
-                }
-            } catch (e) { console.warn('Load chat failed', e); }
-        };
-
+        // 获取角色索引
         const targetFileName = this.char.fileName;
         const stChars = getSTCharacters();
         const chIndex = stChars.findIndex(c => c.avatar === targetFileName);
 
         if (chIndex === -1) {
+            console.error('[CharManager] 角色未找到:', targetFileName);
             notify('启动失败：内存中未找到该角色', 'error');
             return;
         }
 
-        const targets = [parentWin, window];
-        let found = false;
-
-        const domId = 'CharID' + chIndex;
-        for (const win of targets) {
-            if (!win || !win.document) continue;
-            const el = win.document.getElementById(domId);
-            if (el) {
-                el.click();
-                found = true;
-                switchChatAfterLoad();
-                break;
-            }
+        // 先切换到该角色（设置 this_chid）
+        const selectChar = getSelectCharacterById();
+        if (selectChar) {
+            await selectChar(chIndex);
         }
 
-        if (!found) {
-            // 尝试使用 API 切换
-            try {
-                const ctx = getSTContext();
-                if (ctx.selectCharacterById) {
-                    ctx.selectCharacterById(chIndex);
-                    switchChatAfterLoad();
-                } else {
-                    notify('无法自动切换角色，请手动选择', 'warning');
-                }
-            } catch (e) {
-                notify('启动失败: ' + e.message, 'error');
-            }
+        // 使用 openCharacterChat 加载存档
+        const openChat = getOpenCharacterChat();
+        if (openChat) {
+            // chatFile 需要去掉 .jsonl 后缀
+            const chatFileWithoutExt = chatFile.replace(/\.jsonl$/i, '');
+            await openChat(chatFileWithoutExt);
+            notify('已加载存档: ' + chatFile, 'success');
+        } else {
+            console.error('[CharManager] openCharacterChat not found');
+            notify('启动失败：无法加载存档', 'error');
         }
     }
 
