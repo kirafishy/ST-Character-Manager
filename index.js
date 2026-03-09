@@ -1,6 +1,6 @@
 import { ICONS, COLORS, Z_INDEX, AI_MODELS, getModelTokenLimit } from './constants.js';
 import manifest from './manifest.json' with { type: 'json' };
-import { doc, parentWin, getSTContext, getSTCharacters } from './context.js';
+import { doc, parentWin, getSTContext, getSTCharacters, getCurrentChatChar } from './context.js';
 import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip, notify, parsePNG } from './utils.js';
 import { createBaseDialog, showAlert, showConfirm, showDeleteConfirm, showErrorReport } from './ui-utils.js';
 export { createBaseDialog, showAlert, showConfirm, showDeleteConfirm, showErrorReport };
@@ -1603,6 +1603,17 @@ function createCard(char, isDup) {
     card.dataset.file = char.fileName;
     card.dataset.index = state.characters.indexOf(char);
 
+    // 检测是否为当前聊天角色卡
+    const currentChatChar = getCurrentChatChar();
+    if (currentChatChar && currentChatChar.fileName === char.fileName) {
+        card.classList.add('cm-current');
+    }
+
+    // 检测是否为收藏卡
+    if (char.fav) {
+        card.classList.add('cm-favorite');
+    }
+
     const charTags = getCharTags(char.fileName);
     let tagsHtml = '';
     if (charTags.length > 0) {
@@ -1693,7 +1704,8 @@ function createCard(char, isDup) {
     };
 
     const startHandler = (e) => {
-        if (e.target.tagName === 'BUTTON') return;
+        // 检查是否点击了按钮（包括按钮内部的 SVG 等元素）
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
         if (e.button === 2) return;
 
         // 防止触摸设备上的重复触发 (Touch -> Mouse)
@@ -1751,7 +1763,8 @@ function createCard(char, isDup) {
     };
 
     const endHandler = (e) => {
-        if (e.target.tagName === 'BUTTON') return;
+        // 检查是否点击了按钮（包括按钮内部的 SVG 等元素）
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
         // 交给 body.onclick 处理 Shift/Ctrl/Meta 组合键
         if (e.shiftKey || e.ctrlKey || e.metaKey) return;
 
@@ -3134,6 +3147,8 @@ function createModal() {
                 const newState = await toggleFavorite(fileName, char.fav);
                 char.fav = newState;
                 favBtn.classList.toggle('active', newState);
+                // 更新卡片的收藏样式类
+                card.classList.toggle('cm-favorite', newState);
                 if (state.currentView === 'favorites' && !newState) renderView();
                 renderTagSidebar();
             }

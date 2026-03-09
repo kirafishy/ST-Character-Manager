@@ -5208,3 +5208,54 @@ body.hide-card-note .cm-note {
         height: 92vh !important;
     }
 }
+
+/* ========================================
+   当前卡与收藏卡高亮样式
+   ======================================== */
+
+/* 当前卡高亮样式 - 金橙色渐变边框 + 发光效果 */
+.cm-card.cm-current {
+    border: 2px solid transparent;
+    background:
+        linear-gradient(var(--cm-card-bg), var(--cm-card-bg)) padding-box,
+        linear-gradient(135deg, #f59e0b, #f97316, #ef4444) border-box;
+    box-shadow: 0 0 20px rgba(249, 115, 22, 0.4);
+}
+
+/* 当前卡 hover 时增强发光效果 */
+.cm-card.cm-current:hover {
+    box-shadow: 0 0 25px rgba(249, 115, 22, 0.6);
+}
+
+/* 收藏卡高亮样式 - 粉色边框 */
+.cm-card.cm-favorite {
+    border: 2px solid #ec4899;
+    box-shadow: 0 0 10px rgba(236, 72, 153, 0.3);
+}
+
+/* 收藏卡 hover 时增强发光效果 */
+.cm-card.cm-favorite:hover {
+    box-shadow: 0 0 15px rgba(236, 72, 153, 0.5);
+}
+
+/* 当前卡同时也是收藏卡时 - 优先显示当前卡样式 */
+.cm-card.cm-current.cm-favorite {
+    border: 2px solid transparent;
+    background:
+        linear-gradient(var(--cm-card-bg), var(--cm-card-bg)) padding-box,
+        linear-gradient(135deg, #f59e0b, #f97316, #ef4444) border-box;
+    box-shadow: 0 0 20px rgba(249, 115, 22, 0.4);
+}
+
+/* 亮色主题适配 */
+.cm-theme-light .cm-card.cm-current {
+    background:
+        linear-gradient(var(--cm-card-bg), var(--cm-card-bg)) padding-box,
+        linear-gradient(135deg, #f59e0b, #f97316, #ef4444) border-box;
+    box-shadow: 0 0 15px rgba(249, 115, 22, 0.3);
+}
+
+.cm-theme-light .cm-card.cm-favorite {
+    border: 2px solid #ec4899;
+    box-shadow: 0 0 8px rgba(236, 72, 153, 0.25);
+}

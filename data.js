@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { generateId, notify, loadJSZip, calculateTokens } from './utils.js';
-import { getSTContext, doc, parentWin, getSTCharacters } from './context.js';
+import { getSTContext, doc, parentWin, getSTCharacters, getCurrentChatChar } from './context.js';
 import { COLORS } from './constants.js';
 import { authFetch } from './api.js';
 import { setCache, setCacheBatch } from './db.js';
@@ -665,6 +665,11 @@ export function getTagCharCount(tagId) {
 
 export function filterAndSortChars(chars) {
     let result = chars;
+    
+    // 获取当前聊天角色的文件名
+    const currentChar = getCurrentChatChar();
+    const currentFileName = currentChar?.fileName;
+    
     if (state.searchQuery) {
         const q = state.searchQuery.toLowerCase();
         const matchMap = new Map();
@@ -685,13 +690,25 @@ export function filterAndSortChars(chars) {
             return false;
         });
         result.sort((a, b) => {
+            // 当前卡始终排在最前
+            if (currentFileName) {
+                if (a.fileName === currentFileName) return -1;
+                if (b.fileName === currentFileName) return 1;
+            }
             const typeA = matchMap.get(a.fileName);
             const typeB = matchMap.get(b.fileName);
             if (typeA !== typeB) return typeA - typeB;
             return compareChars(a, b);
         });
     } else {
-        result.sort(compareChars);
+        result.sort((a, b) => {
+            // 当前卡始终排在最前
+            if (currentFileName) {
+                if (a.fileName === currentFileName) return -1;
+                if (b.fileName === currentFileName) return 1;
+            }
+            return compareChars(a, b);
+        });
     }
     return result;
 }
