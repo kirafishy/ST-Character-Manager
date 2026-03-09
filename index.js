@@ -2,8 +2,8 @@ import { ICONS, COLORS, Z_INDEX, AI_MODELS, getModelTokenLimit } from './constan
 import manifest from './manifest.json' with { type: 'json' };
 import { doc, parentWin, getSTContext, getSTCharacters } from './context.js';
 import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip, notify, parsePNG } from './utils.js';
-import { createBaseDialog, showAlert, showConfirm, showDeleteConfirm } from './ui-utils.js';
-export { createBaseDialog, showAlert, showConfirm, showDeleteConfirm };
+import { createBaseDialog, showAlert, showConfirm, showDeleteConfirm, showErrorReport } from './ui-utils.js';
+export { createBaseDialog, showAlert, showConfirm, showDeleteConfirm, showErrorReport };
 import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
 import { getCache, setCache, clearCache, migrateFromLocalStorage } from './db.js';
@@ -1225,7 +1225,39 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
 
     } catch (e) {
         console.error(e);
-        notify('扫描出错: ' + e.message, 'error');
+        
+        // 收集详细的上下文信息
+        const errorContext = {
+            forceFull,
+            skipSync,
+            characterCount: state.characters?.length || 0,
+            tagsCount: state.tags?.length || 0,
+            tagMapKeys: state.tagMap ? Object.keys(state.tagMap).slice(0, 10) : [],
+        };
+        
+        // 如果是 JSON 解析错误，尝试提取更多信息
+        if (e.message && e.message.includes('JSON')) {
+            // 尝试获取可能导致问题的数据
+            try {
+                const ctx = getSTContext();
+                if (ctx && ctx.tagMap) {
+                    // 检查 tagMap 是否有异常值
+                    const tagMapStr = JSON.stringify(ctx.tagMap);
+                    errorContext.tagMapPreview = tagMapStr.substring(0, 500);
+                }
+            } catch (ctxErr) {
+                errorContext.tagMapError = ctxErr.message;
+            }
+        }
+        
+        // 显示详细错误报告弹窗
+        showErrorReport({
+            title: '扫描出错',
+            message: e.message || '未知错误',
+            error: e,
+            context: errorContext
+        });
+        
         if (forceFull) hideProgressBar();
     } finally {
         state.isScanning = false;
