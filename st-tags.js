@@ -124,22 +124,116 @@ function getTag(tagName) {
  * @returns {string[]} 标签名称数组
  */
 function getRawTags(character) {
+    // 诊断信息收集
+    const diagnostics = {
+        fileName: character.fileName || character.name || 'unknown',
+        tagsFieldType: typeof character.tags,
+        tagsFieldValue: null,
+        dataTagsFieldType: null,
+        dataTagsFieldValue: null,
+        finalType: null,
+        parseAttempt: null,
+        // 原始 JSON 结构（用于调试，敏感字段值会被脱敏）
+        rawJsonStructure: null,
+    };
+    
+    // 收集原始 JSON 结构（只保留键名和类型，不保留敏感值）
+    const getStructure = (obj, depth = 0) => {
+        if (depth > 5) return '[max depth]';
+        if (obj === null || obj === undefined) return obj === null ? 'null' : 'undefined';
+        if (typeof obj !== 'object') return typeof obj;
+        if (Array.isArray(obj)) {
+            if (obj.length === 0) return '[]';
+            return [`Array(${obj.length})`, getStructure(obj[0], depth + 1)];
+        }
+        const result = {};
+        for (const key of Object.keys(obj)) {
+            result[key] = getStructure(obj[key], depth + 1);
+        }
+        return result;
+    };
+    
+    // 构建简化的角色结构
+    diagnostics.rawJsonStructure = {
+        hasTags: character.tags !== undefined,
+        tagsType: character.tags !== undefined ? (Array.isArray(character.tags) ? 'array' : typeof character.tags) : 'undefined',
+        hasData: !!character.data,
+        dataTagsType: character.data?.tags !== undefined ? (Array.isArray(character.data.tags) ? 'array' : typeof character.data.tags) : 'undefined',
+        dataExtensionsKeys: character.data?.extensions ? Object.keys(character.data.extensions).slice(0, 20) : null,
+        cmManagerTags: character.data?.extensions?.cm_manager?.tags !== undefined
+            ? (Array.isArray(character.data.extensions.cm_manager.tags) ? `array[${character.data.extensions.cm_manager.tags.length}]` : typeof character.data.extensions.cm_manager.tags)
+            : 'undefined',
+    };
+    
     // Get tags from character metadata
     // Check both root level tags (V3/Internal) and data.tags (V2)
-    let rawTags = character.tags || (character.data && character.data.tags) || [];
+    let rawTags = character.tags;
+    
+    // 记录原始 tags 字段信息
+    if (rawTags !== undefined) {
+        diagnostics.tagsFieldType = typeof rawTags;
+        diagnostics.tagsFieldValue = typeof rawTags === 'object'
+            ? (Array.isArray(rawTags) ? `[Array(${rawTags.length})]` : JSON.stringify(rawTags).substring(0, 200))
+            : String(rawTags).substring(0, 200);
+    }
+    
+    // 如果 tags 不存在，尝试 data.tags
+    if (rawTags === undefined && character.data && character.data.tags) {
+        rawTags = character.data.tags;
+        diagnostics.dataTagsFieldType = typeof rawTags;
+        diagnostics.dataTagsFieldValue = typeof rawTags === 'object'
+            ? (Array.isArray(rawTags) ? `[Array(${rawTags.length})]` : JSON.stringify(rawTags).substring(0, 200))
+            : String(rawTags).substring(0, 200);
+    }
+    
+    // 默认为空数组
+    if (rawTags === undefined || rawTags === null) {
+        rawTags = [];
+        diagnostics.finalType = 'array[0] (default empty)';
+        // 将诊断信息附加到返回数组上
+        rawTags._diagnostics = diagnostics;
+        return rawTags;
+    }
     
     // Ensure it's an array
     if (!Array.isArray(rawTags)) {
         // Try to parse string if it's a string
         if (typeof rawTags === 'string') {
+            diagnostics.parseAttempt = 'string';
+            diagnostics.rawTagsStringPreview = rawTags.substring(0, 500);
             try {
-                rawTags = JSON.parse(rawTags);
+                const parsed = JSON.parse(rawTags);
+                diagnostics.parseAttempt = `string->json_parse_success:${typeof parsed}`;
+                
+                // 检查解析结果是否为数组
+                if (Array.isArray(parsed)) {
+                    rawTags = parsed;
+                } else {
+                    // 解析结果不是数组！这是问题的关键
+                    diagnostics.parseAttempt = `string->json_parse_non_array:${Object.prototype.toString.call(parsed).slice(8, -1)}`;
+                    diagnostics.parsedValuePreview = JSON.stringify(parsed).substring(0, 300);
+                    diagnostics.parsedKeys = typeof parsed === 'object' && parsed !== null ? Object.keys(parsed).slice(0, 20) : null;
+                    // 创建空数组但保留诊断信息
+                    rawTags = [];
+                }
             } catch {
+                diagnostics.parseAttempt = 'string->split_by_comma';
                 rawTags = rawTags.split(',').map(t => t.trim());
             }
         } else {
+            // 非字符串非数组的其他类型（如对象）
+            diagnostics.parseAttempt = `non_string_non_array:${typeof rawTags}`;
+            diagnostics.valuePreview = JSON.stringify(rawTags).substring(0, 300);
+            diagnostics.objectKeys = typeof rawTags === 'object' && rawTags !== null ? Object.keys(rawTags).slice(0, 20) : null;
             rawTags = [];
         }
+    }
+    
+    diagnostics.finalType = Array.isArray(rawTags) ? `array[${rawTags.length}]` : `NOT_ARRAY:${typeof rawTags}`;
+    
+    // 将诊断信息附加到返回数组上（用于错误报告）
+    if (Array.isArray(rawTags)) {
+        rawTags._diagnostics = diagnostics;
     }
     
     return rawTags;
@@ -148,9 +242,25 @@ function getRawTags(character) {
 /**
  * 过滤和处理标签列表
  * @param {string[]} rawTags - 原始标签数组
+ * @param {string} [fileName] - 角色文件名（用于错误报告）
  * @returns {string[]} 处理后的标签名称数组
  */
-function filterTags(rawTags) {
+function filterTags(rawTags, fileName) {
+    // 类型检查：确保 rawTags 是数组
+    if (!Array.isArray(rawTags)) {
+        // 构建详细的诊断错误信息
+        const diagnostics = rawTags?._diagnostics || {};
+        const errorInfo = {
+            fileName: fileName || diagnostics.fileName || 'unknown',
+            actualType: typeof rawTags,
+            diagnostics: diagnostics,
+        };
+        
+        const error = new TypeError(`rawTags.map is not a function`);
+        error.diagnostics = errorInfo;
+        throw error;
+    }
+    
     return rawTags
         .map(t => String(t).trim())
         .filter(t => t)
@@ -303,7 +413,7 @@ export async function importTags(character, { importSetting = null, skipSave = f
         return;
     }
 
-    const importTagsList = filterTags(rawTags);
+    const importTagsList = filterTags(rawTags, avatar);
     if (!importTagsList.length) return;
 
     // 检查是否需要更新 (即使 cm_manager.tags 不存在，如果当前插件标签与 data.tags 一致，也无需操作)
@@ -399,7 +509,8 @@ export function needsTagImport(character) {
     if (cm.tags !== undefined) return false;
     
     const rawTags = getRawTags(character);
-    const importTagsList = filterTags(rawTags);
+    const fileName = character.fileName || character.avatar || character.name || 'unknown';
+    const importTagsList = filterTags(rawTags, fileName);
     return importTagsList.length > 0;
 }
 
@@ -437,7 +548,7 @@ export async function batchImportTags(characters, { skipSave = false, concurrenc
             const tasks = characters.map(char => async () => {
                 const fileName = char.fileName || char.avatar;
                 const rawTags = getRawTags(char);
-                const importTagsList = filterTags(rawTags);
+                const importTagsList = filterTags(rawTags, fileName);
                 const cm = getCmManager(char);
                 
                 // 保存到文件，检查返回值
@@ -649,14 +760,14 @@ export async function batchImportDataTags(strategy, onProgress, concurrency) {
         
         const fileName = char.fileName || char.avatar;
         let rawTags = getRawTags(char);
-        let importTagsList = filterTags(rawTags);
+        let importTagsList = filterTags(rawTags, fileName);
         
         // 【回源兜底】如果缓存中 tags 为空，尝试从服务器获取真实数据
         const cmManagerTags = char.data?.extensions?.cm_manager?.tags;
         if (importTagsList.length === 0 && !Array.isArray(cmManagerTags)) {
             const realTags = await fetchRealTagsFromServer(fileName);
             if (realTags.length > 0) {
-                importTagsList = filterTags(realTags);
+                importTagsList = filterTags(realTags, fileName);
                 localStats.fetched = 1;
                 log(`[ST-Tags] 回源获取到标签: ${fileName} -> ${importTagsList.join(', ')}`);
             }

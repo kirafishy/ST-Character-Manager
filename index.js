@@ -1235,6 +1235,12 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
             tagMapKeys: state.tagMap ? Object.keys(state.tagMap).slice(0, 10) : [],
         };
         
+        // 如果错误包含诊断信息（来自 filterTags 的类型检查），添加到上下文
+        if (e.diagnostics) {
+            errorContext.diagnostics = e.diagnostics;
+            errorContext.errorType = 'filterTags_type_check';
+        }
+        
         // 如果是 JSON 解析错误，尝试提取更多信息
         if (e.message && e.message.includes('JSON')) {
             // 尝试获取可能导致问题的数据
