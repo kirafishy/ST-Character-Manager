@@ -227,9 +227,10 @@ export async function removeTagFromChar(fileName, tagId, skipSync = false, markU
  * 保存 cm_manager.tags 到角色卡文件
  * @param {string} fileName - 角色文件名
  * @param {string[]} tagNames - 标签名称数组
+ * @returns {Promise<boolean>} 是否保存成功
  */
 async function saveCmManagerTagsToCard(fileName, tagNames) {
-    await saveCharacterData(fileName, (data) => {
+    const result = await saveCharacterData(fileName, (data) => {
         if (!data.extensions) data.extensions = {};
         if (!data.extensions.cm_manager) {
             data.extensions.cm_manager = {};
@@ -237,8 +238,14 @@ async function saveCmManagerTagsToCard(fileName, tagNames) {
         data.extensions.cm_manager.tags = tagNames;
     });
     
-    // 同步更新酒馆内存中的角色对象，防止快速刷新时被旧数据覆盖
-    syncCmManagerTagsToSTMemory(fileName, tagNames);
+    if (result) {
+        // 同步更新酒馆内存中的角色对象，防止快速刷新时被旧数据覆盖
+        syncCmManagerTagsToSTMemory(fileName, tagNames);
+    } else {
+        console.warn(`[CharManager] saveCmManagerTagsToCard 失败: ${fileName}`);
+    }
+    
+    return result;
 }
 
 /**

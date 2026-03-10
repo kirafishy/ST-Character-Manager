@@ -89,15 +89,22 @@ export async function migrateAndSaveCmManager(character) {
  * 保存 cm_manager.tags 到角色卡元数据
  * @param {string} fileName - 角色文件名
  * @param {string[]} tagNames - 标签名称数组
+ * @returns {Promise<boolean>} 是否保存成功
  */
 export async function saveCmManagerTags(fileName, tagNames) {
-    await saveCharacterData(fileName, (data) => {
+    const result = await saveCharacterData(fileName, (data) => {
         if (!data.extensions) data.extensions = {};
         if (!data.extensions[CM_MANAGER_KEY]) {
             data.extensions[CM_MANAGER_KEY] = {};
         }
         data.extensions[CM_MANAGER_KEY].tags = tagNames;
     });
+    
+    if (!result) {
+        console.warn(`[ST-Tags] saveCmManagerTags 失败: ${fileName}`);
+    }
+    
+    return result;
 }
 
 /**
@@ -351,17 +358,26 @@ export async function importTags(character, { importSetting = null, skipSave = f
 
     // Save user selection to cm_manager.tags
     const selectedTagNames = tagsToApply.map(t => t.name);
-    cm.tags = selectedTagNames;
 
     // Save cm_manager.tags to character card file
-    // 关键修改：即使 skipSave=true，对于明确决策（不导入/导入）也必须持久化
-    // 只有未触发用户交互的内部调用才允许跳过
+    // 关键逻辑：
+    // 1. cm.tags 原本是 undefined（首次导入标签），必须保存到文件
+    // 2. 用户明确决策（ASK/NONE），即使 skipSave=true 也要保存
+    // 3. 其他情况（自动导入），遵循 skipSave 参数
     const isExplicitDecision = setting === tag_import_setting.ASK || setting === tag_import_setting.NONE;
-    if (!skipSave) {
-        await saveCmManagerTags(avatar, selectedTagNames);
-    } else if (isExplicitDecision) {
-        // 对于明确决策（NONE 策略或 ASK 策略返回空数组），强制持久化
-        await saveCmManagerTags(avatar, selectedTagNames);
+    const isFirstImport = cm.tags === undefined;  // 首次导入标签
+    let saveSuccess = true;
+    
+    if (!skipSave || isExplicitDecision || isFirstImport) {
+        // 首次导入或明确决策，强制持久化
+        saveSuccess = await saveCmManagerTags(avatar, selectedTagNames);
+    }
+    
+    // 只有保存成功才更新内存中的 cm.tags
+    if (saveSuccess) {
+        cm.tags = selectedTagNames;
+    } else {
+        console.warn(`[ST-Tags] importTags 保存失败，不更新内存: ${avatar}`);
     }
 
     // Apply tags (清空标签关联当用户选择不导入时)
@@ -423,10 +439,17 @@ export async function batchImportTags(characters, { skipSave = false, concurrenc
                 const rawTags = getRawTags(char);
                 const importTagsList = filterTags(rawTags);
                 const cm = getCmManager(char);
-                cm.tags = importTagsList;
                 
-                // 保存到文件
-                await saveCmManagerTags(fileName, importTagsList);
+                // 保存到文件，检查返回值
+                const saveResult = await saveCmManagerTags(fileName, importTagsList);
+                
+                if (!saveResult) {
+                    // 保存失败，不更新内存中的 cm.tags，抛出错误让调用方知道
+                    throw new Error(`保存 cm_manager.tags 失败: ${fileName}`);
+                }
+                
+                // 保存成功才更新内存
+                cm.tags = importTagsList;
                 
                 const { existingTags, newTags } = categorizeTags(importTagsList, fileName);
                 await applyTags(fileName, [...existingTags, ...newTags], skipSave);
@@ -444,10 +467,18 @@ export async function batchImportTags(characters, { skipSave = false, concurrenc
             // 全部跳过，设置空数组 - 使用并发处理
             const tasks = characters.map(char => async () => {
                 const fileName = char.fileName || char.avatar;
+                
+                // 保存空数组到文件，检查返回值
+                const saveResult = await saveCmManagerTags(fileName, []);
+                
+                if (!saveResult) {
+                    // 保存失败，抛出错误让调用方知道
+                    throw new Error(`保存 cm_manager.tags 失败: ${fileName}`);
+                }
+                
+                // 保存成功才更新内存
                 const cm = getCmManager(char);
                 cm.tags = [];
-                // 保存空数组到文件
-                await saveCmManagerTags(fileName, []);
             });
             const results = await runWithConcurrency(tasks, concurrency);
             const errors = results.filter(r => r.status === 'rejected').length;
@@ -663,7 +694,12 @@ export async function batchImportDataTags(strategy, onProgress, concurrency) {
         if (shouldUpdate) {
             if (fileName) {
                 try {
-                    await saveCmManagerTags(fileName, newPluginTags);
+                    const saveResult = await saveCmManagerTags(fileName, newPluginTags);
+                    if (!saveResult) {
+                        console.warn(`[ST-Tags] Failed to save tags for ${fileName}`);
+                        localStats.errors = 1;
+                        return localStats;
+                    }
                 } catch (e) {
                     console.warn(`[ST-Tags] Failed to save tags for ${fileName}:`, e);
                     localStats.errors = 1;
@@ -671,6 +707,7 @@ export async function batchImportDataTags(strategy, onProgress, concurrency) {
                 }
             }
             
+            // 保存成功才更新内存
             cm.tags = newPluginTags;
             syncCmManagerTagsToSTMemory(fileName, newPluginTags);
             
