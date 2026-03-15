@@ -285,13 +285,38 @@ export class CharacterDetails {
                 return;
             } else {
                 // 无历史记录，直接开始新对话
-                chatFile = '';
+                // 【修复】只调用 selectCharacterById，它会自动创建聊天，避免重复创建
+                this.close();
+                closeModal();
+
+                // 获取角色索引
+                const targetFileName = this.char.fileName;
+                const stChars = getSTCharacters();
+                const chIndex = stChars.findIndex(c => c.avatar === targetFileName);
+
+                if (chIndex === -1) {
+                    console.error('[CharManager] 角色未找到:', targetFileName);
+                    notify('启动失败：内存中未找到该角色', 'error');
+                    return;
+                }
+
+                // 切换到该角色，SillyTavern 会自动创建新聊天
+                const selectChar = getSelectCharacterById();
+                if (selectChar) {
+                    await selectChar(chIndex);
+                    notify('已启动角色', 'success');
+                } else {
+                    console.error('[CharManager] selectCharacterById not found');
+                    notify('启动失败：无法切换角色', 'error');
+                }
+                return;
             }
         }
 
         // 开始新对话 vs 加载存档
         if (!chatFile) {
-            // 开始新对话
+            // 有历史记录，但用户选择开始新对话
+            // 这种情况需要 openCharacterChat 来创建额外的聊天
             this.close();
             closeModal();
 
@@ -312,7 +337,7 @@ export class CharacterDetails {
                 await selectChar(chIndex);
             }
 
-            // 然后创建新聊天
+            // 创建新聊天
             const openChat = getOpenCharacterChat();
             if (openChat) {
                 // 生成新聊天文件名：角色名 - 时间戳
