@@ -1,5 +1,5 @@
 import { state, saveSettings, defaultSettings } from './state.js';
-import { ICONS, Z_INDEX } from './constants.js';
+import { ICONS, Z_INDEX, CHARACTER_SORT_OPTIONS } from './constants.js';
 import { escapeHtml, notify } from './utils.js';
 import { syncAllTags } from './data.js';
 import { clearAllCache } from './db.js';
@@ -8,6 +8,10 @@ import manifest from './manifest.json' with { type: 'json' };
 
 export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm, showProgressBar, updateProgressBar, hideProgressBar }) {
     const settings = state.settings;
+    const defaultSortOptionsHtml = CHARACTER_SORT_OPTIONS
+        .filter(option => option.value !== 'token_desc' && option.value !== 'token_asc' && option.value !== 'gallery_desc')
+        .map(option => `<option value="${option.value}" ${settings.defaultSort === option.value ? 'selected' : ''}>${option.label}</option>`)
+        .join('');
 
     const content = `
         <div class="cm-settings-container">
@@ -221,9 +225,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <small>每次打开时的默认排序</small>
                     </div>
                     <select id="cmSetDefSort" class="cm-select-input" style="max-width:140px">
-                        <option value="date_desc" ${settings.defaultSort === 'date_desc' ? 'selected' : ''}>📅 最新 (默认)</option>
-                        <option value="access_desc" ${settings.defaultSort === 'access_desc' ? 'selected' : ''}>🕒 最近互动</option>
-                        <option value="name_asc" ${settings.defaultSort === 'name_asc' ? 'selected' : ''}>🔤 名称 (A-Z)</option>
+                        ${defaultSortOptionsHtml}
                     </select>
                 </div>
                 

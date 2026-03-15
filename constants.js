@@ -57,6 +57,21 @@ export const COLORS = [
     { name: '灰色', value: 'rgba(100, 100, 100, 1)' }
 ];
 
+// 角色列表排序选项
+// settings.js 与 index.js 必须共用此配置，避免新增排序类型时多处漏改
+export const CHARACTER_SORT_OPTIONS = [
+    { value: 'access_desc', label: '🕒 最近 (最近互动)' },
+    { value: 'date_desc', label: '📅 最新 (创建日期)' },
+    { value: 'date_asc', label: '📅 最旧 (创建日期)' },
+    { value: 'token_desc', label: '🪙 Token (多→少)' },
+    { value: 'token_asc', label: '🪙 Token (少→多)' },
+    { value: 'name_asc', label: '🔤 名称 (A→Z)' },
+    { value: 'name_desc', label: '🔤 名称 (Z→A)' },
+    { value: 'gallery_desc', label: '🖼️ 画廊 (多→少)' },
+    { value: 'import_desc', label: '📥 导入 (新→旧)' },
+    { value: 'import_asc', label: '📤 导入 (旧→新)' },
+];
+
 // Z-index 层级常量
 export const Z_INDEX = {
     BASE: 1,

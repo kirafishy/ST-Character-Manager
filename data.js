@@ -740,6 +740,12 @@ export function compareChars(a, b) {
         case 'gallery':
             ret = (a.galleryCount || 0) - (b.galleryCount || 0);
             break;
+        case 'import':
+            // 优先使用 cm_manager.import_time，回退到 date_added
+            const importA = a.data?.extensions?.cm_manager?.import_time ?? a.date_added ?? 0;
+            const importB = b.data?.extensions?.cm_manager?.import_time ?? b.date_added ?? 0;
+            ret = importA - importB;
+            break;
     }
     return state.sortOrder === 'asc' ? ret : -ret;
 }

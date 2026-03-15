@@ -1,4 +1,4 @@
-import { ICONS, COLORS, Z_INDEX, AI_MODELS, getModelTokenLimit } from './constants.js';
+import { ICONS, COLORS, Z_INDEX, AI_MODELS, getModelTokenLimit, CHARACTER_SORT_OPTIONS } from './constants.js';
 import manifest from './manifest.json' with { type: 'json' };
 import { doc, parentWin, getSTContext, getSTCharacters, getCurrentChatChar } from './context.js';
 import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip, notify, parsePNG } from './utils.js';
@@ -8,7 +8,7 @@ import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
 import { getCache, setCache, clearCache, migrateFromLocalStorage } from './db.js';
 import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo, syncAllTags, deleteChar } from './data.js';
-import { importTags, needsTagImport, batchImportTags, migrateToCmManager, migrateAndSaveCmManager, getCmManager } from './st-tags.js';
+import { importTags, needsTagImport, batchImportTags, migrateToCmManager, migrateAndSaveCmManager, getCmManager, initImportTime, clearImportTime } from './st-tags.js';
 import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
 import { showSettingsDialog } from './settings.js';
 import { initTranslationUI, openTranslationDialog } from './translation/translation-ui.js';
@@ -25,6 +25,10 @@ const BUTTON_ID = 'charManagerBtn';
 const importQueue = [];
 let isProcessingQueue = false;
 let lastTouchTime = 0;
+
+const characterSortOptionsHtml = CHARACTER_SORT_OPTIONS
+    .map(option => `<option value="${option.value}">${option.label}</option>`)
+    .join('');
 
 
 
@@ -168,6 +172,13 @@ async function doActualImport(files, remainingInQueue) {
                     console.log('[CharManager] Clearing ghost tags for imported file:', fileName);
                     delete state.tagMap[fileName];
                     saveTags(); // 必须保存，否则会被后续 scan 中的 loadTags 覆盖
+                }
+
+                // 清除旧的 import_time，让系统重新计算
+                try {
+                    await clearImportTime(fileName);
+                } catch (e) {
+                    console.warn('[CharManager] 清除 import_time 失败:', e);
                 }
 
                 // 迁移旧配置并导入标签
@@ -1084,6 +1095,20 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                 // 迁移旧的扩展配置到 cm_manager（如有迁移则保存）
                 await migrateAndSaveCmManager(stC);
 
+                // 初始化导入时间（如果没有）
+                await initImportTime(stC, stC.date_added);
+
+                // 同步最新扫描元数据到当前列表内存，避免重新导入后继续沿用旧时间排序
+                if (stC.date_added !== undefined) {
+                    cached.date_added = stC.date_added;
+                }
+                if (stC.data?.extensions?.cm_manager?.import_time !== undefined) {
+                    if (!cached.data) cached.data = {};
+                    if (!cached.data.extensions) cached.data.extensions = {};
+                    if (!cached.data.extensions.cm_manager) cached.data.extensions.cm_manager = {};
+                    cached.data.extensions.cm_manager.import_time = stC.data.extensions.cm_manager.import_time;
+                }
+
                 // 同步 Tag（使用 cm_manager.tags 或检查是否需要导入）
                 await importTags(stC, { skipSave: true, checkCmManager: true });
 
@@ -1114,6 +1139,9 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                     if (!fresh.error) {
                         // 迁移旧的扩展配置到 cm_manager（如有迁移则保存）
                         await migrateAndSaveCmManager(fresh);
+
+                        // 初始化导入时间（如果没有）
+                        await initImportTime(fresh, fresh.date_added);
                         
                         // 检查是否需要标签导入确认
                         if (needsTagImport(fresh)) {
@@ -2888,14 +2916,7 @@ function createModal() {
         '</div>' +
         '<div class="cm-select-wrap">' +
         '<select class="cm-select-input" id="cmSortSelect">' +
-        '<option value="access_desc">🕒 最近 (最近互动)</option>' +
-        '<option value="date_desc">📅 最新 (创建日期)</option>' +
-        '<option value="date_asc">📅 最旧 (创建日期)</option>' +
-        '<option value="token_desc">🪙 Token (多→少)</option>' +
-        '<option value="token_asc">🪙 Token (少→多)</option>' +
-        '<option value="name_asc">🔤 名称 (A→Z)</option>' +
-        '<option value="name_desc">🔤 名称 (Z→A)</option>' +
-        '<option value="gallery_desc">🖼️ 画廊 (多→少)</option>' +
+        characterSortOptionsHtml +
         '</select>' +
         '</div>' +
         '</div>' +
