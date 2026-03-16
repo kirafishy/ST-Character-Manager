@@ -1102,6 +1102,10 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                 if (stC.date_added !== undefined) {
                     cached.date_added = stC.date_added;
                 }
+                // 同步最近聊天时间（用于"最近"排序）
+                if (stC.date_last_chat !== undefined) {
+                    cached.date_last_chat = stC.date_last_chat;
+                }
                 if (stC.data?.extensions?.cm_manager?.import_time !== undefined) {
                     if (!cached.data) cached.data = {};
                     if (!cached.data.extensions) cached.data.extensions = {};
