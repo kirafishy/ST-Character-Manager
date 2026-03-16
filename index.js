@@ -1,4 +1,5 @@
 import { ICONS, COLORS, Z_INDEX, AI_MODELS, getModelTokenLimit, CHARACTER_SORT_OPTIONS } from './constants.js';
+import { resolveListPageCoverDisplay } from './utils/cover-display.js';
 import manifest from './manifest.json' with { type: 'json' };
 import { doc, parentWin, getSTContext, getSTCharacters, getCurrentChatChar } from './context.js';
 import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip, notify, parsePNG } from './utils.js';
@@ -1634,6 +1635,33 @@ export function renderTagSidebar() {
     });
 }
 
+/**
+ * 更新卡片上的桃心徽章显示状态（局部刷新）
+ * @param {HTMLElement} card - 卡片 DOM 元素
+ * @param {boolean} isFav - 是否已收藏
+ */
+function updateFavHeartOnCard(card, isFav) {
+    if (!card) return;
+    // 查找右上角徽章区域内的桃心
+    const badgesContainer = card.querySelector('.cm-top-right-badges');
+    if (!badgesContainer) return;
+    
+    let heart = badgesContainer.querySelector('.cm-badge-fav-heart');
+    if (isFav) {
+        if (!heart) {
+            // 创建桃心徽章
+            heart = doc.createElement('span');
+            heart.className = 'cm-badge cm-badge-fav-heart';
+            heart.innerHTML = ICONS.heart;
+            badgesContainer.appendChild(heart);
+        }
+    } else {
+        if (heart) {
+            heart.remove();
+        }
+    }
+}
+
 
 function createCard(char, isDup) {
     const card = doc.createElement('div');
@@ -1653,6 +1681,10 @@ function createCard(char, isDup) {
     }
 
     const charTags = getCharTags(char.fileName);
+    
+    // 调用统一封面判定逻辑
+    const coverResult = resolveListPageCoverDisplay(charTags);
+    
     let tagsHtml = '';
     if (charTags.length > 0) {
         tagsHtml = '<div class="cm-card-tags">';
@@ -1669,9 +1701,16 @@ function createCard(char, isDup) {
     const isSel = state.selectedCards.has(char.fileName);
     if (isSel) card.classList.add('cm-sel');
 
+    // 收藏桃心标识（仅对已收藏角色显示，位于右上角徽章区域内部）
+    let favoriteHeart = '';
+    if (char.fav) {
+        favoriteHeart = '<span class="cm-badge cm-badge-fav-heart">' + ICONS.heart + '</span>';
+    }
+
     let badgesHtml = '<div class="cm-top-right-badges">';
     if (isDup) badgesHtml += '<span class="cm-badge cm-badge-dup">重复</span>';
     if (char.version) badgesHtml += '<span class="cm-badge cm-badge-ver">v' + escapeHtml(char.version) + '</span>';
+    badgesHtml += favoriteHeart; // 桃心放在徽章区域内部
     badgesHtml += '</div>';
 
     let countBadge = '<span class="cm-badge cm-badge-count">💬 ' + char.greetings + '</span>';
@@ -1703,8 +1742,25 @@ function createCard(char, isDup) {
         authorHtml = '<div class="cm-author" style="font-size:10px;opacity:0.7;margin-top:2px">by ' + escapeHtml(truncate(char.creator, 20)) + '</div>';
     }
 
+    // 根据封面判定结果构建封面区域 HTML
+    let coverHtml = '';
+    const displayMode = coverResult.displayMode;
+    
+    if (displayMode === 'no-image') {
+        // 无图模式：纯黑背景 + 居中角色名称
+        coverHtml = '<div class="cm-card-no-image">' +
+            '<div class="cm-card-no-image-name">' + escapeHtml(char.name) + '</div>' +
+            '</div>';
+    } else if (displayMode === 'blur') {
+        // 模糊模式：图片保留但模糊处理
+        coverHtml = '<img class="cm-card-img cm-card-img-blur" src="' + char.avatarUrl + '" loading="lazy">';
+    } else {
+        // 正常模式：原图展示
+        coverHtml = '<img class="cm-card-img" src="' + char.avatarUrl + '" loading="lazy">';
+    }
+
     card.innerHTML =
-        '<img class="cm-card-img" src="' + char.avatarUrl + '" loading="lazy">' +
+        coverHtml +
         '<div class="cm-card-overlay-bottom"></div>' +
         '<div class="cm-card-content">' +
         '<div class="cm-card-badges-top-left">' +
@@ -3180,6 +3236,8 @@ function createModal() {
                 favBtn.classList.toggle('active', newState);
                 // 更新卡片的收藏样式类
                 card.classList.toggle('cm-favorite', newState);
+                // 更新桃心徽章显示状态（局部刷新）
+                updateFavHeartOnCard(card, newState);
                 if (state.currentView === 'favorites' && !newState) renderView();
                 renderTagSidebar();
             }

@@ -792,6 +792,8 @@ body.cm-resizing * {
     color: #000;
 }
 
+/* 右上角徽章容器 - 所有徽章在 flex 流中垂直排列，无需补丁 */
+
 .cm-card-actions {
     position: absolute;
     bottom: 60px;
@@ -5258,4 +5260,158 @@ body.hide-card-note .cm-note {
 .cm-theme-light .cm-card.cm-favorite {
     border: 2px solid #ec4899;
     box-shadow: 0 0 8px rgba(236, 72, 153, 0.25);
+}
+
+/* ============================================
+   封面显示模式样式
+   ============================================ */
+
+/* 模糊封面模式 - 图片保留但模糊处理 */
+.cm-card-img-blur {
+    filter: blur(20px);
+    transform: scale(1.1); /* 放大避免模糊边缘露出空白 */
+    transform-origin: center center; /* 确保从中心放大 */
+}
+
+/* 无图模式封面区域 - 纯黑背景 */
+.cm-card-no-image {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+    overflow: hidden; /* 防止超长标题溢出 */
+    border-radius: 8px; /* 继承卡片圆角，避免锯齿 */
+}
+
+/* 无图模式角色名称 - 封面区域内居中多行展示 */
+.cm-card-no-image-name {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    word-break: break-word;
+    line-height: 1.4;
+    max-width: 100%;
+    display: -webkit-box;
+    -webkit-line-clamp: 5;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis; /* 文本裁切提示 */
+    hyphens: auto; /* 自动断词优化 */
+}
+
+/* 收藏桃心徽章 - 右上角强化提示 */
+.cm-badge-fav-heart {
+    color: #ec4899;
+    background: transparent; /* 无背景 */
+    border: none; /* 无边框 */
+    padding: 0;
+    font-size: 14px;
+    flex-shrink: 0; /* 防止与其他徽章挤压变形 */
+    order: -1; /* 始终排在最上方 */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cm-badge-fav-heart svg {
+    width: 14px;
+    height: 14px;
+    fill: #ec4899;
+    display: block; /* 消除行内元素底部间隙 */
+}
+
+/* 版本号徽章样式 */
+.cm-badge-ver {
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+}
+
+/* 亮色主题适配 */
+.cm-theme-light .cm-card-no-image {
+    background: #1a1a1a;
+}
+
+.cm-theme-light .cm-badge-fav-heart {
+    color: #ec4899;
+    background: transparent; /* 无背景 */
+    border: none; /* 无边框 */
+}
+
+/* ============================================
+   详情页封面显示模式样式
+   ============================================ */
+
+/* 详情页模糊封面模式 */
+.cm-detail-avatar-blur {
+    filter: blur(12px);
+    transform: scale(1.1);
+    transform-origin: center center; /* 确保从中心放大 */
+}
+
+/* 详情页无图模式 - 头像区域纯黑背景 */
+.cm-detail-avatar-no-image {
+    width: 120px;
+    height: 180px;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    overflow: hidden; /* 防止超长标题溢出 */
+    flex-shrink: 0; /* 防止布局压缩 */
+}
+
+/* 详情页无图模式 - 角色名称在封面区域内居中展示 */
+.cm-detail-avatar-no-image-name {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    word-break: break-word;
+    line-height: 1.4;
+    max-width: 100%;
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis; /* 文本裁切提示 */
+    hyphens: auto; /* 自动断词优化 */
+}
+
+/* 详情页无图模式 - 亮色主题适配 */
+.cm-theme-light .cm-detail-avatar-no-image {
+    background: #1a1a1a;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .cm-detail-avatar-no-image {
+        width: 80px;
+        height: 120px;
+        padding: 8px;
+    }
+    
+    .cm-detail-avatar-no-image-name {
+        font-size: 12px;
+        -webkit-line-clamp: 4;
+    }
+}
+
+/* 小屏容器查询适配 - 确保无图模式标题在窄卡片中稳定 */
+@container card (max-width: 120px) {
+    .cm-card-no-image {
+        padding: 8px;
+    }
+    
+    .cm-card-no-image-name {
+        font-size: 12px;
+        -webkit-line-clamp: 4;
+    }
 }

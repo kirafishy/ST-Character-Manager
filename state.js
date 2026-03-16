@@ -81,6 +81,13 @@ Identity Confirmation: 你是一名专业的角色扮演内容翻译专家，非
     aiMaxTags: 5, // AI 生成标签的最大数量
     aiOverwriteTags: false, // 是否覆盖已有标签
     aiBatchCharLimit: 10, // 批量模式每批次最多发送的角色卡数量
+    // --- 封面显示模式设置 ---
+    coverDisplay: {
+        mode: 'normal',           // 封面显示模式: 'normal' (正常) | 'sfw' (SFW模式) | 'no-image' (无图模式)
+        nsfwTagIds: [],           // SFW 模式下用于命中判断的 NSFW 标签 ID 集合
+        applyToListPage: false,   // 是否对角色列表页启用当前封面策略
+        applyToDetailPage: false, // 是否对角色详情页启用当前封面策略
+    },
 };
 
 // 读取已保存的设置
@@ -109,6 +116,38 @@ const migrateSettings = (settings) => {
     }
     if (settings.aiBatchTokenLimit === undefined || settings.aiBatchTokenLimit === null) {
         settings.aiBatchTokenLimit = 4096;
+    }
+    
+    // 封面显示模式设置迁移（确保旧用户升级后 coverDisplay 配置完整）
+    const defaultCoverDisplay = {
+        mode: 'normal',
+        nsfwTagIds: [],
+        applyToListPage: false,
+        applyToDetailPage: false,
+    };
+    
+    // 若 coverDisplay 不存在，补齐完整默认对象
+    if (!settings.coverDisplay || typeof settings.coverDisplay !== 'object') {
+        settings.coverDisplay = { ...defaultCoverDisplay };
+    } else {
+        // 若存在但缺少个别字段，进行字段级默认值回填
+        if (settings.coverDisplay.mode === undefined || settings.coverDisplay.mode === null) {
+            settings.coverDisplay.mode = 'normal';
+        }
+        // 校验 mode 值是否合法，非法值退回正常模式
+        const validModes = ['normal', 'sfw', 'no-image'];
+        if (!validModes.includes(settings.coverDisplay.mode)) {
+            settings.coverDisplay.mode = 'normal';
+        }
+        if (!Array.isArray(settings.coverDisplay.nsfwTagIds)) {
+            settings.coverDisplay.nsfwTagIds = [];
+        }
+        if (typeof settings.coverDisplay.applyToListPage !== 'boolean') {
+            settings.coverDisplay.applyToListPage = false;
+        }
+        if (typeof settings.coverDisplay.applyToDetailPage !== 'boolean') {
+            settings.coverDisplay.applyToDetailPage = false;
+        }
     }
     
     return settings;

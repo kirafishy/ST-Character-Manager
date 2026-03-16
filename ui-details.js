@@ -14,6 +14,7 @@ import { renderView, renderTagSidebar, updateCreatorComment, closeModal } from '
 import { getGalleryItems, showGallery, renderGallery } from './gallery.js';
 import { openTranslationDialog } from './translation/translation-ui.js';
 import { calculateTokens } from './utils.js';
+import { resolveDetailPageCoverDisplay } from './utils/cover-display.js';
 
 /**
  * 从 SillyTavern 上下文获取指定函数
@@ -1066,24 +1067,45 @@ export class CharacterDetails {
         const topRow = doc.createElement('div');
         topRow.className = 'cm-detail-header-top';
         
+        // 获取封面显示判定结果
+        const charTags = getCharTags(this.char.fileName);
+        const coverResult = resolveDetailPageCoverDisplay(charTags);
+        
         // 1. 头像区域
         const avatarWrap = doc.createElement('div');
         avatarWrap.className = 'cm-detail-avatar-wrap';
         avatarWrap.style.position = 'relative';
 
-        const avatar = doc.createElement('img');
-        avatar.className = 'cm-detail-avatar';
-        avatar.src = this.char.avatarUrl;
-        
-        // 更换头像按钮
-        const camBtn = doc.createElement('div');
-        camBtn.className = 'cm-cam-btn';
-        camBtn.innerHTML = ICONS.camera;
-        camBtn.title = '更换图片';
-        camBtn.onclick = () => this.handleAvatarChange(avatar);
+        // 根据封面显示模式渲染不同内容
+        if (coverResult.displayMode === 'no-image') {
+            // 无图模式：纯黑背景 + 角色名称
+            avatarWrap.classList.add('cm-detail-avatar-no-image');
+            
+            const noImageName = doc.createElement('div');
+            noImageName.className = 'cm-detail-avatar-no-image-name';
+            noImageName.textContent = this.char.name;
+            avatarWrap.appendChild(noImageName);
+        } else {
+            // normal 或 blur 模式：显示图片
+            const avatar = doc.createElement('img');
+            avatar.className = 'cm-detail-avatar';
+            avatar.src = this.char.avatarUrl;
+            
+            // blur 模式：添加模糊样式类
+            if (coverResult.displayMode === 'blur') {
+                avatar.classList.add('cm-detail-avatar-blur');
+            }
+            
+            // 更换头像按钮
+            const camBtn = doc.createElement('div');
+            camBtn.className = 'cm-cam-btn';
+            camBtn.innerHTML = ICONS.camera;
+            camBtn.title = '更换图片';
+            camBtn.onclick = () => this.handleAvatarChange(avatar);
 
-        avatarWrap.appendChild(avatar);
-        avatarWrap.appendChild(camBtn);
+            avatarWrap.appendChild(avatar);
+            avatarWrap.appendChild(camBtn);
+        }
         topRow.appendChild(avatarWrap);
 
         // 2. 信息区域

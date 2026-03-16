@@ -1,10 +1,215 @@
-import { state, saveSettings, defaultSettings } from './state.js';
+import { state, saveSettings, defaultSettings, DEFAULT_TAG_COLOR } from './state.js';
 import { ICONS, Z_INDEX, CHARACTER_SORT_OPTIONS } from './constants.js';
 import { escapeHtml, notify } from './utils.js';
-import { syncAllTags } from './data.js';
+import { syncAllTags, createTag } from './data.js';
 import { clearAllCache } from './db.js';
 import { galleryCountCache } from './gallery.js';
 import manifest from './manifest.json' with { type: 'json' };
+
+/**
+ * 生成 NSFW 标签选择摘要文本
+ * @param {string[]} nsfwTagIds - 已选择的 NSFW 标签 ID 数组
+ * @returns {string} 摘要文本
+ */
+function generateNsfwTagsSummary(nsfwTagIds) {
+    if (!nsfwTagIds || nsfwTagIds.length === 0) {
+        return '暂未选择任何 NSFW 标签';
+    }
+    // 从 state.tags 中查找标签名称
+    const tagNames = nsfwTagIds
+        .map(id => {
+            const tag = state.tags?.find(t => t.id === id);
+            return tag ? tag.name : null;
+        })
+        .filter(name => name !== null);
+    
+    if (tagNames.length === 0) {
+        return `已选择 ${nsfwTagIds.length} 个标签（标签数据加载中...）`;
+    }
+    
+    if (tagNames.length <= 3) {
+        return `已选择：${tagNames.join('、')}`;
+    }
+    
+    return `已选择 ${nsfwTagIds.length} 个标签：${tagNames.slice(0, 3).join('、')} 等`;
+}
+
+/**
+ * 显示 NSFW 标签多选选择器
+ * @param {string[]} currentIds - 当前已选择的标签 ID 数组
+ * @param {function(string[]): void} onConfirm - 确认回调，传入选择结果
+ */
+function showNsfwTagPicker(currentIds, onConfirm) {
+    // 创建遮罩层
+    const overlay = document.createElement('div');
+    overlay.className = 'cm-tag-editor-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:' + Z_INDEX.SYSTEM_FORCE_OVERLAY + ';display:flex;justify-content:center;align-items:center;';
+
+    // 创建对话框
+    const dialog = document.createElement('div');
+    dialog.className = 'cm-tag-editor ' + (state.isDarkMode ? 'cm-theme-dark' : 'cm-theme-light');
+    dialog.style.cssText = 'width:400px;max-width:90%;max-height:80vh;display:flex;flex-direction:column;background:var(--cm-bg);border:1px solid var(--cm-border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+
+    // 头部
+    const header = document.createElement('div');
+    header.className = 'cm-tag-editor-header';
+    header.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--cm-border);display:flex;justify-content:space-between;align-items:center';
+    header.innerHTML = '<h3>选择 NSFW 标签</h3><button class="cm-tag-editor-close">' + ICONS.close + '</button>';
+
+    // 主体
+    const body = document.createElement('div');
+    body.className = 'cm-tag-editor-body';
+    body.style.cssText = 'padding:0;flex:1;overflow:hidden;display:flex;flex-direction:column';
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;';
+
+    // 快速创建与搜索
+    const quickCreate = document.createElement('div');
+    quickCreate.className = 'cm-quick-create';
+    quickCreate.style.position = 'relative';
+    quickCreate.innerHTML = '<input type="text" placeholder="新建或搜索标签..." class="cm-input-sm" autocomplete="off"><button class="cm-btn-sm">+</button>';
+
+    const suggestions = document.createElement('div');
+    suggestions.className = 'cm-tag-suggestions';
+    quickCreate.appendChild(suggestions);
+
+    // 标签列表
+    const list = document.createElement('div');
+    list.className = 'cm-tag-selector-list';
+    list.style.cssText = 'flex:1;overflow-y:auto;';
+
+    wrapper.appendChild(quickCreate);
+    wrapper.appendChild(list);
+    body.appendChild(wrapper);
+
+    // 底部
+    const footer = document.createElement('div');
+    footer.className = 'cm-tag-editor-footer';
+    footer.style.cssText = 'padding:10px 16px;border-top:1px solid var(--cm-border);text-align:right';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'cm-btn cm-btn-primary';
+    confirmBtn.textContent = '确认';
+    confirmBtn.style.marginRight = '8px';
+
+    const closeBtnFooter = document.createElement('button');
+    closeBtnFooter.className = 'cm-btn cm-btn-secondary';
+    closeBtnFooter.textContent = '取消';
+
+    footer.appendChild(confirmBtn);
+    footer.appendChild(closeBtnFooter);
+
+    // 组装
+    dialog.appendChild(header);
+    dialog.appendChild(body);
+    dialog.appendChild(footer);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    // 本地选择状态
+    let localIds = [...currentIds];
+
+    const close = () => overlay.remove();
+    header.querySelector('.cm-tag-editor-close').onclick = close;
+    closeBtnFooter.onclick = close;
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+
+    // 确认按钮
+    confirmBtn.onclick = () => {
+        onConfirm(localIds);
+        close();
+    };
+
+    // 渲染标签列表
+    function renderListItems() {
+        list.innerHTML = '';
+        if (state.tags.length === 0) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'padding:20px;color:var(--cm-text-sec);text-align:center';
+            empty.textContent = '暂无标签，请先创建标签';
+            list.appendChild(empty);
+        } else {
+            const sortedTags = [...state.tags].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+            sortedTags.forEach(tag => {
+                const isSelected = localIds.includes(tag.id);
+                const item = document.createElement('div');
+                item.className = 'cm-tag-selector-item' + (isSelected ? ' selected' : '');
+                item.innerHTML =
+                    '<span class="cm-tag-color" style="background:' + (tag.color || '#666') + '"></span>' +
+                    '<span>' + escapeHtml(tag.name) + '</span>' +
+                    (isSelected ? '<span class="cm-tag-check">✓</span>' : '');
+
+                item.onclick = function () {
+                    if (isSelected) {
+                        localIds = localIds.filter(id => id !== tag.id);
+                    } else {
+                        localIds.push(tag.id);
+                    }
+                    renderListItems();
+                };
+                list.appendChild(item);
+            });
+        }
+    }
+
+    renderListItems();
+
+    // 快速创建逻辑
+    const quickInput = quickCreate.querySelector('input');
+    const quickBtn = quickCreate.querySelector('button');
+
+    const handleCreate = (forceName) => {
+        const val = (forceName || quickInput.value).trim();
+        if (val) {
+            const existingTag = state.tags.find(t => t.name === val);
+            if (existingTag) {
+                if (!localIds.includes(existingTag.id)) {
+                    localIds.push(existingTag.id);
+                    notify('已添加已有标签: ' + val, 'success');
+                } else {
+                    notify('标签已在选择列表中', 'warning');
+                }
+            } else {
+                const newTag = createTag(val, DEFAULT_TAG_COLOR);
+                localIds.push(newTag.id);
+                notify('已创建并添加标签', 'success');
+            }
+            renderListItems();
+            quickInput.value = '';
+            suggestions.style.display = 'none';
+        }
+    };
+
+    quickInput.oninput = function () {
+        const val = this.value.trim().toLowerCase();
+        if (!val) { suggestions.style.display = 'none'; return; }
+        const matches = state.tags.filter(t => t.name.toLowerCase().includes(val));
+        if (matches.length > 0) {
+            suggestions.innerHTML = '';
+            matches.forEach(t => {
+                const item = document.createElement('div');
+                item.className = 'cm-tag-suggestion-item';
+                item.innerHTML = '<span class="cm-tag-color" style="background:' + (t.color || '#666') + '"></span><span>' + escapeHtml(t.name) + '</span>';
+                item.onclick = function () {
+                    if (!localIds.includes(t.id)) {
+                        localIds.push(t.id);
+                        renderListItems();
+                    }
+                    quickInput.value = '';
+                    suggestions.style.display = 'none';
+                };
+                suggestions.appendChild(item);
+            });
+            suggestions.style.display = 'block';
+        } else {
+            suggestions.style.display = 'none';
+        }
+    };
+    quickBtn.onclick = () => handleCreate();
+    quickInput.onkeydown = (e) => { if (e.key === 'Enter') handleCreate(); };
+    quickInput.focus();
+}
 
 export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, notify, setZoom, showConfirm, showProgressBar, updateProgressBar, hideProgressBar }) {
     const settings = state.settings;
@@ -16,9 +221,9 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
     const content = `
         <div class="cm-settings-container">
             
-            <!-- 界面与显示 -->
+            <!-- 角色列表页 -->
             <div class="cm-settings-group">
-                <h4 class="cm-settings-title">${ICONS.image || '🎨'} 界面与显示</h4>
+                <h4 class="cm-settings-title">${ICONS.image || '🎨'} 角色列表页</h4>
                 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
@@ -96,6 +301,73 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </label>
                 </div>
 
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>侧边栏宽度</span>
+                        <small>恢复侧边栏到默认宽度</small>
+                    </div>
+                    <button id="cmResetSidebarBtn" class="cm-btn cm-btn-secondary">重置</button>
+                </div>
+
+                <!-- 封面显示模式 -->
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>封面显示模式</span>
+                        <small>设置角色卡封面的展示方式</small>
+                    </div>
+                    <select id="cmSetCoverDisplayMode" class="cm-select-input">
+                        <option value="normal" ${settings.coverDisplay?.mode === 'normal' ? 'selected' : ''}>🖼️ 正常</option>
+                        <option value="sfw" ${settings.coverDisplay?.mode === 'sfw' ? 'selected' : ''}>🔞 SFW 模式</option>
+                        <option value="no-image" ${settings.coverDisplay?.mode === 'no-image' ? 'selected' : ''}>📄 无图模式</option>
+                    </select>
+                </div>
+
+                <!-- SFW 模式附加设置：NSFW 标签选择入口 -->
+                <div id="cmCoverSfwSettings" style="display:${settings.coverDisplay?.mode === 'sfw' ? 'block' : 'none'};padding:10px;background:var(--cm-bg-ter);border-radius:8px;margin-bottom:12px;">
+                    <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                        <div class="cm-setting-label">
+                            <span style="font-size:12px">NSFW 标签</span>
+                            <small>选择用于判断是否模糊显示的标签（当前已选 ${settings.coverDisplay?.nsfwTagIds?.length || 0} 个）</small>
+                        </div>
+                        <button id="cmSelectNsfwTagsBtn" class="cm-btn cm-btn-secondary" style="font-size:12px">
+                            🏷️ 选择标签
+                        </button>
+                    </div>
+                    <div id="cmNsfwTagsSummary" style="font-size:11px;color:var(--cm-text-sec);padding:4px 0;">
+                        ${generateNsfwTagsSummary(settings.coverDisplay?.nsfwTagIds || [])}
+                    </div>
+                </div>
+
+                <!-- SFW / 无图模式共享开关 -->
+                <div id="cmCoverApplySettings" style="display:${settings.coverDisplay?.mode === 'sfw' || settings.coverDisplay?.mode === 'no-image' ? 'block' : 'none'};padding:10px;background:var(--cm-bg-ter);border-radius:8px;margin-bottom:12px;">
+                    <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--cm-text)">📍 作用范围</div>
+                    <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                        <div class="cm-setting-label">
+                            <span style="font-size:12px">作用于列表页</span>
+                            <small>在角色列表页启用当前封面策略</small>
+                        </div>
+                        <label class="cm-switch">
+                            <input type="checkbox" id="cmSetCoverApplyList" ${settings.coverDisplay?.applyToListPage ? 'checked' : ''}>
+                            <span class="cm-slider"></span>
+                        </label>
+                    </div>
+                    <div class="cm-setting-item" style="margin:0">
+                        <div class="cm-setting-label">
+                            <span style="font-size:12px">作用于详情页</span>
+                            <small>在角色详情页启用当前封面策略</small>
+                        </div>
+                        <label class="cm-switch">
+                            <input type="checkbox" id="cmSetCoverApplyDetail" ${settings.coverDisplay?.applyToDetailPage ? 'checked' : ''}>
+                            <span class="cm-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 角色详情页 -->
+            <div class="cm-settings-group">
+                <h4 class="cm-settings-title">${ICONS.settings || '⚙️'} 角色详情页</h4>
+                
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>详情页内容显示</span>
@@ -182,14 +454,6 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <span id="cmPreviewCharToken" style="font-weight:700;color:#22D3EE;">{{char}}</span>：<span id="cmPreviewQuoteToken" style="color:#94A3B8;">"你好，今天想聊什么？"</span><br>
                         <span id="cmPreviewUserToken2" style="font-weight:700;color:#FB923C;">{{user}}</span>：<span id="cmPreviewQuoteToken2" style="color:#94A3B8;">「嗯……让我想想」</span>你陷入了沉思。
                     </div>
-                </div>
-
-                <div class="cm-setting-item">
-                    <div class="cm-setting-label">
-                        <span>侧边栏宽度</span>
-                        <small>恢复侧边栏到默认宽度</small>
-                    </div>
-                    <button id="cmResetSidebarBtn" class="cm-btn cm-btn-secondary">重置</button>
                 </div>
             </div>
 
@@ -623,6 +887,112 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 localStorage.setItem('cm_sidebar_width', 160);
                 document.documentElement.style.setProperty('--cm-sidebar-width', '160px');
                 notify('侧边栏宽度已重置', 'success');
+            };
+        }
+
+        // ========== 封面显示模式事件绑定 ==========
+        
+        // 封面显示模式选择器
+        const coverDisplayModeSelect = ov.querySelector('#cmSetCoverDisplayMode');
+        const coverSfwSettings = ov.querySelector('#cmCoverSfwSettings');
+        const coverApplySettings = ov.querySelector('#cmCoverApplySettings');
+        
+        if (coverDisplayModeSelect) {
+            coverDisplayModeSelect.onchange = (e) => {
+                const newMode = e.target.value;
+                
+                // 确保 coverDisplay 对象存在
+                if (!state.settings.coverDisplay) {
+                    state.settings.coverDisplay = {
+                        mode: 'normal',
+                        nsfwTagIds: [],
+                        applyToListPage: false,
+                        applyToDetailPage: false,
+                    };
+                }
+                
+                state.settings.coverDisplay.mode = newMode;
+                saveSettings();
+                
+                // 根据模式切换附加设置的显示
+                if (coverSfwSettings) {
+                    coverSfwSettings.style.display = newMode === 'sfw' ? 'block' : 'none';
+                }
+                if (coverApplySettings) {
+                    coverApplySettings.style.display = (newMode === 'sfw' || newMode === 'no-image') ? 'block' : 'none';
+                }
+                
+                // 触发视图刷新以应用新的封面模式
+                renderView();
+            };
+        }
+        
+        // NSFW 标签选择按钮
+        const selectNsfwTagsBtn = ov.querySelector('#cmSelectNsfwTagsBtn');
+        const nsfwTagsSummary = ov.querySelector('#cmNsfwTagsSummary');
+        if (selectNsfwTagsBtn) {
+            selectNsfwTagsBtn.onclick = () => {
+                // 确保 coverDisplay 对象存在
+                if (!state.settings.coverDisplay) {
+                    state.settings.coverDisplay = {
+                        mode: 'normal',
+                        nsfwTagIds: [],
+                        applyToListPage: false,
+                        applyToDetailPage: false,
+                    };
+                }
+                const currentIds = state.settings.coverDisplay.nsfwTagIds || [];
+                showNsfwTagPicker(currentIds, (selectedIds) => {
+                    // 保存选择结果
+                    state.settings.coverDisplay.nsfwTagIds = selectedIds;
+                    saveSettings();
+                    // 更新摘要显示
+                    if (nsfwTagsSummary) {
+                        nsfwTagsSummary.textContent = generateNsfwTagsSummary(selectedIds);
+                    }
+                    // 更新按钮旁的小字显示数量
+                    const labelSmall = selectNsfwTagsBtn.closest('.cm-setting-item')?.querySelector('.cm-setting-label small');
+                    if (labelSmall) {
+                        labelSmall.textContent = `选择用于判断是否模糊显示的标签（当前已选 ${selectedIds.length} 个）`;
+                    }
+                    notify(`已保存 ${selectedIds.length} 个 NSFW 标签`, 'success');
+                });
+            };
+        }
+        
+        // 作用于列表页开关
+        const coverApplyListCheck = ov.querySelector('#cmSetCoverApplyList');
+        if (coverApplyListCheck) {
+            coverApplyListCheck.onchange = (e) => {
+                if (!state.settings.coverDisplay) {
+                    state.settings.coverDisplay = {
+                        mode: 'normal',
+                        nsfwTagIds: [],
+                        applyToListPage: false,
+                        applyToDetailPage: false,
+                    };
+                }
+                state.settings.coverDisplay.applyToListPage = e.target.checked;
+                saveSettings();
+                renderView();
+            };
+        }
+        
+        // 作用于详情页开关
+        const coverApplyDetailCheck = ov.querySelector('#cmSetCoverApplyDetail');
+        if (coverApplyDetailCheck) {
+            coverApplyDetailCheck.onchange = (e) => {
+                if (!state.settings.coverDisplay) {
+                    state.settings.coverDisplay = {
+                        mode: 'normal',
+                        nsfwTagIds: [],
+                        applyToListPage: false,
+                        applyToDetailPage: false,
+                    };
+                }
+                state.settings.coverDisplay.applyToDetailPage = e.target.checked;
+                saveSettings();
+                renderView();
             };
         }
 
