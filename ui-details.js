@@ -1182,7 +1182,8 @@ export class CharacterDetails {
         // 元数据 (作者、时间、大小、Token)
         const meta = doc.createElement('div');
         meta.className = 'cm-detail-meta';
-        const dateStr = this.char.date_added ? new Date(parseInt(this.char.date_added)).toLocaleDateString() : '未知';
+        const importTime = this.char.data?.extensions?.cm_manager?.import_time || this.char.date_added;
+        const dateStr = importTime ? new Date(parseInt(importTime)).toLocaleDateString() : '未知';
         
         let metaHtml = `
             <span>${ICONS.user} ${escapeHtml(this.char.creator)}</span>
