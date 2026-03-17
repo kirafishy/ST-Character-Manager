@@ -1182,8 +1182,9 @@ export class CharacterDetails {
         // 元数据 (作者、时间、大小、Token)
         const meta = doc.createElement('div');
         meta.className = 'cm-detail-meta';
-        const importTime = this.char.data?.extensions?.cm_manager?.import_time || this.char.date_added;
-        const dateStr = importTime ? new Date(parseInt(importTime)).toLocaleDateString() : '未知';
+        // 使用 create_date（酒馆原生创建时间），回退到 date_added
+        const createTime = this.char.create_date || this.char.date_added;
+        const dateStr = createTime ? new Date(createTime).toLocaleDateString() : '未知';
         
         let metaHtml = `
             <span>${ICONS.user} ${escapeHtml(this.char.creator)}</span>

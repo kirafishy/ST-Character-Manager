@@ -740,12 +740,7 @@ export function compareChars(a, b) {
         case 'gallery':
             ret = (a.galleryCount || 0) - (b.galleryCount || 0);
             break;
-        case 'import':
-            // 优先使用 cm_manager.import_time，回退到 date_added
-            const importA = a.data?.extensions?.cm_manager?.import_time ?? a.date_added ?? 0;
-            const importB = b.data?.extensions?.cm_manager?.import_time ?? b.date_added ?? 0;
-            ret = importA - importB;
-            break;
+        // 【移除】case 'import' 排序逻辑，改用酒馆原生的 create_date (date 排序)
     }
     return state.sortOrder === 'asc' ? ret : -ret;
 }
@@ -771,6 +766,9 @@ export async function saveCharacterData(fileName, updateCallback) {
             charData = fullData.data;
         }
 
+        // 保存 updateCallback 修改前的 extensions.world 值（用于检测是否有意修改）
+        const worldBeforeCallback = charData.extensions?.world;
+        
         updateCallback(charData);
 
         // --- 修复：防止收藏操作导致世界书解绑 ---
@@ -791,6 +789,24 @@ export async function saveCharacterData(fileName, updateCallback) {
                 }
             } catch (e) { console.warn('尝试恢复 character_book 失败', e); }
         }
+        
+        // --- 修复：防止编辑时 extensions.world 被意外清空 ---
+        // 如果 updateCallback 没有明确修改 extensions.world，则从酒馆内存缓存中恢复最新值
+        const worldAfterCallback = charData.extensions?.world;
+        if (worldAfterCallback === undefined && worldBeforeCallback === undefined) {
+            try {
+                const stChars = typeof getSTCharacters === 'function' ? getSTCharacters() : [];
+                const cached = stChars.find(c => c.avatar === fileName);
+                if (cached) {
+                    const cachedWorld = cached.data?.extensions?.world;
+                    if (cachedWorld) {
+                        if (!charData.extensions) charData.extensions = {};
+                        charData.extensions.world = cachedWorld;
+                        console.log('[CharManager] 已从酒馆缓存恢复 extensions.world:', cachedWorld);
+                    }
+                }
+            } catch (e) { console.warn('尝试恢复 extensions.world 失败', e); }
+        }
         // -------------------------------------
 
         const fd = new FormData();
@@ -806,7 +822,7 @@ export async function saveCharacterData(fileName, updateCallback) {
             'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
             'character_version', 'creator', 'talkativeness', 'alternate_names',
             // 新增：防止编辑时丢失关键字段
-            'create_date', 'chat', 'world',
+            'create_date', 'chat',
             'depth_prompt_prompt', 'depth_prompt_depth', 'depth_prompt_role',
             'group_only_greetings'
         ];
@@ -823,6 +839,12 @@ export async function saveCharacterData(fileName, updateCallback) {
                 }
             }
         });
+        
+        // 【修复】world 字段在 extensions.world 中，需要单独处理
+        const worldValue = charData.extensions?.world || charData.world || '';
+        if (worldValue) {
+            fd.append('world', worldValue);
+        }
 
         // Explicitly handle array fields to prevent data loss
         if (charData.alternate_greetings && Array.isArray(charData.alternate_greetings)) {
@@ -1027,7 +1049,7 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
             'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
             'character_version', 'creator', 'talkativeness',
             // 新增：防止编辑时丢失关键字段
-            'create_date', 'chat', 'world',
+            'create_date', 'chat',
             'depth_prompt_prompt', 'depth_prompt_depth', 'depth_prompt_role',
             'group_only_greetings'
         ];
@@ -1037,6 +1059,12 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
                 fd.append(k, newCharData[k]);
             }
         });
+        
+        // 【修复】world 字段在 extensions.world 中，需要单独处理
+        const worldValue = newCharData.extensions?.world || newCharData.world || char.data?.extensions?.world || '';
+        if (worldValue) {
+            fd.append('world', worldValue);
+        }
 
         if (newCharData.alternate_greetings && Array.isArray(newCharData.alternate_greetings)) {
             newCharData.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));

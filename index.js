@@ -9,7 +9,7 @@ import { authFetch } from './api.js';
 import { state, DEFAULT_TAG_COLOR } from './state.js';
 import { getCache, setCache, clearCache, migrateFromLocalStorage } from './db.js';
 import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo, syncAllTags, deleteChar } from './data.js';
-import { importTags, needsTagImport, batchImportTags, migrateToCmManager, migrateAndSaveCmManager, getCmManager, initImportTime, clearImportTime } from './st-tags.js';
+import { importTags, needsTagImport, batchImportTags, migrateToCmManager, migrateAndSaveCmManager, getCmManager } from './st-tags.js';
 import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
 import { showSettingsDialog } from './settings.js';
 import { initTranslationUI, openTranslationDialog } from './translation/translation-ui.js';
@@ -173,13 +173,6 @@ async function doActualImport(files, remainingInQueue) {
                     console.log('[CharManager] Clearing ghost tags for imported file:', fileName);
                     delete state.tagMap[fileName];
                     saveTags(); // 必须保存，否则会被后续 scan 中的 loadTags 覆盖
-                }
-
-                // 清除旧的 import_time，让系统重新计算
-                try {
-                    await clearImportTime(fileName);
-                } catch (e) {
-                    console.warn('[CharManager] 清除 import_time 失败:', e);
                 }
 
                 // 迁移旧配置并导入标签
@@ -1096,9 +1089,6 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                 // 迁移旧的扩展配置到 cm_manager（如有迁移则保存）
                 await migrateAndSaveCmManager(stC);
 
-                // 初始化导入时间（如果没有）
-                await initImportTime(stC, stC.date_added);
-
                 // 同步最新扫描元数据到当前列表内存，避免重新导入后继续沿用旧时间排序
                 if (stC.date_added !== undefined) {
                     cached.date_added = stC.date_added;
@@ -1106,12 +1096,6 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                 // 同步最近聊天时间（用于"最近"排序）
                 if (stC.date_last_chat !== undefined) {
                     cached.date_last_chat = stC.date_last_chat;
-                }
-                if (stC.data?.extensions?.cm_manager?.import_time !== undefined) {
-                    if (!cached.data) cached.data = {};
-                    if (!cached.data.extensions) cached.data.extensions = {};
-                    if (!cached.data.extensions.cm_manager) cached.data.extensions.cm_manager = {};
-                    cached.data.extensions.cm_manager.import_time = stC.data.extensions.cm_manager.import_time;
                 }
 
                 // 同步 Tag（使用 cm_manager.tags 或检查是否需要导入）
@@ -1145,9 +1129,6 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                         // 迁移旧的扩展配置到 cm_manager（如有迁移则保存）
                         await migrateAndSaveCmManager(fresh);
 
-                        // 初始化导入时间（如果没有）
-                        await initImportTime(fresh, fresh.date_added);
-                        
                         // 检查是否需要标签导入确认
                         if (needsTagImport(fresh)) {
                             charsNeedTagImport.push(fresh);
@@ -1253,8 +1234,37 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
 
         await saveCache();
 
-        // 延时关闭进度条
-        if (forceFull) setTimeout(hideProgressBar, 800);
+        // 【清理】全量扫描时清理已废弃的 import_time 字段（同时清理内存和角色卡文件）
+        if (forceFull) {
+            let cleanedCount = 0;
+            const charsToClean = state.characters.filter(
+                char => char.data?.extensions?.cm_manager?.import_time !== undefined
+            );
+            
+            // 写入角色卡文件
+            for (const char of charsToClean) {
+                try {
+                    await saveCharacterData(char.fileName, (data) => {
+                        if (data.extensions?.cm_manager?.import_time !== undefined) {
+                            delete data.extensions.cm_manager.import_time;
+                            cleanedCount++;
+                        }
+                    });
+                    // 同步清理内存中的字段
+                    if (char.data?.extensions?.cm_manager?.import_time !== undefined) {
+                        delete char.data.extensions.cm_manager.import_time;
+                    }
+                } catch (e) {
+                    console.warn('[CharManager] 清理 import_time 失败:', char.fileName, e);
+                }
+            }
+            
+            if (cleanedCount > 0) {
+                console.log('[CharManager] 全量扫描清理了', cleanedCount, '个角色的 import_time 字段');
+                await saveCache(); // 保存清理后的数据
+            }
+            setTimeout(hideProgressBar, 800);
+        }
 
     } catch (e) {
         console.error(e);
@@ -3363,6 +3373,15 @@ function createModal() {
     const sortSel = m.querySelector('#cmSortSelect');
 
     // 设置初始值
+    // 【兼容性处理】如果用户当前排序是不存在的排序方式（如已删除的 import），回退到创建日期排序
+    const validSortValues = CHARACTER_SORT_OPTIONS.map(opt => opt.value);
+    const currentSortValue = state.sortBy + '_' + state.sortOrder;
+    if (!validSortValues.includes(currentSortValue)) {
+        console.warn('[CharManager] 检测到无效的排序方式:', currentSortValue, '，回退到 date_desc');
+        state.sortBy = 'date';
+        state.sortOrder = 'desc';
+        saveSettings(); // 持久化修正后的排序设置
+    }
     sortSel.value = state.sortBy + '_' + state.sortOrder;
 
     sortSel.onchange = async function () {
