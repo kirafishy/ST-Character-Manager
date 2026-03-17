@@ -192,7 +192,42 @@ async function doActualImport(files, remainingInQueue) {
         }
     }
 
-    // 4. 完成
+    // 4. 检查并添加 create_date 字段
+    updateProgressBar(90, '检查创建时间...');
+    
+    let addedCreateDateCount = 0;
+    for (const fileName of importedChars) {
+        try {
+            // 查找对应的角色对象
+            const allChars = getSTCharacters();
+            let char = allChars.find(c => c.avatar === fileName);
+            if (!char) {
+                const nameNoExt = fileName.replace(/\.[^/.]+$/, "");
+                char = allChars.find(c => c.avatar.startsWith(nameNoExt));
+            }
+            
+            if (char) {
+                // 检查是否缺少 create_date 字段
+                if (!char.create_date) {
+                    await saveCharacterData(fileName, (data) => {
+                        if (!data.create_date) {
+                            // 优先使用 date_added（酒馆提供的文件创建时间戳，毫秒）
+                            // 如果没有 date_added，才使用当前时间作为降级
+                            const createDate = char.date_added 
+                                ? new Date(char.date_added).toISOString() 
+                                : new Date().toISOString();
+                            data.create_date = createDate;
+                            addedCreateDateCount++;
+                        }
+                    });
+                }
+            }
+        } catch (e) {
+            console.warn('[CharManager] 导入后添加 create_date 失败:', fileName, e);
+        }
+    }
+    
+    // 5. 完成
     updateProgressBar(100, '完成', '');
     await new Promise(r => setTimeout(r, 500));
     
@@ -207,7 +242,13 @@ async function doActualImport(files, remainingInQueue) {
     
     // 【修复】区分"完全成功"和"部分成功"的情况
     if (metadataFailedChars.length > 0) {
-        notify(`已导入 ${importedChars.length} 个角色，但 ${metadataFailedChars.length} 个角色的元数据保存失败`, 'warning');
+        let message = `已导入 ${importedChars.length} 个角色，但 ${metadataFailedChars.length} 个角色的元数据保存失败`;
+        if (addedCreateDateCount > 0) {
+            message += `，并为 ${addedCreateDateCount} 个角色卡添加了创建时间`;
+        }
+        notify(message, 'warning');
+    } else if (addedCreateDateCount > 0) {
+        notify(`成功导入 ${importedChars.length} 个角色，并为 ${addedCreateDateCount} 个角色卡添加了创建时间`, 'success');
     } else {
         notify(`成功导入 ${importedChars.length} 个角色`, 'success');
     }
@@ -915,6 +956,11 @@ async function getCharacterData(fn, stMeta, bypassCache = false) {
             fav: baseInfo.fav || info.fav,  // 是否收藏
             character_book: baseInfo.character_book || info.character_book,  // 世界书
             source_link: baseInfo.source_link || info.source_link || '',  // 来源链接
+            // 角色卡创建时间：优先使用酒馆 API 返回的值（与快速刷新保持一致）
+            // 这样可以确保全量刷新和快速刷新的排序结果一致
+            create_date: (stMeta && stMeta.create_date) || info.create_date || (baseInfo.date_added ? new Date(baseInfo.date_added).toISOString() : ''),
+            // 保存文件根层级的原始 create_date（用于判断文件是否缺失该字段）
+            _fileCreateDate: info.create_date || '',
             tokens: info.tokens || 0,  // Token 数量
             
             // ===== 完整原始数据（用于标签导入等需要访问扩展字段的场景）=====
@@ -928,7 +974,7 @@ async function getCharacterData(fn, stMeta, bypassCache = false) {
 }
 
 function getCharInfo(d) {
-    if (!d) return { name: '未知', desc: '', greetings: 0, creator: '未知', creatorcomment: '', version: '', fav: false, character_book: '', source_link: '', tokens: 0 };
+    if (!d) return { name: '未知', desc: '', greetings: 0, creator: '未知', creatorcomment: '', version: '', fav: false, character_book: '', source_link: '', tokens: 0, create_date: '' };
     const x = d.data || d;
     const comment = x.creator_notes || x.creatorcomment || x.comment || '';
     const fileFav = (x.extensions && x.extensions.fav) === true;
@@ -949,6 +995,8 @@ function getCharInfo(d) {
         fav: fileFav,
         character_book: bookName,
         source_link: (x.extensions && (x.extensions.source_link || x.extensions.source_url || x.extensions.source)) || x.source_link || x.sourceUrl || '',
+        // create_date：与酒馆保持一致，只检查根层级
+        create_date: d.create_date || '',
         tokens: countTokens(d)
     };
 }
@@ -1108,6 +1156,10 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                 if (stC.date_added !== undefined) {
                     cached.date_added = stC.date_added;
                 }
+                // 同步角色卡创建时间（用于"创建日期"排序）
+                if (stC.create_date !== undefined) {
+                    cached.create_date = stC.create_date;
+                }
                 // 同步最近聊天时间（用于"最近"排序）
                 if (stC.date_last_chat !== undefined) {
                     cached.date_last_chat = stC.date_last_chat;
@@ -1235,7 +1287,11 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
             }
         });
 
+        // 按照当前排序规则对角色列表进行排序
+        state.characters.sort(compareChars);
+
         state.renderedCount = 0; // 重置无限滚动计数
+
 
         findDuplicates();
         updateStats();
@@ -1251,14 +1307,30 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
 
         // 【清理】全量扫描时清理已废弃的 import_time 字段（同时清理内存和角色卡文件）
         if (forceFull) {
-            let cleanedCount = 0;
+            // 计算后续操作的总数量，用于进度条显示
             const charsToClean = state.characters.filter(
                 char => char.data?.extensions?.cm_manager?.import_time !== undefined
             );
+            const charsMissingCreateDate = state.settings.autoAddCreateDate 
+                ? state.characters.filter(char => !char._fileCreateDate)
+                : [];
+            const totalPostOps = charsToClean.length + charsMissingCreateDate.length;
+            
+            if (totalPostOps > 0) {
+                updateProgressBar(100, '正在处理后续操作...', `共 ${totalPostOps} 个角色`);
+            }
+            
+            let cleanedCount = 0;
             
             // 写入角色卡文件
+            let postOpIndex = 0;
             for (const char of charsToClean) {
                 try {
+                postOpIndex++;
+                if (totalPostOps > 0) {
+                    const progress = Math.round((postOpIndex / totalPostOps) * 100);
+                    updateProgressBar(progress, '清理废弃字段...', `${postOpIndex}/${totalPostOps}`);
+                }
                     await saveCharacterData(char.fileName, (data) => {
                         if (data.extensions?.cm_manager?.import_time !== undefined) {
                             delete data.extensions.cm_manager.import_time;
@@ -1271,6 +1343,50 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                     }
                 } catch (e) {
                     console.warn('[CharManager] 清理 import_time 失败:', char.fileName, e);
+                }
+            }
+            
+            // 【新增】全量扫描时自动为缺少 create_date 字段的角色卡添加该字段
+            if (state.settings.autoAddCreateDate) {
+                let addedCount = 0;
+                
+                // 写入角色卡文件
+                for (const char of charsMissingCreateDate) {
+                    try {
+                    postOpIndex++;
+                    if (totalPostOps > 0) {
+                        const progress = Math.round((postOpIndex / totalPostOps) * 100);
+                        updateProgressBar(progress, '补全创建时间...', `${postOpIndex}/${totalPostOps}`);
+                    }
+                        await saveCharacterData(char.fileName, (data) => {
+                            if (!data.create_date) {
+                                // 优先使用 date_added（酒馆提供的文件创建时间戳，毫秒）
+                                // 如果没有 date_added，才使用当前时间作为降级
+                                const createDate = char.date_added 
+                                    ? new Date(char.date_added).toISOString() 
+                                    : new Date().toISOString();
+                                data.create_date = createDate;
+                                addedCount++;
+                                console.log('[CharManager] 补全 create_date:', char.name, '→', createDate);
+                            }
+                        });
+                        // 同步更新内存中的字段
+                        if (!char.create_date) {
+                            char.create_date = char.date_added 
+                                ? new Date(char.date_added).toISOString() 
+                                : new Date().toISOString();
+                        }
+                    } catch (e) {
+                        console.warn('[CharManager] 添加 create_date 失败:', char.fileName, e);
+                    }
+                }
+                
+                if (addedCount > 0) {
+                    console.log('[CharManager] 全量扫描为', addedCount, '个角色添加了 create_date 字段');
+                    notify(`已为 ${addedCount} 个角色卡添加创建时间`, 'success');
+                    // 补全后重新排序，确保排序一致性
+                    state.characters.sort(compareChars);
+                    await saveCache(); // 保存更新后的数据
                 }
             }
             

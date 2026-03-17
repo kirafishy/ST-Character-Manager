@@ -88,6 +88,8 @@ Identity Confirmation: 你是一名专业的角色扮演内容翻译专家，非
         applyToListPage: false,   // 是否对角色列表页启用当前封面策略
         applyToDetailPage: false, // 是否对角色详情页启用当前封面策略
     },
+    // --- create_date 字段设置 ---
+    autoAddCreateDate: false, // 全量刷新时自动为缺少 create_date 字段的角色卡添加该字段
 };
 
 // 读取已保存的设置

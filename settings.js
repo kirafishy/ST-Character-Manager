@@ -483,7 +483,18 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </div>
                 </div>
 
-                 <div class="cm-setting-item">
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>自动添加创建时间</span>
+                        <small>全量刷新时自动为缺少 create_date 字段的角色卡添加该字段，第一次会耗费一定时间</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetAutoAddCreateDate" ${settings.autoAddCreateDate ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+
+                <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>默认排序方式</span>
                         <small>每次打开时的默认排序</small>
@@ -862,6 +873,15 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
             themeBtn.onclick = () => {
                 toggleTheme();
                 themeBtn.textContent = state.isDarkMode ? '🌙 深色' : '☀️ 浅色';
+            };
+        }
+
+        // Auto Add Create Date Toggle
+        const autoAddCreateDateToggle = ov.querySelector('#cmSetAutoAddCreateDate');
+        if (autoAddCreateDateToggle) {
+            autoAddCreateDateToggle.onchange = function() {
+                state.settings.autoAddCreateDate = this.checked;
+                saveSettings();
             };
         }
 

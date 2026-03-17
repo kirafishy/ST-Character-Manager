@@ -14,3 +14,4 @@ docs/
 .worktrees/
 # Changelog 拆分产物（自动生成）
 changelog/
+.trae/

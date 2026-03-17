@@ -319,7 +319,17 @@ function clearCharTags(avatar) {
 }
 
 /**
+ * 根据 avatar 文件名获取角色名称
+ * @param {string} avatar - 角色头像文件名
+ * @returns {string} 角色名称
+ */
+function getCharNameByAvatar(avatar) {
+    const char = state.characters.find(c => c.fileName === avatar || c.avatar === avatar);
+    return char ? char.name : avatar.replace(/\.png$/i, '');
+}
+/**
  * 应用标签到角色
+ * @param {string} avatar - 角色头像文件名
  * @param {string} avatar - 角色头像文件名
  * @param {object[]} tagsToApply - 要应用的标签数组
  * @param {boolean} skipSave - 是否跳过保存
@@ -333,6 +343,7 @@ async function applyTags(avatar, tagsToApply, skipSave = false, replace = false)
     }
     
     let addedCount = 0;
+    const addedTagNames = [];
     for (const item of tagsToApply) {
         if (typeof item === 'object' && item.id) {
             if (item.isTemp) {
@@ -343,18 +354,26 @@ async function applyTags(avatar, tagsToApply, skipSave = false, replace = false)
                     tag = createTag(item.name);
                 }
                 if (tag) {
-                    if (await addTagToChar(avatar, tag.id, true, false, true)) addedCount++;
+                    if (await addTagToChar(avatar, tag.id, true, false, true)) {
+                        addedCount++;
+                        addedTagNames.push(tag.name);
+                    }
                 }
             } else {
                 // 已存在的标签对象
-                if (await addTagToChar(avatar, item.id, true, false, true)) addedCount++;
+                if (await addTagToChar(avatar, item.id, true, false, true)) {
+                    addedCount++;
+                    addedTagNames.push(item.name);
+                }
             }
         }
     }
     
     if (addedCount > 0) {
         if (!skipSave) saveTags();
-        log(`Applied ${addedCount} tags`);
+        // 获取角色名称
+        const charName = getCharNameByAvatar(avatar);
+        log(`Applied ${addedCount} tags to "${charName}": [${addedTagNames.join(', ')}]`);
     }
     
     return addedCount;

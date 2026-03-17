@@ -724,7 +724,10 @@ export function compareChars(a, b) {
     let ret = 0;
     switch (state.sortBy) {
         case 'date':
-            ret = (a.date_added || 0) - (b.date_added || 0);
+            // 优先使用 create_date，回退到 date_added
+            const dateA = a.create_date ? new Date(a.create_date).getTime() : (a.date_added || 0);
+            const dateB = b.create_date ? new Date(b.create_date).getTime() : (b.date_added || 0);
+            ret = dateA - dateB;
             break;
         case 'access':
             const lastA = a.date_last_chat || a.chat_date || a.last_mes || 0;
@@ -794,6 +797,10 @@ export async function saveCharacterData(fileName, updateCallback) {
         // 保存 updateCallback 修改前的 extensions.world 值（用于检测是否有意修改）
         const worldBeforeCallback = charData.extensions?.world;
         
+        // 检查是否有 create_date 字段
+        // 注意：create_date 应该在根层级（与酒馆逻辑一致），所以检查 fullData.create_date
+        const hasCreateDateBefore = !!fullData.create_date;
+        
         updateCallback(charData);
 
         // --- 修复：防止收藏操作导致世界书解绑 ---
@@ -833,6 +840,22 @@ export async function saveCharacterData(fileName, updateCallback) {
             } catch (e) { console.warn('尝试恢复 extensions.world 失败', e); }
         }
         // -------------------------------------
+        
+        // 检查并添加 create_date 字段（如果缺失）
+        // 注意：create_date 应该在根层级（与酒馆逻辑一致）
+        if (!fullData.create_date) {
+            // 优先使用 date_added（酒馆提供的文件创建时间戳，毫秒）
+            // fullData 来自 API 响应，包含 date_added 字段
+            const createDate = fullData.date_added 
+                ? new Date(fullData.date_added).toISOString() 
+                : new Date().toISOString();
+            fullData.create_date = createDate;
+            // 显示 toast 提示
+            if (!hasCreateDateBefore) {
+                const charName = charData.name || fileName.replace(/\.png$/i, '');
+                notify(`已为角色卡「${charName}」添加创建时间`, 'info');
+            }
+        }
 
         const fd = new FormData();
 
@@ -855,6 +878,10 @@ export async function saveCharacterData(fileName, updateCallback) {
         fields.forEach(k => {
             if (charData[k] !== undefined && charData[k] !== null) {
                 fd.append(k, charData[k]);
+            }
+            // create_date 应该从根层级读取（与酒馆逻辑一致）
+            if (k === 'create_date' && fullData.create_date !== undefined) {
+                fd.set('create_date', fullData.create_date);
             }
             if (k === 'fav') {
                 if (charData.extensions && charData.extensions.fav !== undefined) {
