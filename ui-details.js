@@ -10,7 +10,7 @@ import { createBaseDialog, showConfirm, showDeleteConfirm } from './ui-utils.js'
 import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion, deleteChatFile, persistCharacterState } from './data.js';
 import { getCmManager, migrateToCmManager } from './st-tags.js';
 import { authFetch } from './api.js';
-import { renderView, renderTagSidebar, updateCreatorComment, closeModal } from './index.js';
+import { renderView, renderTagSidebar, updateCreatorComment, closeModal, updateFavHeartOnCard } from './index.js';
 import { getGalleryItems, showGallery, renderGallery } from './gallery.js';
 import { openTranslationDialog } from './translation/translation-ui.js';
 import { calculateTokens } from './utils.js';
@@ -1148,10 +1148,12 @@ export class CharacterDetails {
             favBtn.title = newState ? '取消收藏' : '收藏';
             favBtn.style.color = newState ? '#f59e0b' : 'var(--cm-text-sec)';
             renderTagSidebar();
-            // 更新列表页卡片的收藏样式类
+            // 更新列表页卡片的收藏样式类和桃心徽章
             const listCard = doc.querySelector(`.cm-card[data-file="${CSS.escape(this.char.fileName)}"]`);
             if (listCard) {
                 listCard.classList.toggle('cm-favorite', newState);
+                // 更新桃心徽章显示状态
+                updateFavHeartOnCard(listCard, newState);
             }
             if (state.currentView === 'favorites') renderView();
         };

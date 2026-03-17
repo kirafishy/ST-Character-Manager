@@ -66,14 +66,14 @@ export function migrateToCmManager(character) {
 /**
  * 迁移旧的扩展配置到 cm_manager 并保存到文件
  * @param {object} character - 角色对象
- * @returns {Promise<boolean>} 是否进行了迁移
+ * @returns {Promise<boolean>} 是否进行了迁移（注意：即使迁移成功，保存也可能失败）
  */
 export async function migrateAndSaveCmManager(character) {
     const migrated = migrateToCmManager(character);
     if (migrated && character.avatar) {
         // 保存整个 cm_manager 对象到文件
         const cm = getCmManager(character);
-        await saveCharacterData(character.avatar, (data) => {
+        const saveResult = await saveCharacterData(character.avatar, (data) => {
             if (!data.extensions) data.extensions = {};
             data.extensions.cm_manager = cm;
             // 清理旧字段
@@ -81,6 +81,11 @@ export async function migrateAndSaveCmManager(character) {
                 delete data.extensions.st_character_manager_note;
             }
         });
+        
+        // 【修复】检查保存结果，失败时记录日志
+        if (!saveResult) {
+            console.warn(`[ST-Tags] migrateAndSaveCmManager: ${character.avatar} 保存失败，迁移未持久化`);
+        }
     }
     return migrated;
 }

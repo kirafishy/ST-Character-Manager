@@ -155,6 +155,9 @@ async function doActualImport(files, remainingInQueue) {
     // 加载最新的标签数据（因为原生刷新可能重置了 ctx.tags/tagMap，虽然不应该）
     loadTags();
 
+    // 【修复】记录元数据保存失败的角色，用于区分错误消息
+    const metadataFailedChars = [];
+    
     for (const fileName of importedChars) {
         // 查找对应的角色对象
         // 注意：API 返回的 file_name 是带扩展名的，allChars 里的 avatar 也是带扩展名的
@@ -183,6 +186,8 @@ async function doActualImport(files, remainingInQueue) {
                 saveTags();
             } catch (e) {
                 console.warn('标签导入失败:', fileName, e);
+                // 记录元数据保存失败的角色（角色卡已导入，但标签等元数据保存失败）
+                metadataFailedChars.push(fileName);
             }
         }
     }
@@ -192,10 +197,20 @@ async function doActualImport(files, remainingInQueue) {
     await new Promise(r => setTimeout(r, 500));
     
     // 快速刷新扩展 UI（检测新卡，同步酒馆最新数据）
-    await scan(false, false, false);
+    try {
+        await scan(false, false, false);
+    } catch (e) {
+        console.warn('[CharManager] 导入后刷新列表失败:', e);
+    }
     
     hideProgressBar();
-    notify(`成功导入 ${importedChars.length} 个角色`, 'success');
+    
+    // 【修复】区分"完全成功"和"部分成功"的情况
+    if (metadataFailedChars.length > 0) {
+        notify(`已导入 ${importedChars.length} 个角色，但 ${metadataFailedChars.length} 个角色的元数据保存失败`, 'warning');
+    } else {
+        notify(`成功导入 ${importedChars.length} 个角色`, 'success');
+    }
 }
 
 // 队列处理器
@@ -1650,7 +1665,7 @@ export function renderTagSidebar() {
  * @param {HTMLElement} card - 卡片 DOM 元素
  * @param {boolean} isFav - 是否已收藏
  */
-function updateFavHeartOnCard(card, isFav) {
+export function updateFavHeartOnCard(card, isFav) {
     if (!card) return;
     // 查找右上角徽章区域内的桃心
     const badgesContainer = card.querySelector('.cm-top-right-badges');

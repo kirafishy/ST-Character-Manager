@@ -751,14 +751,39 @@ export async function saveCharacterData(fileName, updateCallback) {
     await wait;
     
     try {
-        const getRes = await authFetch('/api/characters/get', {
-            method: 'POST',
-            body: JSON.stringify({ avatar_url: fileName })
-        });
-        if (!getRes.ok) {
+        // 【修复】添加重试机制，解决导入后立即读取可能返回 404 的问题
+        // 原因：文件刚上传完成时，后端缓存/文件系统可能未同步
+        let getRes;
+        let lastError;
+        const maxRetries = 3;
+        const retryDelay = 500; // 500ms
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            getRes = await authFetch('/api/characters/get', {
+                method: 'POST',
+                body: JSON.stringify({ avatar_url: fileName })
+            });
+            
+            if (getRes.ok) break;
+            
             const errorText = await getRes.text();
-            throw new Error(`无法读取角色数据: ${getRes.status} - ${errorText}`);
+            lastError = new Error(`无法读取角色数据: ${getRes.status} - ${errorText}`);
+            
+            // 只对 404 错误重试，其他错误直接抛出
+            if (getRes.status !== 404) {
+                throw lastError;
+            }
+            
+            // 最后一次尝试失败，抛出错误
+            if (attempt === maxRetries) {
+                console.warn(`[CharManager] saveCharacterData: ${fileName} 读取失败，已重试 ${maxRetries} 次`);
+                throw lastError;
+            }
+            
+            console.log(`[CharManager] saveCharacterData: ${fileName} 返回 404，等待 ${retryDelay}ms 后重试 (${attempt}/${maxRetries})`);
+            await new Promise(r => setTimeout(r, retryDelay));
         }
+        
         const fullData = await getRes.json();
 
         let charData = fullData;
