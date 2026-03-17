@@ -800,10 +800,15 @@ export async function saveCharacterData(fileName, updateCallback) {
         fd.append('avatar', new Blob([''], { type: 'application/octet-stream' }), '');
 
         // Removed 'tags' from this list to handle it explicitly
+        // 【修复】添加缺失字段，确保编辑时保留原有值
         const fields = [
             'fav', 'description', 'first_mes', 'personality', 'scenario',
             'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
-            'character_version', 'creator', 'talkativeness', 'alternate_names'
+            'character_version', 'creator', 'talkativeness', 'alternate_names',
+            // 新增：防止编辑时丢失关键字段
+            'create_date', 'chat', 'world',
+            'depth_prompt_prompt', 'depth_prompt_depth', 'depth_prompt_role',
+            'group_only_greetings'
         ];
 
         fields.forEach(k => {
@@ -1016,10 +1021,15 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
         }
 
         // 4. 添加字段
+        // 【修复】添加缺失字段，确保编辑时保留原有值
         const fields = [
             'description', 'first_mes', 'personality', 'scenario',
             'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
-            'character_version', 'creator', 'talkativeness'
+            'character_version', 'creator', 'talkativeness',
+            // 新增：防止编辑时丢失关键字段
+            'create_date', 'chat', 'world',
+            'depth_prompt_prompt', 'depth_prompt_depth', 'depth_prompt_role',
+            'group_only_greetings'
         ];
 
         fields.forEach(k => {

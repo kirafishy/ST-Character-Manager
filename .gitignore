@@ -12,3 +12,5 @@ CLAUDE.md
 docs/
 # Git worktrees 隔离工作区
 .worktrees/
+# Changelog 拆分产物（自动生成）
+changelog/
