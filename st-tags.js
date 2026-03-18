@@ -316,6 +316,26 @@ function clearCharTags(avatar) {
     if (state.tagMap[avatar]) {
         delete state.tagMap[avatar];
     }
+    
+    // 同步更新内存中角色对象的所有 tags 相关字段（避免下次扫描重复触发）
+    const char = state.characters.find(c => c.fileName === avatar || c.avatar === avatar);
+    if (char) {
+        // 更新根层级 tags
+        char.tags = [];
+        // 更新 data.tags
+        if (char.data) {
+            char.data.tags = [];
+        }
+        // 更新 data.extensions.cm_manager.tags
+        if (char.data?.extensions?.cm_manager) {
+            char.data.extensions.cm_manager.tags = [];
+        } else {
+            if (!char.data) char.data = {};
+            if (!char.data.extensions) char.data.extensions = {};
+            if (!char.data.extensions.cm_manager) char.data.extensions.cm_manager = {};
+            char.data.extensions.cm_manager.tags = [];
+        }
+    }
 }
 
 /**
@@ -374,6 +394,27 @@ async function applyTags(avatar, tagsToApply, skipSave = false, replace = false)
         // 获取角色名称
         const charName = getCharNameByAvatar(avatar);
         log(`Applied ${addedCount} tags to "${charName}": [${addedTagNames.join(', ')}]`);
+    }
+    
+    // 同步更新内存中角色对象的所有 tags 相关字段（避免下次扫描重复触发）
+    // 注意：无论 addedCount 是否 > 0，都要更新内存中的字段（replace 模式下清空标签时 addedCount=0）
+    const char = state.characters.find(c => c.fileName === avatar || c.avatar === avatar);
+    if (char) {
+        // 更新根层级 tags
+        char.tags = addedTagNames;
+        // 更新 data.tags
+        if (char.data) {
+            char.data.tags = addedTagNames;
+        }
+        // 更新 data.extensions.cm_manager.tags
+        if (char.data?.extensions?.cm_manager) {
+            char.data.extensions.cm_manager.tags = addedTagNames;
+        } else {
+            if (!char.data) char.data = {};
+            if (!char.data.extensions) char.data.extensions = {};
+            if (!char.data.extensions.cm_manager) char.data.extensions.cm_manager = {};
+            char.data.extensions.cm_manager.tags = addedTagNames;
+        }
     }
     
     return addedCount;
