@@ -724,9 +724,10 @@ export function compareChars(a, b) {
     let ret = 0;
     switch (state.sortBy) {
         case 'date':
-            // 优先使用 create_date，回退到 date_added
-            const dateA = a.create_date ? new Date(a.create_date).getTime() : (a.date_added || 0);
-            const dateB = b.create_date ? new Date(b.create_date).getTime() : (b.date_added || 0);
+            // Issue 2: 修复时间解析，兼容 Unix 时间戳字符串
+            // 仅使用 create_date，无效视为 0 (与酒馆原生逻辑对齐)
+            const dateA = parseSTDate(a.create_date);
+            const dateB = parseSTDate(b.create_date);
             ret = dateA - dateB;
             break;
         case 'access':
@@ -745,7 +746,29 @@ export function compareChars(a, b) {
             break;
         // 【移除】case 'import' 排序逻辑，改用酒馆原生的 create_date (date 排序)
     }
+    // Issue 3: 增加次级排序，确保排序稳定性
+    if (ret === 0) {
+        return (a.name || '').localeCompare(b.name || '', 'zh-CN', { numeric: true, sensitivity: 'base' });
+    }
+
     return state.sortOrder === 'asc' ? ret : -ret;
+}
+
+/**
+ * 解析酒馆时间格式，兼容 Unix 时间戳字符串
+ * @param {string|number} dateVal
+ * @returns {number} 时间戳，无效返回 0
+ */
+function parseSTDate(dateVal) {
+    if (!dateVal) return 0;
+    // 兼容酒馆原生的 Unix 时间戳字符串 (纯数字字符串)
+    if (typeof dateVal === 'number' || /^\d+$/.test(String(dateVal))) {
+        const num = Number(dateVal);
+        return isNaN(num) ? 0 : num;
+    }
+    // 尝试解析 ISO 字符串或其他格式
+    const parsed = new Date(dateVal).getTime();
+    return isNaN(parsed) ? 0 : parsed;
 }
 
 export async function saveCharacterData(fileName, updateCallback) {
@@ -1185,8 +1208,8 @@ export async function toggleFavorite(fileName, currentFavState) {
     try {
         const currentChId = parentWin.this_chid;
         if (typeof currentChId !== 'undefined' && parentWin.characters && parentWin.characters[currentChId]) {
-            const curName = parentWin.characters[currentChId].avatar.split('/').pop();
-            const tarName = fileName.split('/').pop();
+            const curName = decodeURIComponent(parentWin.characters[currentChId].avatar.split('/').pop());
+            const tarName = decodeURIComponent(fileName.split('/').pop());
             if (curName === tarName) isActiveChar = true;
         }
     } catch (e) { }
