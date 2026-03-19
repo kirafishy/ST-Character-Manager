@@ -557,9 +557,9 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     <button id="cmImportTagPresetsBtn" class="cm-btn cm-btn-secondary">导入标签</button>
                 </div>
 
-                <!-- AI 标签设置子项 -->
+                <!-- AI 智能概览设置子项 -->
                 <div style="margin-top:12px;padding:10px;background:var(--cm-bg-ter);border-radius:8px">
-                    <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--cm-text)">🤖 AI 标签生成</div>
+                    <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--cm-text)">🤖 AI 智能概览</div>
                     
                     <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
                         <div class="cm-setting-label">
@@ -583,15 +583,37 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         </label>
                     </div>
 
-                    <div class="cm-setting-item" style="margin:0">
+                    <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
                         <div class="cm-setting-label">
                             <span style="font-size:12px">批量模式每批上限</span>
-                            <small>批量 AI 标签生成时每批次最多处理的角色数 (${settings.aiBatchCharLimit || 10})<br><span style="color:var(--cm-text-sec);font-size:11px">⚠️ 过高可能导致 Token 超限或响应超时</span></small>
+                            <small>批量 AI 概览生成时每批次最多处理的角色数 (${settings.aiBatchCharLimit || 10})<br><span style="color:var(--cm-text-sec);font-size:11px">⚠️ 过高可能导致 Token 超限或响应超时</span></small>
                         </div>
                         <div style="display:flex;align-items:center;gap:8px">
                             <input type="range" id="cmSetAiBatchCharLimit" min="1" max="30" step="1" value="${settings.aiBatchCharLimit || 10}" style="width:80px">
                             <span id="cmSetAiBatchCharLimitVal" style="font-size:12px;width:20px;text-align:right">${settings.aiBatchCharLimit || 10}</span>
                         </div>
+                    </div>
+
+                    <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                        <div class="cm-setting-label">
+                            <span style="font-size:12px">包含备用开场白</span>
+                            <small>将角色的备用开场白内容加入 AI 分析请求</small>
+                        </div>
+                        <label class="cm-switch">
+                            <input type="checkbox" id="cmSetAiIncludeAltGreetings" ${settings.aiIncludeAltGreetings ? 'checked' : ''}>
+                            <span class="cm-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="cm-setting-item" style="margin:0">
+                        <div class="cm-setting-label">
+                            <span style="font-size:12px">包含角色世界书</span>
+                            <small>将角色卡内嵌的世界书条目加入 AI 分析请求</small>
+                        </div>
+                        <label class="cm-switch">
+                            <input type="checkbox" id="cmSetAiIncludeCharBook" ${settings.aiIncludeCharBook ? 'checked' : ''}>
+                            <span class="cm-slider"></span>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -752,6 +774,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindCheck('cmSetAutoSyncTags', 'autoSyncTags');
         bindCheck('cmSetDebugMode', 'debugMode');
         bindCheck('cmSetAiOverwriteTags', 'aiOverwriteTags');
+        bindCheck('cmSetAiIncludeAltGreetings', 'aiIncludeAltGreetings');
+        bindCheck('cmSetAiIncludeCharBook', 'aiIncludeCharBook');
 
         // AI 最大标签数滑块
         const aiMaxTagsSlider = ov.querySelector('#cmSetAiMaxTags');
@@ -782,7 +806,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 // 更新标签说明文字
                 const labelSmall = e.target.closest('.cm-setting-item')?.querySelector('small');
                 if (labelSmall) {
-                    labelSmall.innerHTML = `批量 AI 标签生成时每批次最多处理的角色数 (${e.target.value})<br><span style="color:var(--cm-text-sec);font-size:11px">⚠️ 过高可能导致 Token 超限或响应超时</span>`;
+                    labelSmall.innerHTML = `批量 AI 概览生成时每批次最多处理的角色数 (${e.target.value})<br><span style="color:var(--cm-text-sec);font-size:11px">⚠️ 过高可能导致 Token 超限或响应超时</span>`;
                 }
             };
         }

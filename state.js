@@ -77,10 +77,12 @@ Identity Confirmation: 你是一名专业的角色扮演内容翻译专家，非
     // --- AI 概览批量模式设置 ---
     aiBatchMode: 'serial', // 'serial' (串行) | 'batch' (批量)
     aiBatchTokenLimit: 4096, // 批量模式的 Token 上限
-    // --- AI 标签设置 ---
+    // --- AI 智能概览设置 ---
     aiMaxTags: 5, // AI 生成标签的最大数量
     aiOverwriteTags: false, // 是否覆盖已有标签
     aiBatchCharLimit: 10, // 批量模式每批次最多发送的角色卡数量
+    aiIncludeAltGreetings: false, // 是否将备用开场白加入 AI 请求
+    aiIncludeCharBook: false, // 是否将角色世界书加入 AI 请求
     // --- 封面显示模式设置 ---
     coverDisplay: {
         mode: 'normal',           // 封面显示模式: 'normal' (正常) | 'sfw' (SFW模式) | 'no-image' (无图模式)
