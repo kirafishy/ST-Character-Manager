@@ -33,7 +33,7 @@ import { getCmManager } from '../st-tags.js';
 export function extractCharacterData(char) {
     const data = char.data || {};
     const cm = getCmManager(char);
-    return {
+    const result = {
         fileName: char.fileName || char.avatar,
         name: char.name || (data.name || '未知角色'),
         description: data.description || '',
@@ -46,15 +46,37 @@ export function extractCharacterData(char) {
         creatorcomment: data.creator_notes || data.creatorcomment || '',
         note: cm.note || ''
     };
+
+    // 根据设置决定是否包含备用开场白
+    if (state.settings.aiIncludeAltGreetings) {
+        const altGreetings = data.alternate_greetings || char.alternate_greetings;
+        if (Array.isArray(altGreetings) && altGreetings.length > 0) {
+            result.alternate_greetings = altGreetings;
+        }
+    }
+
+    // 根据设置决定是否包含角色世界书
+    if (state.settings.aiIncludeCharBook) {
+        const charBook = data.character_book || char.character_book;
+        if (charBook && typeof charBook === 'object' && Array.isArray(charBook.entries)) {
+            result.character_book_entries = charBook.entries.map(e => ({
+                keys: e.keys || [],
+                content: e.content || ''
+            }));
+        }
+    }
+
+    return result;
 }
 
 /**
  * 生成单个角色的 AI 概览
  * @param {object} character - 角色对象
  * @param {boolean} forceGenerateTags - 是否强制生成标签（忽略现有标签）
+ * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  * @returns {Promise<{summary: string, tags: string[]}>}
  */
-export async function generateAIOverview(character, forceGenerateTags = false) {
+export async function generateAIOverview(character, forceGenerateTags = false, generateMode = 'both') {
     const config = getAIConfig();
     
     if (!config.apiKey || !config.apiKey.trim()) {
@@ -65,14 +87,20 @@ export async function generateAIOverview(character, forceGenerateTags = false) {
         throw new Error('未配置 AI API Base URL，请在设置中配置 OpenAI 渠道');
     }
     
-    const hasTags = !forceGenerateTags && checkCharHasTags(character);
-    const cardData = extractCharacterData(character);
-    const systemTags = hasTags ? [] : state.tags.map(t => t.name);
+    // 实际是否有标签
+    const actualHasTags = checkCharHasTags(character);
     
-    const prompt = buildOverviewPrompt(cardData, hasTags, systemTags);
+    // 如果没有开启强制生成标签，并且已经有标签，则不需要生成新标签
+    const skipGeneratingTags = !forceGenerateTags && actualHasTags;
+    
+    // 是否把系统标签传给AI（只生成summary或本身跳过标签时，不传）
+    const includeSystemTags = generateMode !== 'summary' && !skipGeneratingTags;
+    const systemTags = includeSystemTags ? state.tags.map(t => t.name) : [];
+    
+    const prompt = buildOverviewPrompt(cardData, skipGeneratingTags, systemTags, generateMode);
     const response = await callOpenAI(config, prompt);
     
-    return await parseOverviewResult(response, character, hasTags);
+    return await parseOverviewResult(response, character, actualHasTags, generateMode, forceGenerateTags);
 }
 
 /**
@@ -82,9 +110,10 @@ export async function generateAIOverview(character, forceGenerateTags = false) {
  * @param {function} onProgress - 进度回调 (event: ProgressEvent) => void
  * @param {boolean} forceGenerateTags - 是否强制生成标签（覆盖已有标签）
  * @param {function} [shouldCancel] - 取消检查回调，返回 true 时中断执行
+ * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  * @returns {Promise<{success: number, errors: number, results: object[], batchInfo: {total: number, failed: number}, cancelled: boolean}>}
  */
-export async function generateBatchOverview(characters, tokenLimit, onProgress, forceGenerateTags = false, shouldCancel = null) {
+export async function generateBatchOverview(characters, tokenLimit, onProgress, forceGenerateTags = false, shouldCancel = null, generateMode = 'both') {
     const config = getAIConfig();
     
     if (!config.apiKey || !config.apiKey.trim()) {
@@ -138,7 +167,7 @@ export async function generateBatchOverview(characters, tokenLimit, onProgress, 
                 break;
             }
             
-            const batchPrompt = buildBatchOverviewPrompt(batch.map(extractCharacterData), state.tags.map(t => t.name), forceGenerateTags);
+            const batchPrompt = buildBatchOverviewPrompt(batch.map(extractCharacterData), state.tags.map(t => t.name), forceGenerateTags, generateMode);
             
             // 使用流式解析器状态
             const parserState = new StreamingParserState();
@@ -147,7 +176,7 @@ export async function generateBatchOverview(characters, tokenLimit, onProgress, 
             const response = await callOpenAIStreaming(
                 config,
                 batchPrompt,
-                (chunk) => {
+                async (chunk) => {
                     // 每个 chunk 回调中增量解析
                     const { completeObjects, errors: parseErrors } = parseStreamingOverviewChunk(chunk, parserState, false);
                     
@@ -160,7 +189,7 @@ export async function generateBatchOverview(characters, tokenLimit, onProgress, 
                     for (const obj of completeObjects) {
                         const char = characterMap.get(obj.fileName);
                         if (char) {
-                            const result = processOverviewResult(obj, char, forceGenerateTags);
+                            const result = await processOverviewResult(obj, char, forceGenerateTags, generateMode);
                             if (result.success) {
                                 success++;
                                 batchSuccess++;
@@ -201,7 +230,7 @@ export async function generateBatchOverview(characters, tokenLimit, onProgress, 
             // 需要手动解析 response
             if (response && parserState.buffer === '' && results.filter(r => batch.some(c => getCharacterFileName(c) === r.fileName)).length === 0) {
                 // 尝试解析非流式响应
-                const batchResults = await parseBatchOverviewResult(response, batch, forceGenerateTags);
+                const batchResults = await parseBatchOverviewResult(response, batch, forceGenerateTags, generateMode);
                 for (let j = 0; j < batchResults.length; j++) {
                     const result = batchResults[j];
                     if (result.success) {
@@ -247,7 +276,7 @@ export async function generateBatchOverview(characters, tokenLimit, onProgress, 
             for (const obj of finalObjects) {
                 const char = characterMap.get(obj.fileName);
                 if (char) {
-                    const result = processOverviewResult(obj, char, forceGenerateTags);
+                    const result = await processOverviewResult(obj, char, forceGenerateTags, generateMode);
                     if (result.success) {
                         success++;
                         batchSuccess++;
@@ -515,7 +544,7 @@ async function callOpenAIStreaming(config, prompt, onChunk, maxTokens = 4096, si
                     const content = extractSSEContent(parsed.content);
                     if (content) {
                         fullContent += content;
-                        if (onChunk) onChunk(content);
+                        if (onChunk) await onChunk(content);
                     }
                 } else if (parsed.type === 'done') {
                     break;

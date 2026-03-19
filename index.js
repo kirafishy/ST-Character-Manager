@@ -2541,8 +2541,9 @@ function showTagEditor(tag) {
  * @param {string} mode - 'serial' | 'batch'
  * @param {number} tokenLimit - Token 上限
  * @param {boolean} overwriteExisting - 是否覆盖已有标签
+ * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  */
-async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwriteExisting = false) {
+async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwriteExisting = false, generateMode = 'both') {
     const selectedAvatars = Array.from(state.selectedCards);
     const characters = state.characters.filter(c =>
         selectedAvatars.includes(c.fileName || c.avatar)
@@ -2607,7 +2608,7 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                 
                 try {
                     // overwriteExisting=true 时强制生成标签
-                    await generateAIOverview(char, overwriteExisting);
+                    await generateAIOverview(char, overwriteExisting, generateMode);
                     success++;
                     details.push({ name: char.name, success: true });
                     notify(`✅ ${char.name}: 生成成功`, 'success', 1500);
@@ -2675,7 +2676,7 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                         // 未知事件类型，记录警告日志
                         console.warn(`[CharManager] [AI Batch] 未知事件类型：${event.type}`);
                 }
-            }, overwriteExisting, () => cancelled); // 传入取消检查回调
+            }, overwriteExisting, () => cancelled, generateMode); // 传入取消检查回调和生成模式
             
             success = result.success;
             errors = result.errors;
@@ -2733,7 +2734,7 @@ function showAITagConfigDialog() {
         <div style="padding:10px">
             <div style="margin-bottom:16px;padding:12px;background:var(--cm-bg-hover);border-radius:6px">
                 <div style="font-size:14px;font-weight:600;margin-bottom:4px">📊 已选择 ${selectedCount} 个角色</div>
-                <div style="font-size:12px;color:var(--cm-text-sec)">AI 将为这些角色生成智能标签</div>
+                <div style="font-size:12px;color:var(--cm-text-sec)">AI 将为这些角色生成概览和标签</div>
             </div>
             
             <div class="cm-form-group" style="margin-bottom:12px">
@@ -2762,6 +2763,16 @@ function showAITagConfigDialog() {
             </div>
             
             <div class="cm-form-group" style="margin-bottom:12px">
+                <label style="font-size:13px;font-weight:600">生成内容</label>
+                <div class="cm-mode-toggle-group" id="cmBatchAIModeGroup" style="margin-top:6px;width:fit-content;">
+                    <button class="cm-mode-toggle-btn active" data-val="both">概览+标签</button>
+                    <button class="cm-mode-toggle-btn" data-val="summary">仅概览</button>
+                    <button class="cm-mode-toggle-btn" data-val="tags">仅标签</button>
+                </div>
+                <input type="hidden" id="cmBatchGenerateMode" value="both">
+            </div>
+
+            <div class="cm-form-group" style="margin-bottom:12px">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                     <input type="checkbox" id="cmOverwriteCheckbox" style="width:16px;height:16px" ${state.settings.aiOverwriteTags ? 'checked' : ''}>
                     <span style="font-size:13px">
@@ -2773,11 +2784,12 @@ function showAITagConfigDialog() {
         </div>
     `;
     
-    createBaseDialog('🪄 AI 标签生成', contentHtml, [
+    createBaseDialog('🪄 AI 概览生成', contentHtml, [
         { text: '取消', cls: 'cm-btn-secondary', onClick: (ov, close) => close() },
         { text: '开始生成', id: 'cmAIStartBtn', cls: 'cm-btn-primary', onClick: async (ov, close) => {
             const mode = ov.querySelector('#cmAIModeSelect').value;
             const overwriteExisting = ov.querySelector('#cmOverwriteCheckbox').checked;
+            const generateMode = ov.querySelector('#cmBatchGenerateMode').value || 'both';
             
             let tokenLimit = 4096;
             if (mode === 'batch') {
@@ -2790,7 +2802,7 @@ function showAITagConfigDialog() {
             }
             
             close();
-            await batchAIGenerateTags(mode, tokenLimit, overwriteExisting);
+            await batchAIGenerateTags(mode, tokenLimit, overwriteExisting, generateMode);
         }}
     ], (ov) => {
         const modeSelect = ov.querySelector('#cmAIModeSelect');
@@ -2816,6 +2828,21 @@ function showAITagConfigDialog() {
         // 初始化状态
         updateModelVisibility();
         updateCustomTokenVisibility();
+
+        // 绑定生成模式 toggle group 事件
+        const batchModeGroup = ov.querySelector('#cmBatchAIModeGroup');
+        const batchModeInput = ov.querySelector('#cmBatchGenerateMode');
+        if (batchModeGroup && batchModeInput) {
+            batchModeGroup.querySelectorAll('.cm-mode-toggle-btn').forEach(btn => {
+                btn.onclick = () => {
+                    batchModeInput.value = btn.getAttribute('data-val');
+                    batchModeGroup.querySelectorAll('.cm-mode-toggle-btn').forEach(b => {
+                        const isActive = b.getAttribute('data-val') === batchModeInput.value;
+                        b.classList.toggle('active', isActive);
+                    });
+                };
+            });
+        }
     });
 }
 
@@ -3149,7 +3176,7 @@ function createModal() {
         '<button class="cm-btn cm-btn-secondary" id="cmSelectAll">全选</button>' +
         '<button class="cm-btn cm-btn-secondary" id="cmClearSel">退出</button>' +
         '<button class="cm-btn cm-btn-primary" id="cmBatchTag">标签</button>' +
-        '<button class="cm-btn cm-btn-success" id="cmBatchAIGenerate">🪄 AI 标签</button>' +
+        '<button class="cm-btn cm-btn-success" id="cmBatchAIGenerate">🪄 AI 概览</button>' +
         '<button class="cm-btn cm-btn-secondary" id="cmBatchFav">' + ICONS.star + '</button>' +
         '<button class="cm-btn cm-btn-danger" id="cmDelSel">' + ICONS.trash + '</button>' +
         '<button class="cm-btn cm-btn-secondary" id="cmBackupSel">' + ICONS.download + '</button>' +

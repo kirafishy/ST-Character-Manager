@@ -56,41 +56,46 @@ function safeParseJson(text) {
  * @param {string} aiResponse - AI 返回的原始文本
  * @param {object} character - 角色对象
  * @param {boolean} hasTags - 是否已有标签
+ * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  * @returns {Promise<{summary: string, tags: string[]}>}
  */
-export async function parseOverviewResult(aiResponse, character, hasTags) {
+export async function parseOverviewResult(aiResponse, character, hasTags, generateMode = 'both', forceGenerateTags = false) {
     const result = safeParseJson(aiResponse);
     
     if (!result) {
         throw new Error('AI 响应解析失败：无法解析为 JSON');
     }
     
-    if (!result.summary) {
+    // tags 模式不要求 summary 非空
+    if (generateMode !== 'tags' && !result.summary) {
         throw new Error('AI 未返回概览内容');
     }
     
     const tagNamesGenerated = [];
     const fileName = character.fileName || character.avatar;
     
-    // 1. 先保存 summary（通过 saveCharacterData）
-    await saveCharacterData(fileName, (data) => {
-        const cm = getCmManager({ data });
-        cm.summary = result.summary;
-    });
+    // 1. 保存 summary（tags 模式跳过）
+    if (generateMode !== 'tags' && result.summary) {
+        await saveCharacterData(fileName, (data) => {
+            const cm = getCmManager({ data });
+            cm.summary = result.summary;
+        });
+    }
     
-    // 2. 如果需要生成标签，使用统一入口应用标签
-    if (!hasTags && result.tags && Array.isArray(result.tags)) {
+    // 2. 应用标签（summary 模式跳过）
+    const shouldApplyTags = generateMode !== 'summary' && (forceGenerateTags || !hasTags) && result.tags && Array.isArray(result.tags);
+    if (shouldApplyTags) {
         const sanitizedTags = sanitizeTags(result.tags);
         
         // 使用统一入口应用标签，确保 state.tags/state.tagMap 同步更新
-        const applyResult = await applyTagsByNames(fileName, sanitizedTags, { replace: true });
+        const applyResult = await applyTagsByNames(fileName, sanitizedTags, { replace: forceGenerateTags });
         tagNamesGenerated.push(...sanitizedTags);
         
         console.log(`[CharManager] [AI Overview] Tags applied to ${fileName}: +${applyResult.added} -${applyResult.removed} created:${applyResult.created}`);
     }
     
     return {
-        summary: result.summary,
+        summary: result.summary || '',
         tags: result.tags || [],
         tagNamesGenerated
     };
@@ -103,7 +108,7 @@ export async function parseOverviewResult(aiResponse, character, hasTags) {
  * @param {boolean} forceGenerateTags - 是否强制生成标签（覆盖已有标签）
  * @returns {Promise<object[]>}
  */
-export async function parseBatchOverviewResult(aiResponse, characters, forceGenerateTags = false) {
+export async function parseBatchOverviewResult(aiResponse, characters, forceGenerateTags = false, generateMode = 'both') {
     const parsed = safeParseJson(aiResponse);
     
     if (!parsed) {
@@ -139,7 +144,7 @@ export async function parseBatchOverviewResult(aiResponse, characters, forceGene
         // 记录已处理的角色
         processedFileNames.add(char.fileName || char.avatar);
         
-        if (!item.summary) {
+        if (generateMode !== 'tags' && !item.summary) {
             outputResults.push({
                 fileName: item.fileName,
                 charName: char.name,
@@ -154,10 +159,12 @@ export async function parseBatchOverviewResult(aiResponse, characters, forceGene
         // 角色级错误隔离：每个角色的保存操作独立 try-catch
         try {
             // 1. 先保存 summary
-            await saveCharacterData(fileName, (data) => {
-                const cm = getCmManager({ data });
-                cm.summary = item.summary;
-            });
+            if (generateMode !== 'tags' && item.summary !== undefined) {
+                await saveCharacterData(fileName, (data) => {
+                    const cm = getCmManager({ data });
+                    cm.summary = item.summary;
+                });
+            }
             
             // 2. 使用统一入口应用标签，确保 state.tags/state.tagMap 同步更新
             // forceGenerateTags=true 时总是应用标签（replace=true），否则检查是否已有标签
@@ -219,14 +226,14 @@ export async function parseBatchOverviewResult(aiResponse, characters, forceGene
  * @param {function} onCharComplete - 角色完成回调 (result) => void
  * @returns {{ processed: number, errors: string[] }}
  */
-export function parseStreamingBatchChunk(chunk, state, isDone, characterMap, forceGenerateTags, onCharComplete) {
+export async function parseStreamingBatchChunk(chunk, state, isDone, characterMap, forceGenerateTags, onCharComplete, generateMode = 'both') {
     const { completeObjects, errors } = parseStreamingOverviewChunk(chunk, state, isDone);
     let processed = 0;
     
     for (const obj of completeObjects) {
         const char = characterMap.get(obj.fileName);
         if (char) {
-            const result = processOverviewResult(obj, char, forceGenerateTags);
+            const result = await processOverviewResult(obj, char, forceGenerateTags, generateMode);
             if (onCharComplete) {
                 onCharComplete(result);
             }
@@ -247,27 +254,30 @@ export function parseStreamingBatchChunk(chunk, state, isDone, characterMap, for
  * @param {boolean} forceGenerateTags - 是否强制生成标签
  * @returns {{ fileName: string, charName: string, success: boolean, error?: string }}
  */
-export function processOverviewResult(overview, char, forceGenerateTags = false) {
+export async function processOverviewResult(overview, char, forceGenerateTags = false, generateMode = 'both') {
     try {
-        const data = char.data || {};
-        const hasExistingTags = data.tags && Array.isArray(data.tags) && data.tags.length > 0;
+        const fileName = getCharacterFileName(char);
+        const hasExistingTags = checkCharHasTags(char);
         
-        // 更新概览（始终更新）
-        if (overview.summary !== undefined) {
-            data.creatorcomment = overview.summary;
+        // 1. 更新并保存概览
+        if (generateMode !== 'tags' && overview.summary !== undefined) {
+            await saveCharacterData(fileName, (data) => {
+                const cm = getCmManager({ data });
+                cm.summary = overview.summary;
+            });
         }
         
-        // 更新标签：根据 forceGenerateTags 参数决定是否覆盖已有标签
-        if (overview.tags && Array.isArray(overview.tags)) {
+        // 2. 更新并保存标签
+        if (generateMode !== 'summary' && overview.tags && Array.isArray(overview.tags)) {
             if (forceGenerateTags || !hasExistingTags) {
-                // 强制生成或角色无标签时，覆盖标签
-                data.tags = overview.tags;
+                const sanitizedTags = sanitizeTags(overview.tags);
+                await applyTagsByNames(fileName, sanitizedTags, { replace: forceGenerateTags });
+                console.log(`[CharManager] [AI Stream] ${char.name} tags applied.`);
             }
-            // 否则保留已有标签，不覆盖
         }
         
         return {
-            fileName: getCharacterFileName(char),
+            fileName,
             charName: char.name,
             success: true
         };

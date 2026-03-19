@@ -1914,6 +1914,8 @@ body.cm-resizing * {
     display: flex;
     align-items: center;
     justify-content: center;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .cm-toggle-btn:hover {
@@ -1926,10 +1928,53 @@ body.cm-resizing * {
     opacity: 1;
 }
 
-/* 标题栏中的按钮 */
-.cm-section-header .cm-toggle-btn {
+/* 标题栏中的折叠按钮 */
+.cm-section-header > .cm-toggle-btn,
+.cm-section-header .cm-edit-btn + .cm-toggle-btn {
     width: 20px;
     height: 20px;
+}
+
+/* AI 生成模式切换组容器 */
+.cm-mode-toggle-group {
+    display: flex;
+    padding: 3px;
+    background: var(--cm-bg-ter);
+    border: 1px solid var(--cm-border);
+    border-radius: 8px;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+/* AI 生成模式切换按钮 */
+.cm-mode-toggle-btn {
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--cm-text-sec);
+    flex-shrink: 0;
+    transition: background 0.2s, color 0.2s;
+}
+
+.cm-mode-toggle-btn.active {
+    background: var(--cm-accent-bg);
+    color: var(--cm-accent-text);
+}
+
+@media (max-width: 768px) {
+    .cm-mode-toggle-group {
+        padding: 3px;
+        border-radius: 8px;
+    }
+    .cm-mode-toggle-btn {
+        padding: 5px 12px;
+        font-size: 12px;
+        border-radius: 6px;
+    }
 }
 
 /* 开场白内容的伸缩按钮 */

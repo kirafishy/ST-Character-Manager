@@ -1607,20 +1607,49 @@ export class CharacterDetails {
             </div>
         ` : `<div class="cm-ai-overview-content cm-ai-overview-empty">点击"生成概览"按钮，使用 AI 分析角色卡内容...</div>`;
 
+        // 初始化生成模式（默认 both）
+        if (!this.aiGenerateMode) {
+            this.aiGenerateMode = 'both';
+        }
+
         aiSection.innerHTML = `
-            <div class="cm-section-header">
-                <span>📊 AI 智能概览</span>
-                <button class="cm-btn cm-btn-primary" id="cmAIGenerateBtn">
-                    🪄 生成概览
-                </button>
-                <button class="cm-btn cm-btn-secondary" id="cmAIEditBtn" style="display:${summary ? 'inline-block' : 'none'}">
-                    📝 编辑
-                </button>
+            <div class="cm-section-header" style="flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;">
+                <span style="white-space:nowrap;flex-shrink:0;">📊 AI 智能概览</span>
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;justify-content:flex-end;flex:1;min-width:260px;">
+                    <div class="cm-mode-toggle-group" id="cmSingleAIModeGroup">
+                        <button class="cm-mode-toggle-btn ${this.aiGenerateMode === 'both' ? 'active' : ''}" data-val="both">概览+标签</button>
+                        <button class="cm-mode-toggle-btn ${this.aiGenerateMode === 'summary' ? 'active' : ''}" data-val="summary">仅概览</button>
+                        <button class="cm-mode-toggle-btn ${this.aiGenerateMode === 'tags' ? 'active' : ''}" data-val="tags">仅标签</button>
+                    </div>
+                    <div style="display:flex;gap:6px;flex-shrink:0;">
+                        <button class="cm-btn cm-btn-primary" id="cmAIGenerateBtn" style="white-space:nowrap;">
+                            🪄 生成
+                        </button>
+                        <button class="cm-btn cm-btn-secondary" id="cmAIEditBtn" style="display:${summary ? 'inline-block' : 'none'};white-space:nowrap;">
+                            📝 编辑
+                        </button>
+                    </div>
+                </div>
             </div>
             ${headerHtml}
         `;
 
-        // 绑定事件
+        // 绑定 toggle group 事件
+        const toggleGroup = aiSection.querySelector('#cmSingleAIModeGroup');
+        if (toggleGroup) {
+            toggleGroup.querySelectorAll('.cm-mode-toggle-btn').forEach(btn => {
+                btn.onclick = () => {
+                    this.aiGenerateMode = btn.getAttribute('data-val');
+                    // 更新按钮样式
+                    toggleGroup.querySelectorAll('.cm-mode-toggle-btn').forEach(b => {
+                        const isActive = b.getAttribute('data-val') === this.aiGenerateMode;
+                        b.classList.toggle('active', isActive);
+                    });
+                };
+            });
+        }
+
+        // 绑定生成按钮事件
         aiSection.querySelector('#cmAIGenerateBtn').onclick = () => {
             this.generateAIOverview();
         };
@@ -1646,16 +1675,41 @@ export class CharacterDetails {
         btn.disabled = true;
         btn.textContent = '生成中...';
 
+        // 获取当前选择的生成模式
+        const generateMode = this.aiGenerateMode || 'both';
+
         try {
             const { generateAIOverview } = await import('./ai-overview/ai-service.js');
             // 使用设置中的 aiOverwriteTags 决定是否覆盖已有标签
             const forceGenerateTags = state.settings.aiOverwriteTags || false;
-            const result = await generateAIOverview(this.char, forceGenerateTags);
+            const result = await generateAIOverview(this.char, forceGenerateTags, generateMode);
 
-            notify(`概览生成成功${result.tags.length > 0 ? `，已生成${result.tags.length}个标签` : ''}`, 'success');
+            // 构建成功提示信息
+            let successMsg = generateMode === 'summary' 
+                ? '概览生成成功'
+                : `${generateMode === 'tags' ? '标签' : '概览'}生成成功${result.tags.length > 0 ? `，已生成${result.tags.length}个标签` : ''}`;
+            
+            notify(successMsg, 'success');
 
-            // 重新渲染详情页
+            // 重新渲染详情页内容区块
             this.renderDetailsTab();
+
+            // 刷新 header 区域的标签列表
+            this.rebuildHeaderPreserveOrder();
+
+            // 检查 SFW 封面模糊：重新判定封面显示状态
+            if (generateMode !== 'summary') {
+                const updatedCharTags = getCharTags(this.char.fileName);
+                const coverResult = resolveDetailPageCoverDisplay(updatedCharTags);
+                const avatar = this.container.querySelector('.cm-detail-avatar');
+                if (avatar) {
+                    if (coverResult.displayMode === 'blur') {
+                        avatar.classList.add('cm-detail-avatar-blur');
+                    } else {
+                        avatar.classList.remove('cm-detail-avatar-blur');
+                    }
+                }
+            }
             
             // 触发标签刷新事件，通知列表页刷新（只要生成了概览就触发）
             window.dispatchEvent(new CustomEvent('cm-tags-updated', {
