@@ -119,6 +119,7 @@ export class TranslationService {
         if (sourceLang === 'auto') {
             langInstruction += ` Auto-detect the source language. If the content is already in ${targetLangName}, keep it unchanged.`;
         }
+        langInstruction += `\nIMPORTANT: Do NOT translate SillyTavern macros such as {{user}} and {{char}}. Keep them exactly as they are.`;
         
         // 术语表注入
         let glossarySection = '';
