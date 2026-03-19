@@ -7,7 +7,7 @@ import { state } from './state.js';
 import { ICONS, Z_INDEX } from './constants.js';
 import { escapeHtml, formatSize, notify, parsePNG, formatRichText } from './utils.js';
 import { createBaseDialog, showConfirm, showDeleteConfirm } from './ui-utils.js';
-import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion, deleteChatFile, persistCharacterState } from './data.js';
+import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion, deleteChatFile, persistCharacterState, parseSTDate } from './data.js';
 import { getCmManager, migrateToCmManager } from './st-tags.js';
 import { authFetch } from './api.js';
 import { renderView, renderTagSidebar, updateCreatorComment, closeModal, updateFavHeartOnCard } from './index.js';
@@ -256,7 +256,8 @@ export class CharacterDetails {
                 </div>`;
 
                 history.forEach(h => {
-                    const dateStr = h.last_mes ? new Date(h.last_mes).toLocaleString() : '未知时间';
+                    const parsedTime = h.last_mes ? parseSTDate(h.last_mes) : 0;
+                    const dateStr = parsedTime > 0 ? new Date(parsedTime).toLocaleString() : '未知时间';
                     const base = this.char.fileName.replace(/\.[^/.]+$/, "");
                     let chatName = h.file_name.replace(base + ' - ', '').replace(/\.jsonl$/i, '');
                     if (chatName === h.file_name) chatName = h.file_name;
@@ -637,7 +638,8 @@ export class CharacterDetails {
                 let chatName = h.file_name.replace(base + ' - ', '').replace(/\.jsonl$/i, '');
                 if (chatName === h.file_name) chatName = h.file_name;
 
-                const dateStr = h.last_mes ? new Date(h.last_mes).toLocaleString() : '未知时间';
+                const parsedTime = h.last_mes ? parseSTDate(h.last_mes) : 0;
+                const dateStr = parsedTime > 0 ? new Date(parsedTime).toLocaleString() : '未知时间';
 
                 const info = doc.createElement('div');
                 info.style.cssText = 'flex:1;overflow:hidden';
@@ -1168,10 +1170,7 @@ export class CharacterDetails {
         dlBtn.title = '下载角色卡';
         dlBtn.onclick = async (e) => {
             e.stopPropagation();
-            if (await showConfirm(`确定下载 "${this.char.name}"？`)) {
-                await downloadChar(this.char.fileName);
-                notify('已下载', 'success');
-            }
+            await downloadChar(this.char.fileName);
         };
         headerActions.appendChild(dlBtn);
 
@@ -1186,7 +1185,8 @@ export class CharacterDetails {
         meta.className = 'cm-detail-meta';
         // 使用 create_date（酒馆原生创建时间），回退到 date_added
         const createTime = this.char.create_date || this.char.date_added;
-        const dateStr = createTime ? new Date(createTime).toLocaleDateString() : '未知';
+        const parsedCreateTime = createTime ? parseSTDate(createTime) : 0;
+        const dateStr = parsedCreateTime > 0 ? new Date(parsedCreateTime).toLocaleDateString() : '未知';
         
         let metaHtml = `
             <span>${ICONS.user} ${escapeHtml(this.char.creator)}</span>
@@ -1992,7 +1992,8 @@ export class CharacterDetails {
                 let chatName = h.file_name.replace(base + ' - ', '').replace(/\.jsonl$/i, '');
                 if (chatName === h.file_name) chatName = h.file_name;
 
-                const dateStr = h.last_mes ? new Date(h.last_mes).toLocaleString() : '未知时间';
+                const parsedTime = h.last_mes ? parseSTDate(h.last_mes) : 0;
+                const dateStr = parsedTime > 0 ? new Date(parsedTime).toLocaleString() : '未知时间';
 
                 const info = doc.createElement('div');
                 info.style.cssText = 'flex:1;overflow:hidden';

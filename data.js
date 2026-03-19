@@ -4,6 +4,7 @@ import { getSTContext, doc, parentWin, getSTCharacters, getCurrentChatChar } fro
 import { COLORS } from './constants.js';
 import { authFetch } from './api.js';
 import { setCache, setCacheBatch } from './db.js';
+import { createBaseDialog } from './ui-utils.js';
 
 // 文件写入串行队列 - 防止同一文件的并发写操作互相覆盖
 const fileWriteQueues = new Map();
@@ -777,15 +778,37 @@ export function compareChars(a, b) {
  * @param {string|number} dateVal
  * @returns {number} 时间戳，无效返回 0
  */
-function parseSTDate(dateVal) {
+export function parseSTDate(dateVal) {
     if (!dateVal) return 0;
+    const strVal = String(dateVal);
+
     // 兼容酒馆原生的 Unix 时间戳字符串 (纯数字字符串)
-    if (typeof dateVal === 'number' || /^\d+$/.test(String(dateVal))) {
-        const num = Number(dateVal);
+    if (typeof dateVal === 'number' || /^\d+$/.test(strVal)) {
+        const num = Number(strVal);
         return isNaN(num) ? 0 : num;
     }
+
+    // 尝试 ST "humanized" 格式 (例如: 2024-07-12@01h31m37s123ms, 2024-6-5 @14h 56m 50s 682ms)
+    // 移植酒馆原生的时间解析逻辑
+    let parsedIso = null;
+    const convertFromHumanized = (_, year, month, day, hour, min, sec, ms) => {
+        ms = typeof ms !== 'undefined' ? `.${ms.padStart(3, '0')}` : '';
+        return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:${sec.padStart(2, '0')}${ms}Z`;
+    };
+    
+    let rgxMatch;
+    if ((rgxMatch = strVal.match(/(\d{4})-(\d{1,2})-(\d{1,2})@(\d{1,2})h(\d{1,2})m(\d{1,2})s(\d{1,3})ms/))) {
+        parsedIso = convertFromHumanized(...rgxMatch);
+    } else if ((rgxMatch = strVal.match(/(\d{4})-(\d{1,2})-(\d{1,2})@(\d{1,2})h(\d{1,2})m(\d{1,2})s/))) {
+        parsedIso = convertFromHumanized(...rgxMatch);
+    } else if ((rgxMatch = strVal.match(/(\d{4})-(\d{1,2})-(\d{1,2}) @(\d{1,2})h (\d{1,2})m (\d{1,2})s (\d{1,3})ms/))) {
+        parsedIso = convertFromHumanized(...rgxMatch);
+    }
+
+    const valToParse = parsedIso ? parsedIso : strVal;
+    
     // 尝试解析 ISO 字符串或其他格式
-    const parsed = new Date(dateVal).getTime();
+    const parsed = new Date(valToParse).getTime();
     return isNaN(parsed) ? 0 : parsed;
 }
 
@@ -1412,14 +1435,77 @@ export async function renameCharacterFile(char, newName) {
 }
 
 export async function downloadChar(fn) {
-    const r = await authFetch('/characters/' + encodeURIComponent(fn));
-    const b = await r.blob();
-    const a = doc.createElement('a');
-    a.href = URL.createObjectURL(b);
-    a.download = fn;
-    doc.body.appendChild(a);
-    a.click();
-    a.remove();
+    return new Promise(resolve => {
+        let html = `<div style="padding:10px 14px">`;
+        html += `<div style="font-size:14px;margin-bottom:12px">请选择导出格式：</div>`;
+        html += `<div style="display:flex;flex-direction:column;gap:8px">`;
+        html += `<label style="display:flex;align-items:center;cursor:pointer;font-size:13px">`;
+        html += `<input type="radio" name="exportFormat" value="png" checked style="width:16px;height:16px;margin-right:8px">`;
+        html += `<span>PNG 格式（包含图片和元数据）</span>`;
+        html += `</label>`;
+        html += `<label style="display:flex;align-items:center;cursor:pointer;font-size:13px">`;
+        html += `<input type="radio" name="exportFormat" value="json" style="width:16px;height:16px;margin-right:8px">`;
+        html += `<span>JSON 格式（纯文本数据）</span>`;
+        html += `</label>`;
+        html += `</div></div>`;
+
+        createBaseDialog('导出角色', html, [
+            { text: '取消', id: 'cmExportCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => { close(); resolve(false); } },
+            {
+                text: '导出', id: 'cmExportOk', cls: 'cm-btn-primary', onClick: async (ov, close) => {
+                    const formatInput = ov.querySelector('input[name="exportFormat"]:checked');
+                    if (!formatInput) return;
+                    const format = formatInput.value;
+                    close();
+                    
+                    try {
+                        const charObj = state.characters.find(c => c.fileName === fn);
+                        if (charObj) {
+                            // 导出前先强制使用最新数据覆盖服务端，以补全潜在缺失的 create_date 等字段
+                            await updateCharacter(fn, charObj, null, {
+                                cleanOldWorldInfo: false,
+                                preserveSourceLink: true,
+                                refreshUI: false,
+                                notifySuccess: false
+                            });
+                        }
+
+                        // 发起原生导出请求
+                        const response = await authFetch('/api/characters/export', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ format, avatar_url: fn })
+                        });
+
+                        if (response.ok) {
+                            const blob = await response.blob();
+                            const downloadUrl = window.URL.createObjectURL(blob);
+                            const a = doc.createElement('a');
+                            a.href = downloadUrl;
+                            
+                            // 像酒馆原生一样，使用角色卡的名字作为导出的文件名
+                            const safeCharName = (charObj.name || fn.replace(/\.png$/i, '')).replace(/[\/\\?%*:|"<>]/g, '_');
+                            a.download = `${safeCharName}.${format}`;
+                            
+                            doc.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            window.URL.revokeObjectURL(downloadUrl);
+                            notify('导出成功', 'success');
+                        } else {
+                            notify('导出失败', 'error');
+                        }
+                    } catch (e) {
+                        console.error('Export error: ', e);
+                        notify('导出过程发生异常', 'error');
+                    }
+                    resolve(true);
+                }
+            }
+        ], null, { stack: true });
+    });
 }
 
 export async function downloadAsZip(files) {

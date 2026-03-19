@@ -1387,6 +1387,27 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                     // 补全后重新排序，确保排序一致性
                     state.characters.sort(compareChars);
                     await saveCache(); // 保存更新后的数据
+
+                    // 实时刷新列表页，使最新/最旧排序立即生效
+                    state.renderedCount = 0;
+                    renderView();
+
+                    // 实时刷新详情页（如果当前打开了某张角色卡的详情页）
+                    if (state.currentDetailChar) {
+                        const updatedChar = state.characters.find(c => c.fileName === state.currentDetailChar.fileName);
+                        if (updatedChar) {
+                            state.currentDetailChar = updatedChar;
+                            const detailOverlay = doc.querySelector('.cm-detail-overlay');
+                            if (detailOverlay) {
+                                const detailInstance = detailOverlay.__detailInstance;
+                                if (detailInstance) {
+                                    detailInstance.char = updatedChar;
+                                    // 重建 header 以刷新日期等元数据显示
+                                    detailInstance.rebuildHeaderPreserveOrder();
+                                }
+                            }
+                        }
+                    }
                 }
             }
             
