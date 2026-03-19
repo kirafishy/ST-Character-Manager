@@ -389,6 +389,24 @@ function syncCharDataToMemory(fileName, newCharData) {
         if (newCharData.character_version !== undefined) {
             charObj.character_version = newCharData.character_version;
         }
+        
+        // 【修复】同步聊天关联字段，防止保存后聊天记录丢失
+        // chat: 当前聊天文件名（如 "2024-01-01.json"）
+        if (newCharData.chat !== undefined) {
+            charObj.chat = newCharData.chat;
+        }
+        // create_date: 角色卡创建时间
+        if (newCharData.create_date !== undefined) {
+            charObj.create_date = newCharData.create_date;
+        }
+        // date_last_chat: 最后聊天时间戳（毫秒）
+        if (newCharData.date_last_chat !== undefined) {
+            charObj.date_last_chat = newCharData.date_last_chat;
+        }
+        // chat_date: 兼容字段，部分版本使用
+        if (newCharData.chat_date !== undefined) {
+            charObj.chat_date = newCharData.chat_date;
+        }
     };
     
     // 更新 parentWin.characters
@@ -906,6 +924,10 @@ export async function saveCharacterData(fileName, updateCallback) {
             if (k === 'create_date' && fullData.create_date !== undefined) {
                 fd.set('create_date', fullData.create_date);
             }
+            // 【修复】chat 字段也应该从根层级读取（与酒馆逻辑一致）
+            if (k === 'chat' && fullData.chat !== undefined) {
+                fd.set('chat', fullData.chat);
+            }
             if (k === 'fav') {
                 if (charData.extensions && charData.extensions.fav !== undefined) {
                     fd.set('fav', charData.extensions.fav.toString());
@@ -914,6 +936,11 @@ export async function saveCharacterData(fileName, updateCallback) {
                 }
             }
         });
+        
+        // 【修复】date_last_chat 字段从根层级读取
+        if (fullData.date_last_chat !== undefined) {
+            fd.append('date_last_chat', fullData.date_last_chat);
+        }
         
         // 【修复】world 字段在 extensions.world 中，需要单独处理
         const worldValue = charData.extensions?.world || charData.world || '';
@@ -943,7 +970,11 @@ export async function saveCharacterData(fileName, updateCallback) {
         if (fullData.data && (fullData.spec === 'chara_card_v3' || fullData.data.name)) {
             fullData.data = charData;
         }
-        fd.append('json_data', JSON.stringify(fullData));
+        // 【修复】删除 chat 字段后再序列化，防止聊天关联丢失
+        const jsonDataToSend = JSON.parse(JSON.stringify(fullData));
+        if (jsonDataToSend.chat) delete jsonDataToSend.chat;
+        if (jsonDataToSend.data?.chat) delete jsonDataToSend.data.chat;
+        fd.append('json_data', JSON.stringify(jsonDataToSend));
 
         const r = await authFetch('/api/characters/edit', {
             method: 'POST',
@@ -952,32 +983,54 @@ export async function saveCharacterData(fileName, updateCallback) {
 
         if (!r.ok) throw new Error(await r.text());
         
+        // 【修复】后端 /api/characters/edit 返回纯文本 "OK"，不是 JSON
+        // 使用本地数据（包含聊天关联字段）同步状态
+        const responseText = await r.text();
+        console.log('[CharManager] saveCharacterData: 后端返回', responseText);
+        
+        // 使用本地数据作为最终数据源
+        // 注意：需要合并根层级字段（chat、create_date、date_last_chat）到 finalCharData
+        const finalCharData = {
+            ...charData,
+            // 确保根层级的聊天关联字段被包含
+            chat: fullData.chat ?? charData.chat,
+            create_date: fullData.create_date ?? charData.create_date,
+            date_last_chat: fullData.date_last_chat ?? charData.date_last_chat,
+            chat_date: fullData.chat_date ?? charData.chat_date
+        };
+        
         // API 写入成功后，同步更新内存状态
         // 1. 更新 state.characters 中的角色对象
         const stateChar = state.characters.find(c => c.fileName === fileName);
         if (stateChar) {
             // 合并更新后的数据到 state 缓存
             Object.assign(stateChar, {
-                name: charData.name,
-                description: charData.description,
-                personality: charData.personality,
-                scenario: charData.scenario,
-                first_mes: charData.first_mes,
-                mes_example: charData.mes_example,
-                creatorcomment: charData.creator_notes || charData.creatorcomment,
-                version: charData.character_version,
-                fav: charData.extensions?.fav ?? charData.fav ?? stateChar.fav
+                name: finalCharData.name || charData.name,
+                description: finalCharData.description ?? charData.description,
+                personality: finalCharData.personality ?? charData.personality,
+                scenario: finalCharData.scenario ?? charData.scenario,
+                first_mes: finalCharData.first_mes ?? charData.first_mes,
+                mes_example: finalCharData.mes_example ?? charData.mes_example,
+                creatorcomment: finalCharData.creator_notes || finalCharData.creatorcomment || charData.creator_notes || charData.creatorcomment,
+                version: finalCharData.character_version || charData.character_version,
+                fav: finalCharData.extensions?.fav ?? finalCharData.fav ?? charData.extensions?.fav ?? charData.fav ?? stateChar.fav,
+                // 【修复】同步聊天关联字段
+                chat: finalCharData.chat ?? charData.chat ?? stateChar.chat,
+                create_date: finalCharData.create_date ?? charData.create_date ?? stateChar.create_date,
+                date_last_chat: finalCharData.date_last_chat ?? charData.date_last_chat ?? stateChar.date_last_chat,
+                chat_date: finalCharData.chat_date ?? charData.chat_date ?? stateChar.chat_date
             });
             // 同步 extensions 中的数据
-            if (charData.extensions) {
+            const extensionsData = finalCharData.extensions || charData.extensions;
+            if (extensionsData) {
                 if (!stateChar.data) stateChar.data = {};
                 if (!stateChar.data.extensions) stateChar.data.extensions = {};
-                Object.assign(stateChar.data.extensions, charData.extensions);
+                Object.assign(stateChar.data.extensions, extensionsData);
             }
         }
         
         // 2. 同步更新酒馆内存中的角色数据
-        syncCharDataToMemory(fileName, charData);
+        syncCharDataToMemory(fileName, finalCharData);
         
         // 3. 刷新酒馆的角色列表缓存，确保原生操作能读取到最新数据
         // 这是关键：酒馆内部有自己的角色缓存，不刷新的话会被旧数据覆盖
@@ -1133,7 +1186,17 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
             if (newCharData[k] !== undefined && newCharData[k] !== null) {
                 fd.append(k, newCharData[k]);
             }
+            // 【修复】如果 newCharData 没有 create_date 字段，从现有 char 数据中补充
+            // 注意：chat 字段不再单独添加到 FormData，而是通过 json_data 传递
+            if (k === 'create_date' && !newCharData.create_date && char.create_date) {
+                fd.set('create_date', char.create_date);
+            }
         });
+        
+        // 【修复】date_last_chat 字段从现有数据补充
+        if (!newCharData.date_last_chat && char.date_last_chat) {
+            fd.append('date_last_chat', char.date_last_chat);
+        }
         
         // 【修复】world 字段在 extensions.world 中，需要单独处理
         const worldValue = newCharData.extensions?.world || newCharData.world || char.data?.extensions?.world || '';
@@ -1163,8 +1226,12 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
         }
 
         // 7. 附加完整 JSON 数据 (如果提供)
+        // 【修复】删除 chat 字段后再序列化，防止聊天关联丢失
         if (fullCardData) {
-            fd.append('json_data', JSON.stringify(fullCardData));
+            const jsonDataToSend = JSON.parse(JSON.stringify(fullCardData));
+            if (jsonDataToSend.chat) delete jsonDataToSend.chat;
+            if (jsonDataToSend.data?.chat) delete jsonDataToSend.data.chat;
+            fd.append('json_data', JSON.stringify(jsonDataToSend));
         }
 
         const r = await authFetch('/api/characters/edit', {
@@ -1174,12 +1241,28 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
 
         if (!r.ok) throw new Error(await r.text());
 
+        // 【修复】后端 /api/characters/edit 返回纯文本 "OK"，不是 JSON
+        // 使用本地数据（包含聊天关联字段）同步状态
+        const responseText = await r.text();
+        console.log('[CharManager] updateCharacter: 后端返回', responseText);
+        
+        // 使用本地数据作为最终数据源
+        // 注意：需要从现有 char 数据中补充聊天关联字段（如果 newCharData 没有）
+        const finalCharData = {
+            ...newCharData,
+            // 确保聊天关联字段被保留（优先使用 newCharData，否则从现有 char 数据中获取）
+            chat: newCharData.chat ?? char.chat,
+            create_date: newCharData.create_date ?? char.create_date,
+            date_last_chat: newCharData.date_last_chat ?? char.date_last_chat,
+            chat_date: newCharData.chat_date ?? char.chat_date
+        };
+
         // 8. 更新本地状态
-        Object.assign(char, newCharData);
+        Object.assign(char, finalCharData);
         char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
         
         // 9. 同步更新酒馆内存中的角色数据，防止刷新时被旧数据覆盖
-        syncCharDataToMemory(fileName, newCharData);
+        syncCharDataToMemory(fileName, finalCharData);
         
         // 10. 刷新酒馆的角色列表缓存，确保原生操作能读取到最新数据
         try {
