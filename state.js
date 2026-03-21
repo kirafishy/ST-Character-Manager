@@ -80,6 +80,7 @@ Identity Confirmation: 你是一名专业的角色扮演内容翻译专家，非
     // --- AI 智能概览设置 ---
     aiMaxTags: 5, // AI 生成标签的最大数量
     aiOverwriteTags: false, // 是否覆盖已有标签
+    aiOverwriteSummary: false, // 是否覆盖已有概览
     aiBatchCharLimit: 10, // 批量模式每批次最多发送的角色卡数量
     aiIncludeAltGreetings: false, // 是否将备用开场白加入 AI 请求
     aiIncludeCharBook: false, // 是否将角色世界书加入 AI 请求
@@ -120,6 +121,9 @@ const migrateSettings = (settings) => {
     }
     if (settings.aiBatchTokenLimit === undefined || settings.aiBatchTokenLimit === null) {
         settings.aiBatchTokenLimit = 4096;
+    }
+    if (settings.aiOverwriteSummary === undefined || settings.aiOverwriteSummary === null) {
+        settings.aiOverwriteSummary = false;
     }
     
     // 封面显示模式设置迁移（确保旧用户升级后 coverDisplay 配置完整）

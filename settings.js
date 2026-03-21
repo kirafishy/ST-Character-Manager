@@ -585,6 +585,17 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
 
                     <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
                         <div class="cm-setting-label">
+                            <span style="font-size:12px">覆盖已有概览</span>
+                            <small>启用后 AI 生成的概览将覆盖角色现有的概览</small>
+                        </div>
+                        <label class="cm-switch">
+                            <input type="checkbox" id="cmSetAiOverwriteSummary" ${settings.aiOverwriteSummary ? 'checked' : ''}>
+                            <span class="cm-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
+                        <div class="cm-setting-label">
                             <span style="font-size:12px">批量模式每批上限</span>
                             <small>批量 AI 概览生成时每批次最多处理的角色数 (${settings.aiBatchCharLimit || 10})<br><span style="color:var(--cm-text-sec);font-size:11px">⚠️ 过高可能导致 Token 超限或响应超时</span></small>
                         </div>
@@ -774,6 +785,7 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindCheck('cmSetAutoSyncTags', 'autoSyncTags');
         bindCheck('cmSetDebugMode', 'debugMode');
         bindCheck('cmSetAiOverwriteTags', 'aiOverwriteTags');
+        bindCheck('cmSetAiOverwriteSummary', 'aiOverwriteSummary');
         bindCheck('cmSetAiIncludeAltGreetings', 'aiIncludeAltGreetings');
         bindCheck('cmSetAiIncludeCharBook', 'aiIncludeCharBook');
 

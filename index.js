@@ -6,7 +6,7 @@ import { log, truncate, formatSize, escapeHtml, generateId, loadJSZip, notify, p
 import { createBaseDialog, showAlert, showConfirm, showDeleteConfirm, showErrorReport } from './ui-utils.js';
 export { createBaseDialog, showAlert, showConfirm, showDeleteConfirm, showErrorReport };
 import { authFetch } from './api.js';
-import { state, DEFAULT_TAG_COLOR } from './state.js';
+import { state, saveSettings, DEFAULT_TAG_COLOR } from './state.js';
 import { getCache, setCache, clearCache, migrateFromLocalStorage } from './db.js';
 import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo, syncAllTags, deleteChar } from './data.js';
 import { importTags, needsTagImport, batchImportTags, migrateToCmManager, migrateAndSaveCmManager, getCmManager } from './st-tags.js';
@@ -2607,15 +2607,15 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
             return cm.summary && cm.summary.trim() !== '';
         }).length;
     } else if (generateMode === 'both') {
-        // both 模式下，计算有多少角色被完全跳过（既有标签又有概览）
-        if (!overwriteOptions.tags && !overwriteOptions.summary) {
-            skippedCount = characters.filter(c => {
-                const cm = getCmManager(c);
-                const hasTags = cm.tags && cm.tags.length > 0 && !(cm.tags.length === 1 && cm.tags[0] === '');
-                const hasSummary = cm.summary && cm.summary.trim() !== '';
-                return hasTags && hasSummary;
-            }).length;
-        }
+        // both 模式下，计算有多少角色被完全跳过（不需要任何生成）
+        // 只有当角色已有概览且不覆盖概览，且已有标签且不覆盖标签时，才完全跳过
+        skippedCount = characters.filter(c => {
+            const cm = getCmManager(c);
+            const hasTags = cm.tags && cm.tags.length > 0 && !(cm.tags.length === 1 && cm.tags[0] === '');
+            const hasSummary = cm.summary && cm.summary.trim() !== '';
+            // 如果不覆盖概览且已有概览，且不覆盖标签且已有标签，则完全跳过
+            return (!overwriteOptions.summary && hasSummary) && (!overwriteOptions.tags && hasTags);
+        }).length;
     }
     
     const modeText = mode === 'serial' ? '逐个处理' : `批量处理（Token 上限：${tokenLimit}）`;
@@ -2850,7 +2850,7 @@ function showAITagConfigDialog() {
                         <span style="font-size:13px">标签</span>
                     </label>
                     <label id="cmOverwriteSummaryGroup" style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                        <input type="checkbox" id="cmOverwriteSummaryCheckbox" style="width:16px;height:16px">
+                        <input type="checkbox" id="cmOverwriteSummaryCheckbox" style="width:16px;height:16px" ${state.settings.aiOverwriteSummary ? 'checked' : ''}>
                         <span style="font-size:13px">概览</span>
                     </label>
                 </div>
@@ -2916,8 +2916,8 @@ function showAITagConfigDialog() {
                         const isActive = b.getAttribute('data-val') === batchModeInput.value;
                         b.classList.toggle('active', isActive);
                     });
-                    // 延迟执行，确保 cmBatchGenerateMode 的值已更新
-                    setTimeout(updateOverwriteVisibility, 0);
+                    // 直接调用，确保可见性更新
+                    updateOverwriteVisibility();
                 };
             });
         }
@@ -2930,6 +2930,22 @@ function showAITagConfigDialog() {
                 summaryGroup.style.display = generateMode === 'tags' ? 'none' : 'flex';
             }
         };
+
+        // 绑定覆盖复选框 change 事件，保存设置
+        const overwriteTagsCheckbox = ov.querySelector('#cmOverwriteTagsCheckbox');
+        const overwriteSummaryCheckbox = ov.querySelector('#cmOverwriteSummaryCheckbox');
+        if (overwriteTagsCheckbox) {
+            overwriteTagsCheckbox.onchange = () => {
+                state.settings.aiOverwriteTags = overwriteTagsCheckbox.checked;
+                saveSettings();
+            };
+        }
+        if (overwriteSummaryCheckbox) {
+            overwriteSummaryCheckbox.onchange = () => {
+                state.settings.aiOverwriteSummary = overwriteSummaryCheckbox.checked;
+                saveSettings();
+            };
+        }
 
         // 初始化覆盖选项可见性
         updateOverwriteVisibility();

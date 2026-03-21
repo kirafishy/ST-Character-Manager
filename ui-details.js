@@ -3,7 +3,7 @@
  * 负责渲染角色详情弹窗，采用固定头部 + 标签页布局
  */
 import { doc, parentWin, getSTContext, getSTCharacters } from './context.js';
-import { state } from './state.js';
+import { state, saveSettings } from './state.js';
 import { ICONS, Z_INDEX } from './constants.js';
 import { escapeHtml, formatSize, notify, parsePNG, formatRichText } from './utils.js';
 import { createBaseDialog, showConfirm, showDeleteConfirm } from './ui-utils.js';
@@ -1621,7 +1621,11 @@ export class CharacterDetails {
                         <button class="cm-mode-toggle-btn ${this.aiGenerateMode === 'summary' ? 'active' : ''}" data-val="summary">仅概览</button>
                         <button class="cm-mode-toggle-btn ${this.aiGenerateMode === 'tags' ? 'active' : ''}" data-val="tags">仅标签</button>
                     </div>
-                    <div style="display:flex;gap:6px;flex-shrink:0;">
+                    <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;">
+                        <label id="cmSingleOverwriteSummaryGroup" style="display:${this.aiGenerateMode !== 'tags' ? 'flex' : 'none'};align-items:center;gap:4px;cursor:pointer;font-size:12px;">
+                            <input type="checkbox" id="cmSingleOverwriteSummaryCheckbox" style="width:14px;height:14px" ${state.settings.aiOverwriteSummary ? 'checked' : ''}>
+                            <span>覆盖概览</span>
+                        </label>
                         <button class="cm-btn cm-btn-primary" id="cmAIGenerateBtn" style="white-space:nowrap;">
                             🪄 生成
                         </button>
@@ -1645,6 +1649,11 @@ export class CharacterDetails {
                         const isActive = b.getAttribute('data-val') === this.aiGenerateMode;
                         b.classList.toggle('active', isActive);
                     });
+                    // 更新概览覆盖复选框可见性
+                    const overwriteGroup = aiSection.querySelector('#cmSingleOverwriteSummaryGroup');
+                    if (overwriteGroup) {
+                        overwriteGroup.style.display = this.aiGenerateMode !== 'tags' ? 'flex' : 'none';
+                    }
                 };
             });
         }
@@ -1653,6 +1662,15 @@ export class CharacterDetails {
         aiSection.querySelector('#cmAIGenerateBtn').onclick = () => {
             this.generateAIOverview();
         };
+
+        // 绑定概览覆盖复选框 change 事件，保存设置
+        const overwriteSummaryCheckbox = aiSection.querySelector('#cmSingleOverwriteSummaryCheckbox');
+        if (overwriteSummaryCheckbox) {
+            overwriteSummaryCheckbox.onchange = () => {
+                state.settings.aiOverwriteSummary = overwriteSummaryCheckbox.checked;
+                saveSettings();
+            };
+        }
 
         const editBtn = aiSection.querySelector('#cmAIEditBtn');
         if (editBtn) {
@@ -1682,7 +1700,10 @@ export class CharacterDetails {
             const { generateAIOverview } = await import('./ai-overview/ai-service.js');
             // 使用设置中的 aiOverwriteTags 决定是否覆盖已有标签
             const forceGenerateTags = state.settings.aiOverwriteTags || false;
-            const result = await generateAIOverview(this.char, forceGenerateTags, false, generateMode);
+            // 从复选框读取概览覆盖状态
+            const overwriteSummaryCheckbox = this.container.querySelector('#cmSingleOverwriteSummaryCheckbox');
+            const forceGenerateSummary = overwriteSummaryCheckbox ? overwriteSummaryCheckbox.checked : false;
+            const result = await generateAIOverview(this.char, forceGenerateTags, forceGenerateSummary, generateMode);
 
             // 构建成功提示信息
             let successMsg = generateMode === 'summary' 
