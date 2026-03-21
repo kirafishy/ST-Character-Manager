@@ -57,6 +57,8 @@ function safeParseJson(text) {
  * @param {object} character - 角色对象
  * @param {boolean} hasTags - 是否已有标签
  * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
+ * @param {boolean} forceGenerateTags - 是否强制生成标签（覆盖已有标签）
+ * @param {boolean} forceGenerateSummary - 是否强制生成概览（覆盖已有概览）
  * @returns {Promise<{summary: string, tags: string[]}>}
  */
 export async function parseOverviewResult(aiResponse, character, hasTags, generateMode = 'both', forceGenerateTags = false, forceGenerateSummary = false) {
@@ -109,6 +111,8 @@ export async function parseOverviewResult(aiResponse, character, hasTags, genera
  * @param {string} aiResponse - AI 返回的原始文本
  * @param {object[]} characters - 角色对象数组
  * @param {boolean} forceGenerateTags - 是否强制生成标签（覆盖已有标签）
+ * @param {boolean} forceGenerateSummary - 是否强制生成概览（覆盖已有概览）
+ * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  * @returns {Promise<object[]>}
  */
 export async function parseBatchOverviewResult(aiResponse, characters, forceGenerateTags = false, forceGenerateSummary = false, generateMode = 'both') {

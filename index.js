@@ -2540,7 +2540,7 @@ function showTagEditor(tag) {
  * 批量 AI 生成标签
  * @param {string} mode - 'serial' | 'batch'
  * @param {number} tokenLimit - Token 上限
- * @param {boolean} overwriteExisting - 是否覆盖已有标签
+ * @param {{tags: boolean, summary: boolean}} overwriteOptions - 覆盖选项对象
  * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  */
 async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwriteOptions = { tags: false, summary: false }, generateMode = 'both') {

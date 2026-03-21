@@ -73,6 +73,7 @@ export function extractCharacterData(char) {
  * 生成单个角色的 AI 概览
  * @param {object} character - 角色对象
  * @param {boolean} forceGenerateTags - 是否强制生成标签（忽略现有标签）
+ * @param {boolean} forceGenerateSummary - 是否强制生成概览（忽略现有概览）
  * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  * @returns {Promise<{summary: string, tags: string[]}>}
  */
@@ -109,6 +110,7 @@ export async function generateAIOverview(character, forceGenerateTags = false, f
  * @param {number} tokenLimit - Token 上限
  * @param {function} onProgress - 进度回调 (event: ProgressEvent) => void
  * @param {boolean} forceGenerateTags - 是否强制生成标签（覆盖已有标签）
+ * @param {boolean} forceGenerateSummary - 是否强制生成概览（覆盖已有概览）
  * @param {function} [shouldCancel] - 取消检查回调，返回 true 时中断执行
  * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  * @returns {Promise<{success: number, errors: number, results: object[], batchInfo: {total: number, failed: number}, cancelled: boolean}>}
