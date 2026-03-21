@@ -76,7 +76,7 @@ export function extractCharacterData(char) {
  * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  * @returns {Promise<{summary: string, tags: string[]}>}
  */
-export async function generateAIOverview(character, forceGenerateTags = false, generateMode = 'both') {
+export async function generateAIOverview(character, forceGenerateTags = false, forceGenerateSummary = false, generateMode = 'both') {
     const config = getAIConfig();
     
     if (!config.apiKey || !config.apiKey.trim()) {
@@ -100,7 +100,7 @@ export async function generateAIOverview(character, forceGenerateTags = false, g
     const prompt = buildOverviewPrompt(cardData, skipGeneratingTags, systemTags, generateMode);
     const response = await callOpenAI(config, prompt);
     
-    return await parseOverviewResult(response, character, actualHasTags, generateMode, forceGenerateTags);
+    return await parseOverviewResult(response, character, actualHasTags, generateMode, forceGenerateTags, forceGenerateSummary);
 }
 
 /**
@@ -113,7 +113,7 @@ export async function generateAIOverview(character, forceGenerateTags = false, g
  * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  * @returns {Promise<{success: number, errors: number, results: object[], batchInfo: {total: number, failed: number}, cancelled: boolean}>}
  */
-export async function generateBatchOverview(characters, tokenLimit, onProgress, forceGenerateTags = false, shouldCancel = null, generateMode = 'both') {
+export async function generateBatchOverview(characters, tokenLimit, onProgress, forceGenerateTags = false, forceGenerateSummary = false, shouldCancel = null, generateMode = 'both') {
     const config = getAIConfig();
     
     if (!config.apiKey || !config.apiKey.trim()) {
@@ -230,7 +230,7 @@ export async function generateBatchOverview(characters, tokenLimit, onProgress, 
             // 需要手动解析 response
             if (response && parserState.buffer === '' && results.filter(r => batch.some(c => getCharacterFileName(c) === r.fileName)).length === 0) {
                 // 尝试解析非流式响应
-                const batchResults = await parseBatchOverviewResult(response, batch, forceGenerateTags, generateMode);
+                const batchResults = await parseBatchOverviewResult(response, batch, forceGenerateTags, forceGenerateSummary, generateMode);
                 for (let j = 0; j < batchResults.length; j++) {
                     const result = batchResults[j];
                     if (result.success) {

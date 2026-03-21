@@ -59,7 +59,7 @@ function safeParseJson(text) {
  * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  * @returns {Promise<{summary: string, tags: string[]}>}
  */
-export async function parseOverviewResult(aiResponse, character, hasTags, generateMode = 'both', forceGenerateTags = false) {
+export async function parseOverviewResult(aiResponse, character, hasTags, generateMode = 'both', forceGenerateTags = false, forceGenerateSummary = false) {
     const result = safeParseJson(aiResponse);
     
     if (!result) {
@@ -78,7 +78,10 @@ export async function parseOverviewResult(aiResponse, character, hasTags, genera
     if (generateMode !== 'tags' && result.summary) {
         await saveCharacterData(fileName, (data) => {
             const cm = getCmManager({ data });
-            cm.summary = result.summary;
+            // 如果强制生成概览，或者角色没有概览，则保存
+            if (forceGenerateSummary || !cm.summary) {
+                cm.summary = result.summary;
+            }
         });
     }
     
@@ -108,7 +111,7 @@ export async function parseOverviewResult(aiResponse, character, hasTags, genera
  * @param {boolean} forceGenerateTags - 是否强制生成标签（覆盖已有标签）
  * @returns {Promise<object[]>}
  */
-export async function parseBatchOverviewResult(aiResponse, characters, forceGenerateTags = false, generateMode = 'both') {
+export async function parseBatchOverviewResult(aiResponse, characters, forceGenerateTags = false, forceGenerateSummary = false, generateMode = 'both') {
     const parsed = safeParseJson(aiResponse);
     
     if (!parsed) {
@@ -162,7 +165,10 @@ export async function parseBatchOverviewResult(aiResponse, characters, forceGene
             if (generateMode !== 'tags' && item.summary !== undefined) {
                 await saveCharacterData(fileName, (data) => {
                     const cm = getCmManager({ data });
-                    cm.summary = item.summary;
+                    // 如果强制生成概览，或者角色没有概览，则保存
+                    if (forceGenerateSummary || !cm.summary) {
+                        cm.summary = item.summary;
+                    }
                 });
             }
             

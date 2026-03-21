@@ -2543,16 +2543,16 @@ function showTagEditor(tag) {
  * @param {boolean} overwriteExisting - 是否覆盖已有标签
  * @param {string} generateMode - 生成模式：'both' | 'summary' | 'tags'
  */
-async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwriteExisting = false, generateMode = 'both') {
+async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwriteOptions = { tags: false, summary: false }, generateMode = 'both') {
     const selectedAvatars = Array.from(state.selectedCards);
     const characters = state.characters.filter(c =>
         selectedAvatars.includes(c.fileName || c.avatar)
     );
     
-    // 根据 overwriteExisting 决定目标角色
+    // 根据 overwriteOptions.tags 决定目标角色
     let targetChars;
-    if (overwriteExisting) {
-        // 覆盖模式：处理所有选中的角色
+    if (overwriteOptions.tags) {
+        // 标签覆盖模式：处理所有选中的角色
         targetChars = characters;
     } else {
         // 默认模式：只处理无标签的角色
@@ -2563,13 +2563,13 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
     }
     
     if (targetChars.length === 0) {
-        notify(overwriteExisting ? '请先选择角色' : '所有选中角色已有标签，无需生成', 'info');
+        notify(overwriteOptions.tags ? '请先选择角色' : '所有选中角色已有标签，无需生成', 'info');
         return;
     }
     
-    const skippedCount = overwriteExisting ? 0 : characters.length - targetChars.length;
+    const skippedCount = overwriteOptions.tags ? 0 : characters.length - targetChars.length;
     const modeText = mode === 'serial' ? '逐个处理' : `批量处理（Token 上限：${tokenLimit}）`;
-    const confirmMsg = `将对 ${targetChars.length} 个角色生成 AI 标签${skippedCount > 0 ? `\n（跳过 ${skippedCount} 个已有标签的角色）` : ''}\n\n模式：${modeText}${overwriteExisting ? '\n⚠️ 将覆盖已有标签' : ''}`;
+    const confirmMsg = `将对 ${targetChars.length} 个角色生成 AI 标签${skippedCount > 0 ? `\n（跳过 ${skippedCount} 个已有标签的角色）` : ''}\n\n模式：${modeText}${overwriteOptions.tags ? '\n⚠️ 将覆盖已有标签' : ''}${overwriteOptions.summary ? '\n⚠️ 将覆盖已有概览' : ''}`;
     
     const confirmed = await showConfirm(confirmMsg);
     
@@ -2607,8 +2607,8 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                 );
                 
                 try {
-                    // overwriteExisting=true 时强制生成标签
-                    await generateAIOverview(char, overwriteExisting, generateMode);
+                    // overwriteOptions.tags=true 时强制生成标签
+                    await generateAIOverview(char, overwriteOptions.tags, overwriteOptions.summary, generateMode);
                     success++;
                     details.push({ name: char.name, success: true });
                     notify(`✅ ${char.name}: 生成成功`, 'success', 1500);
@@ -2676,7 +2676,7 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
                         // 未知事件类型，记录警告日志
                         console.warn(`[CharManager] [AI Batch] 未知事件类型：${event.type}`);
                 }
-            }, overwriteExisting, () => cancelled, generateMode); // 传入取消检查回调和生成模式
+            }, overwriteOptions.tags, overwriteOptions.summary, () => cancelled, generateMode); // 传入取消检查回调和生成模式
             
             success = result.success;
             errors = result.errors;
@@ -2773,13 +2773,17 @@ function showAITagConfigDialog() {
             </div>
 
             <div class="cm-form-group" style="margin-bottom:12px">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                    <input type="checkbox" id="cmOverwriteCheckbox" style="width:16px;height:16px" ${state.settings.aiOverwriteTags ? 'checked' : ''}>
-                    <span style="font-size:13px">
-                        <span style="font-weight:600">覆盖已有标签</span>
-                        <span style="font-size:11px;color:var(--cm-text-sec);display:block;margin-top:2px">开启后将重新生成所有选中角色的标签</span>
-                    </span>
-                </label>
+                <label style="font-size:13px;font-weight:600;margin-bottom:8px;display:block">覆盖选项</label>
+                <div style="display:flex;gap:16px;padding-left:4px">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" id="cmOverwriteTagsCheckbox" style="width:16px;height:16px">
+                        <span style="font-size:13px">标签</span>
+                    </label>
+                    <label id="cmOverwriteSummaryGroup" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" id="cmOverwriteSummaryCheckbox" style="width:16px;height:16px">
+                        <span style="font-size:13px">概览</span>
+                    </label>
+                </div>
             </div>
         </div>
     `;
@@ -2788,7 +2792,9 @@ function showAITagConfigDialog() {
         { text: '取消', cls: 'cm-btn-secondary', onClick: (ov, close) => close() },
         { text: '开始生成', id: 'cmAIStartBtn', cls: 'cm-btn-primary', onClick: async (ov, close) => {
             const mode = ov.querySelector('#cmAIModeSelect').value;
-            const overwriteExisting = ov.querySelector('#cmOverwriteCheckbox').checked;
+            const overwriteTags = ov.querySelector('#cmOverwriteTagsCheckbox')?.checked || false;
+            const overwriteSummary = ov.querySelector('#cmOverwriteSummaryCheckbox')?.checked || false;
+            const overwriteOptions = { tags: overwriteTags, summary: overwriteSummary };
             const generateMode = ov.querySelector('#cmBatchGenerateMode').value || 'both';
             
             let tokenLimit = 4096;
@@ -2802,7 +2808,7 @@ function showAITagConfigDialog() {
             }
             
             close();
-            await batchAIGenerateTags(mode, tokenLimit, overwriteExisting, generateMode);
+            await batchAIGenerateTags(mode, tokenLimit, overwriteOptions, generateMode);
         }}
     ], (ov) => {
         const modeSelect = ov.querySelector('#cmAIModeSelect');
@@ -2840,9 +2846,23 @@ function showAITagConfigDialog() {
                         const isActive = b.getAttribute('data-val') === batchModeInput.value;
                         b.classList.toggle('active', isActive);
                     });
+                    // 延迟执行，确保 cmBatchGenerateMode 的值已更新
+                    setTimeout(updateOverwriteVisibility, 0);
                 };
             });
         }
+
+        // 覆盖选项可见性控制
+        const updateOverwriteVisibility = () => {
+            const generateMode = ov.querySelector('#cmBatchGenerateMode').value || 'both';
+            const summaryGroup = ov.querySelector('#cmOverwriteSummaryGroup');
+            if (summaryGroup) {
+                summaryGroup.style.display = generateMode === 'tags' ? 'none' : 'flex';
+            }
+        };
+
+        // 初始化覆盖选项可见性
+        updateOverwriteVisibility();
     });
 }
 
