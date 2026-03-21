@@ -2549,27 +2549,97 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
         selectedAvatars.includes(c.fileName || c.avatar)
     );
     
-    // 根据 overwriteOptions.tags 决定目标角色
+    // 根据 generateMode 和 overwriteOptions 决定目标角色
     let targetChars;
-    if (overwriteOptions.tags) {
-        // 标签覆盖模式：处理所有选中的角色
-        targetChars = characters;
-    } else {
-        // 默认模式：只处理无标签的角色
-        targetChars = characters.filter(c => {
-            const cm = getCmManager(c);
-            return !cm.tags || cm.tags.length === 0 || (cm.tags.length === 1 && cm.tags[0] === '');
-        });
-    }
+    targetChars = characters.filter(c => {
+        const cm = getCmManager(c);
+        
+        // 检查标签状态
+        const hasTags = cm.tags && cm.tags.length > 0 && !(cm.tags.length === 1 && cm.tags[0] === '');
+        
+        // 检查概览状态
+        const hasSummary = cm.summary && cm.summary.trim() !== '';
+        
+        // 根据生成模式和覆盖选项判断是否需要处理
+        switch (generateMode) {
+            case 'tags':
+                return overwriteOptions.tags || !hasTags;
+            case 'summary':
+                return overwriteOptions.summary || !hasSummary;
+            case 'both':
+            default:
+                // 需要生成标签或概览
+                const needTags = overwriteOptions.tags || !hasTags;
+                const needSummary = overwriteOptions.summary || !hasSummary;
+                return needTags || needSummary;
+        }
+    });
     
     if (targetChars.length === 0) {
-        notify(overwriteOptions.tags ? '请先选择角色' : '所有选中角色已有标签，无需生成', 'info');
+        // 根据 generateMode 显示对应的提示信息
+        let noTargetMsg;
+        switch (generateMode) {
+            case 'tags':
+                noTargetMsg = overwriteOptions.tags ? '请先选择角色' : '所有选中角色已有标签，无需生成';
+                break;
+            case 'summary':
+                noTargetMsg = overwriteOptions.summary ? '请先选择角色' : '所有选中角色已有概览，无需生成';
+                break;
+            case 'both':
+            default:
+                noTargetMsg = (overwriteOptions.tags && overwriteOptions.summary) ? '请先选择角色' : '所有选中角色已有标签和概览，无需生成';
+                break;
+        }
+        notify(noTargetMsg, 'info');
         return;
     }
     
-    const skippedCount = overwriteOptions.tags ? 0 : characters.length - targetChars.length;
+    // 计算跳过数量：根据 generateMode 判断跳过的是哪些角色
+    let skippedCount = 0;
+    if (generateMode === 'tags' && !overwriteOptions.tags) {
+        skippedCount = characters.filter(c => {
+            const cm = getCmManager(c);
+            return cm.tags && cm.tags.length > 0 && !(cm.tags.length === 1 && cm.tags[0] === '');
+        }).length;
+    } else if (generateMode === 'summary' && !overwriteOptions.summary) {
+        skippedCount = characters.filter(c => {
+            const cm = getCmManager(c);
+            return cm.summary && cm.summary.trim() !== '';
+        }).length;
+    } else if (generateMode === 'both') {
+        // both 模式下，计算有多少角色被完全跳过（既有标签又有概览）
+        if (!overwriteOptions.tags && !overwriteOptions.summary) {
+            skippedCount = characters.filter(c => {
+                const cm = getCmManager(c);
+                const hasTags = cm.tags && cm.tags.length > 0 && !(cm.tags.length === 1 && cm.tags[0] === '');
+                const hasSummary = cm.summary && cm.summary.trim() !== '';
+                return hasTags && hasSummary;
+            }).length;
+        }
+    }
+    
     const modeText = mode === 'serial' ? '逐个处理' : `批量处理（Token 上限：${tokenLimit}）`;
-    const confirmMsg = `将对 ${targetChars.length} 个角色生成 AI 标签${skippedCount > 0 ? `\n（跳过 ${skippedCount} 个已有标签的角色）` : ''}\n\n模式：${modeText}${overwriteOptions.tags ? '\n⚠️ 将覆盖已有标签' : ''}${overwriteOptions.summary ? '\n⚠️ 将覆盖已有概览' : ''}`;
+    
+    // 根据 generateMode 构建确认消息
+    let generateText = '';
+    let skipText = '';
+    switch (generateMode) {
+        case 'tags':
+            generateText = '标签';
+            skipText = skippedCount > 0 ? `（跳过 ${skippedCount} 个已有标签的角色）` : '';
+            break;
+        case 'summary':
+            generateText = '概览';
+            skipText = skippedCount > 0 ? `（跳过 ${skippedCount} 个已有概览的角色）` : '';
+            break;
+        case 'both':
+        default:
+            generateText = '概览和标签';
+            skipText = skippedCount > 0 ? `（跳过 ${skippedCount} 个已有概览和标签的角色）` : '';
+            break;
+    }
+    
+    const confirmMsg = `将对 ${targetChars.length} 个角色生成 AI ${generateText}${skipText}\n\n模式：${modeText}${overwriteOptions.tags ? '\n⚠️ 将覆盖已有标签' : ''}${overwriteOptions.summary ? '\n⚠️ 将覆盖已有概览' : ''}`;
     
     const confirmed = await showConfirm(confirmMsg);
     
@@ -2776,7 +2846,7 @@ function showAITagConfigDialog() {
                 <label style="font-size:13px;font-weight:600;margin-bottom:8px;display:block">覆盖选项</label>
                 <div style="display:flex;gap:16px;padding-left:4px">
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                        <input type="checkbox" id="cmOverwriteTagsCheckbox" style="width:16px;height:16px">
+                        <input type="checkbox" id="cmOverwriteTagsCheckbox" style="width:16px;height:16px" ${state.settings.aiOverwriteTags ? 'checked' : ''}>
                         <span style="font-size:13px">标签</span>
                     </label>
                     <label id="cmOverwriteSummaryGroup" style="display:flex;align-items:center;gap:6px;cursor:pointer">
