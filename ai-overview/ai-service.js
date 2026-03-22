@@ -98,7 +98,7 @@ export async function generateAIOverview(character, forceGenerateTags = false, f
     const includeSystemTags = generateMode !== 'summary' && !skipGeneratingTags;
     const systemTags = includeSystemTags ? state.tags.map(t => t.name) : [];
     
-    const prompt = buildOverviewPrompt(cardData, skipGeneratingTags, systemTags, generateMode);
+    const prompt = buildOverviewPrompt(extractCharacterData(character), skipGeneratingTags, systemTags, generateMode);
     const response = await callOpenAI(config, prompt);
     
     return await parseOverviewResult(response, character, actualHasTags, generateMode, forceGenerateTags, forceGenerateSummary);
