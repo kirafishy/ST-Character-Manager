@@ -445,3 +445,42 @@ export function checkCharHasTags(character) {
     
     return false;
 }
+
+/**
+ * 获取角色来源链接（按优先级检测多个字段）
+ * 移植自 Luker 项目的 getCharacterSource 函数
+ * @param {object} char - 角色对象
+ * @returns {string} - 来源链接，无则返回空字符串
+ */
+export function getCharacterSource(char) {
+    if (!char) return '';
+    
+    const ext = char.data?.extensions || {};
+    
+    // 优先级 1: 用户手动设置的 source_url
+    if (ext.source_url) return ext.source_url;
+    
+    // 优先级 2: Chub.ai
+    const chubId = ext.chub?.full_path;
+    if (chubId) return `https://chub.ai/characters/${chubId}`;
+    
+    // 优先级 3: Pygmalion
+    const pygmalionId = ext.pygmalion_id;
+    if (pygmalionId) return `https://pygmalion.chat/${pygmalionId}`;
+    
+    // 优先级 4: GitHub
+    const githubRepo = ext.github_repo;
+    if (githubRepo) return `https://github.com/${githubRepo}`;
+    
+    // 优先级 5: RisuAI Realm
+    const risuId = ext.risuai?.source;
+    if (Array.isArray(risuId) && risuId.length && typeof risuId[0] === 'string' && risuId[0].startsWith('risurealm:')) {
+        return `https://realm.risuai.net/character/${risuId[0].split(':')[1]}`;
+    }
+    
+    // 优先级 6: Perchance
+    const perchanceSlug = ext.perchance_data?.slug;
+    if (perchanceSlug) return `https://perchance.org/ai-character-chat?data=${perchanceSlug}`;
+    
+    return '';
+}

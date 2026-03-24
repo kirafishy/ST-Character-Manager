@@ -5,7 +5,7 @@
 import { doc, parentWin, getSTContext, getSTCharacters } from './context.js';
 import { state, saveSettings } from './state.js';
 import { ICONS, Z_INDEX } from './constants.js';
-import { escapeHtml, formatSize, notify, parsePNG, formatRichText } from './utils.js';
+import { escapeHtml, formatSize, notify, parsePNG, formatRichText, getCharacterSource } from './utils.js';
 import { createBaseDialog, showConfirm, showDeleteConfirm } from './ui-utils.js';
 import { getCharHistoryCount, getCharChatHistory, saveCharacterData, renameCharacterFile, replaceCharacterImage, downloadChar, updateCharacter, toggleFavorite, getCharTags, removeTagFromChar, addTagToChar, createTag, deleteChar, deleteWorldInfo, updateCharacterVersion, deleteChatFile, persistCharacterState, parseSTDate } from './data.js';
 import { getCmManager, migrateToCmManager } from './st-tags.js';
@@ -1265,7 +1265,9 @@ export class CharacterDetails {
         linkInput.className = 'detail-link-input';
         linkInput.style.cssText = 'flex:1;min-width:0;padding:6px;border-radius:4px;border:1px solid var(--cm-border);background:var(--cm-input-bg);color:var(--cm-text);font-size:12px;';
         linkInput.placeholder = '来源链接 (http://...)';
-        linkInput.value = (this.char.source_link || '').trim();
+        // 使用 getCharacterSource 获取来源链接（优先 source_url，再检测平台字段）
+        const detectedSource = getCharacterSource(this.char);
+        linkInput.value = detectedSource || '';
 
         const openLink = doc.createElement('a');
         openLink.className = 'detail-open-link';
@@ -1295,7 +1297,7 @@ export class CharacterDetails {
         refreshOpenBtn(linkInput.value);
 
         let linkSaveTimer = null;
-        let lastSavedLink = (this.char.source_link || '').trim();
+        let lastSavedLink = detectedSource || '';
 
         const saveSourceLink = async (raw) => {
             const normalized = normalizeUrl(raw);
