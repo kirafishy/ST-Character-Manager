@@ -280,6 +280,99 @@ async function processImportQueue() {
     }
 }
 
+/**
+ * 检测字符串是否为有效的 URL
+ * @param {string} value - 待检测的字符串
+ * @returns {boolean} - 是否为有效 URL
+ */
+function isValidUrl(value) {
+    try {
+        return ['http:', 'https:'].includes(new URL(value).protocol);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * 从 URL 中提取主机名
+ * @param {string} url - URL 字符串
+ * @returns {string} - 主机名
+ */
+function getHostFromUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        return urlObj.hostname;
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * 平台检测配置
+ * 遵循开闭原则：新增平台只需添加配置项，无需修改检测逻辑
+ * @type {Array<{hosts: string[], sourceType: string}>}
+ */
+const PLATFORM_URL_CONFIGS = [
+    { hosts: ['chub.ai', 'characterhub.org'], sourceType: 'Chub' },
+    { hosts: ['janitorai'], sourceType: 'JanitorAI' },
+    { hosts: ['pygmalion.chat'], sourceType: 'Pygmalion' },
+    { hosts: ['aicharactercards.com'], sourceType: 'AICharacterCards' },
+    { hosts: ['realm.risuai.net'], sourceType: 'RisuAI' },
+    { hosts: ['perchance.org'], sourceType: 'Perchance' }
+];
+
+/**
+ * UUID 检测配置
+ * @type {Array<{pattern: RegExp, sourceType: string}>}
+ */
+const UUID_PATTERNS = [
+    // Pygmalion UUID: 36字符的标准 UUID
+    { pattern: /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i, sourceType: 'Pygmalion UUID' },
+    // JanitorAI UUID: 带 _character 后缀
+    { pattern: /^[a-f0-9-]+_character$/i, sourceType: 'JanitorAI UUID' },
+    // AICC UUID: 以 AICC/ 开头
+    { pattern: /^AICC\//i, sourceType: 'AICharacterCards UUID' },
+    // Chub UUID: creator/project 格式 (需在 lorebook 检测之前)
+    { pattern: /^[\w-]+\/[\w-]+$/, sourceType: 'Chub UUID' }
+];
+
+/**
+ * 检测输入类型并返回对应的 API 端点和类型信息
+ * @param {string} input - 用户输入的 URL 或 UUID
+ * @returns {{ endpoint: string, inputType: 'url' | 'uuid', sourceType: string }}
+ */
+function detectImportSourceType(input) {
+    // 检测是否为有效 URL
+    if (isValidUrl(input)) {
+        const host = getHostFromUrl(input);
+        
+        // 使用配置驱动的方式检测各平台
+        for (const config of PLATFORM_URL_CONFIGS) {
+            if (config.hosts.some(h => host.includes(h))) {
+                return { endpoint: '/api/content/importURL', inputType: 'url', sourceType: config.sourceType };
+            }
+        }
+        
+        // 通用 URL
+        return { endpoint: '/api/content/importURL', inputType: 'url', sourceType: 'URL' };
+    }
+    
+    // 检测 UUID 格式 (非 URL 的字符串)
+    for (const { pattern, sourceType } of UUID_PATTERNS) {
+        if (pattern.test(input)) {
+            return { endpoint: '/api/content/importUUID', inputType: 'uuid', sourceType };
+        }
+    }
+    
+    // Chub Lorebook UUID: 包含 lorebook 关键字
+    if (input.includes('lorebook')) {
+        return { endpoint: '/api/content/importUUID', inputType: 'uuid', sourceType: 'Chub Lorebook UUID' };
+    }
+    
+    // 默认尝试作为 UUID
+    return { endpoint: '/api/content/importUUID', inputType: 'uuid', sourceType: 'UUID' };
+}
+
 async function showUrlImportDialog() {
     let selectedTagIds = [];
 
@@ -330,8 +423,11 @@ async function showUrlImportDialog() {
     const content = `
         <div style="display:flex;flex-direction:column;gap:12px;padding:10px">
             <div class="cm-form-group">
-                <label>图片链接 <span style="color:red">*</span></label>
-                <input type="text" class="cm-input" id="cmUrlImportLink" placeholder="Discord或其他直链 (必填)">
+                <label>链接或 UUID <span style="color:red">*</span></label>
+                <input type="text" class="cm-input" id="cmUrlImportLink" placeholder="支持: Chub/JanitorAI/Pygmalion/RisuAI/Perchance/AICC 链接或 UUID">
+                <small style="color:var(--cm-text-sec);font-size:11px;margin-top:4px;display:block">
+                    支持的平台: Chub.ai, JanitorAI, Pygmalion.chat, RisuAI, Perchance, AICharacterCards.com, 以及直链图片
+                </small>
             </div>
             <div class="cm-form-group">
                 <label>源链接 (Source)</label>
@@ -348,7 +444,7 @@ async function showUrlImportDialog() {
         </div>
     `;
 
-    createBaseDialog('从 URL 导入', content, [
+    createBaseDialog('从外部导入', content, [
         { text: '取消', id: 'cmUrlImportCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => close() },
         {
             text: '导入', id: 'cmUrlImportOk', cls: 'cm-btn-primary', onClick: async (ov, close) => {
@@ -357,29 +453,37 @@ async function showUrlImportDialog() {
                 const noteInput = ov.querySelector('#cmUrlImportNote');
                 const importBtn = ov.querySelector('#cmUrlImportOk');
                 
-                const url = urlInput.value.trim();
+                const input = urlInput.value.trim();
                 const source = sourceInput.value.trim();
                 const note = noteInput.value.trim();
 
-                if (!url) {
-                    notify('请输入图片链接', 'warning');
+                if (!input) {
+                    notify('请输入链接或 UUID', 'warning');
                     urlInput.focus();
                     return;
                 }
 
+                // 检测输入类型
+                const { endpoint, inputType, sourceType } = detectImportSourceType(input);
+                // 日志记录：输入值脱敏处理，仅显示前后各20字符
+                const sanitizedInput = input.length > 50
+                    ? `${input.slice(0, 20)}...${input.slice(-20)}`
+                    : input;
+                console.log(`[CharManager] 检测到输入类型: ${sourceType}, 端点: ${endpoint}, 输入: ${sanitizedInput}`);
+
                 // 锁定按钮防止重复点击
                 importBtn.disabled = true;
-                importBtn.textContent = '下载中...';
+                importBtn.textContent = `正在从 ${sourceType} 下载...`;
                 const originalBtnText = '导入';
 
                 try {
-                    // 1. 下载文件
+                    // 1. 下载文件 - 使用检测到的端点
                     let response;
                     try {
-                        response = await authFetch('/api/content/import', {
+                        response = await authFetch(endpoint, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ url: url })
+                            body: JSON.stringify({ url: input })
                         });
                     } catch (fetchErr) {
                         throw new Error(`网络请求失败: ${fetchErr.message}`);
@@ -387,25 +491,92 @@ async function showUrlImportDialog() {
 
                     if (!response.ok) {
                         const errText = await response.text();
-                        throw new Error(`服务器下载失败: ${response.status} - ${errText}`);
+                        let errMsg = `下载失败: ${response.status}`;
+                        if (response.status === 404) {
+                            errMsg = `未找到内容，请检查链接是否正确`;
+                        } else if (errText) {
+                            try {
+                                const errJson = JSON.parse(errText);
+                                if (errJson.message) errMsg = errJson.message;
+                            } catch {
+                                // 仅显示短错误信息，避免泄露服务器内部信息
+                                if (errText.length < 100 && !errText.includes('<') && !errText.includes('stack')) {
+                                    errMsg += ` - ${errText}`;
+                                }
+                            }
+                        }
+                        throw new Error(errMsg);
                     }
 
-                    // 校验 Content-Type
-                    const type = response.headers.get('Content-Type') || '';
-                    if (!type.startsWith('image/') && !type.includes('json') && !type.includes('octet-stream')) {
-                        throw new Error(`无效的文件类型: ${type}。请提供有效的图片或JSON链接。`);
+                    // 获取内容类型 (角色卡或 Lorebook)
+                    const customContentType = response.headers.get('X-Custom-Content-Type') || 'character';
+                    const contentType = response.headers.get('Content-Type') || '';
+                    
+                    // 获取文件名
+                    let fileName = `import_${Date.now()}.png`;
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    if (contentDisposition) {
+                        const match = contentDisposition.match(/filename="?([^";\n]+)"?/i);
+                        if (match) {
+                            // 安全处理文件名：移除路径分隔符和前导点，防止路径遍历攻击
+                            fileName = decodeURIComponent(match[1])
+                                .replace(/[\/\\]/g, '_')  // 移除路径分隔符
+                                .replace(/^\.+/, '');      // 移除前导点
+                        }
+                    }
+
+                    // 检查是否为 Lorebook
+                    if (customContentType === 'lorebook') {
+                        // Lorebook 需要特殊处理
+                        const blob = await response.blob();
+                        const file = new File([blob], fileName, { type: blob.type || 'application/json' });
+                        
+                        close();
+                        notify(`正在导入 Lorebook: ${fileName}`, 'info');
+                        
+                        // 调用原生的 Lorebook 导入
+                        try {
+                            const ctx = getSTContext();
+                            if (ctx && ctx.importWorldInfo) {
+                                await ctx.importWorldInfo(file);
+                                notify('Lorebook 导入成功', 'success');
+                            } else {
+                                // 降级：提示用户手动导入
+                                const blobUrl = URL.createObjectURL(blob);
+                                const a = doc.createElement('a');
+                                a.href = blobUrl;
+                                a.download = fileName;
+                                a.click();
+                                // 延迟释放 URL，确保下载完成
+                                setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                                notify('Lorebook 已下载，请手动导入到酒馆', 'warning');
+                            }
+                        } catch (lorebookErr) {
+                            console.error('[CharManager] Lorebook 导入失败:', lorebookErr);
+                            notify(`Lorebook 导入失败: ${lorebookErr.message}`, 'error');
+                        }
+                        return;
+                    }
+
+                    // 校验 Content-Type (角色卡)
+                    if (!contentType.startsWith('image/') && !contentType.includes('json') && !contentType.includes('octet-stream')) {
+                        throw new Error(`无效的文件类型: ${contentType}。请提供有效的角色卡链接。`);
                     }
 
                     const blob = await response.blob();
                     
-                    // 生成唯一文件名以确保能找到它
+                    // 使用服务器返回的文件名或生成唯一文件名
                     let ext = 'png';
-                    if (type) {
-                        if (type.includes('json')) ext = 'json';
-                        else if (type.includes('webp')) ext = 'webp';
+                    if (contentType.includes('json')) ext = 'json';
+                    else if (contentType.includes('webp')) ext = 'webp';
+                    
+                    // 确保文件名有正确的扩展名
+                    if (!/\.\w+$/.test(fileName)) {
+                        fileName += '.' + ext;
                     }
-                    const uniqueName = `import_${Date.now()}.${ext}`;
-                    const file = new File([blob], uniqueName, { type: blob.type });
+                    const uniqueName = fileName;
+
+                    const file = new File([blob], uniqueName, { type: blob.type || 'image/png' });
 
                     // 2. 预处理：注入 metadata (Source, Note, Tags)
                     // 这样导入后就不需要再调用 updateCharacter，且文件本身也包含了信息
@@ -427,11 +598,12 @@ async function showUrlImportDialog() {
                                 dataBlock = charData.data;
                             }
 
-                            // 1. 注入 Source
-                            if (source) {
+                            // 1. 注入 Source (如果用户没有填写，使用原始输入)
+                            const finalSource = source || (inputType === 'url' ? input : '');
+                            if (finalSource) {
                                 if (!dataBlock.extensions) dataBlock.extensions = {};
                                 // 保留原有 source_url 如果存在? 不，这里是导入新卡，应该应用用户输入的 source
-                                dataBlock.extensions.source_url = source;
+                                dataBlock.extensions.source_url = finalSource;
                                 dataModified = true;
                             }
 
@@ -485,7 +657,7 @@ async function showUrlImportDialog() {
                     
                     // 关键修改：下载成功后，关闭弹窗，然后将文件推入队列
                     close();
-                    notify('下载成功，已加入导入队列', 'success');
+                    notify(`从 ${sourceType} 下载成功，正在导入...`, 'success');
                     
                     await importFiles([fileToImport]);
 
@@ -497,7 +669,8 @@ async function showUrlImportDialog() {
 
                     // 如果没找到，尝试通过 uniqueName 查找
                     if (!targetChar) {
-                        targetChar = currentChars.find(c => c.avatar && c.avatar.includes(uniqueName.split('.')[0]));
+                        const nameWithoutExt = uniqueName.replace(/\.[^/.]+$/, "");
+                        targetChar = currentChars.find(c => c.avatar && c.avatar.includes(nameWithoutExt));
                     }
 
                     if (targetChar) {
