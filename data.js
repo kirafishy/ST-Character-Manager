@@ -336,6 +336,16 @@ function deepMerge(target, source, seen = new WeakSet(), depth = 0) {
 
 /**
  * 同步更新酒馆内存中角色对象的完整数据
+ *
+ * 【重要 2026-03-26】Luker 改版兼容性修复
+ * Luker 改版的 SillyTavern 使用 Proxy 拦截对 ctx.characters 的写入操作
+ * 直接设置根层级字段（如 charObj.name = xxx）会触发警告：
+ * "Deprecated character API write"
+ *
+ * 正确做法：写入 data.* 路径，Luker 会自动同步到根层级
+ * - charObj.data.name = xxx  ✓ 正确
+ * - charObj.name = xxx       ✗ 会触发警告
+ *
  * @param {string} fileName - 角色文件名
  * @param {object} newCharData - 新的角色数据
  */
@@ -344,27 +354,37 @@ function syncCharDataToMemory(fileName, newCharData) {
     const updateCharObject = (charObj) => {
         if (!charObj) return;
         
-        // 使用深度合并策略，保留未传递字段的现有值
-        // 基础字段：仅在明确传递时更新
-        if (newCharData.name !== undefined) charObj.name = newCharData.name;
-        if (newCharData.description !== undefined) charObj.description = newCharData.description;
-        if (newCharData.personality !== undefined) charObj.personality = newCharData.personality;
-        if (newCharData.scenario !== undefined) charObj.scenario = newCharData.scenario;
-        if (newCharData.first_mes !== undefined) charObj.first_mes = newCharData.first_mes;
-        if (newCharData.mes_example !== undefined) charObj.mes_example = newCharData.mes_example;
-        if (newCharData.tags !== undefined) charObj.tags = newCharData.tags;
+        // 确保 data 对象存在
+        if (!charObj.data) charObj.data = {};
         
-        // creator_notes 映射到 creatorcomment (酒馆原生字段名)
-        if (newCharData.creator_notes !== undefined) charObj.creatorcomment = newCharData.creator_notes;
+        // 【Luker 兼容】写入 data.* 路径，而不是根层级
+        // Luker 的 Proxy 会自动同步到根层级（向后兼容）
+        // 这样就不会触发 "Deprecated character API write" 警告
         
-        // 收藏状态
-        if (newCharData.fav !== undefined) charObj.fav = newCharData.fav;
+        // 基础字段：写入 data.* 路径
+        if (newCharData.name !== undefined) charObj.data.name = newCharData.name;
+        if (newCharData.description !== undefined) charObj.data.description = newCharData.description;
+        if (newCharData.personality !== undefined) charObj.data.personality = newCharData.personality;
+        if (newCharData.scenario !== undefined) charObj.data.scenario = newCharData.scenario;
+        if (newCharData.first_mes !== undefined) charObj.data.first_mes = newCharData.first_mes;
+        if (newCharData.mes_example !== undefined) charObj.data.mes_example = newCharData.mes_example;
+        if (newCharData.tags !== undefined) charObj.data.tags = newCharData.tags;
+        
+        // creator_notes 写入 data.* 路径
+        if (newCharData.creator_notes !== undefined) {
+            charObj.data.creator_notes = newCharData.creator_notes;
+        }
+        
+        // 收藏状态：写入 data.extensions.* 路径
+        if (newCharData.fav !== undefined) {
+            if (!charObj.data.extensions) charObj.data.extensions = {};
+            charObj.data.extensions.fav = newCharData.fav;
+        }
         
         // 更新 extensions 字段（包括 system_prompt, post_history_instructions, cm_manager 等）
         if (newCharData.system_prompt !== undefined ||
             newCharData.post_history_instructions !== undefined ||
             newCharData.extensions) {
-            if (!charObj.data) charObj.data = {};
             if (!charObj.data.extensions) charObj.data.extensions = {};
             
             // system_prompt 和 post_history_instructions 存储在 extensions 中
@@ -383,15 +403,17 @@ function syncCharDataToMemory(fileName, newCharData) {
         
         // 同步 character_book（如果有更新）
         if (newCharData.character_book !== undefined) {
-            charObj.character_book = newCharData.character_book;
+            charObj.data.character_book = newCharData.character_book;
         }
         
         // 同步版本号
         if (newCharData.character_version !== undefined) {
-            charObj.character_version = newCharData.character_version;
+            charObj.data.character_version = newCharData.character_version;
         }
         
-        // 【修复】同步聊天关联字段，防止保存后聊天记录丢失
+        // 【注意】以下字段是"元数据字段"，应该保留在根层级
+        // 这些字段不在 legacyCharacterRootFieldSpecs 中，所以直接写入根层级不会触发警告
+        
         // chat: 当前聊天文件名（如 "2024-01-01.json"）
         if (newCharData.chat !== undefined) {
             charObj.chat = newCharData.chat;
@@ -428,8 +450,17 @@ function syncCharDataToMemory(fileName, newCharData) {
  * 将当前插件中的 Tag 同步写入到角色卡文件的 data.tags 字段
  * @param {string} fileName - 角色卡文件名
  */
+/**
+ * 更换角色图片
+ * 使用 /api/characters/edit-avatar API，只上传图片，不修改元数据
+ *
+ * @param {object} char - 角色对象
+ * @param {File} file - 图片文件
+ * @returns {Promise<boolean>}
+ */
 export async function replaceCharacterImage(char, file) {
     try {
+        // 1. 创建干净的图片（去除元数据）
         const img = new Image();
         img.src = URL.createObjectURL(file);
         await new Promise(r => img.onload = r);
@@ -442,64 +473,23 @@ export async function replaceCharacterImage(char, file) {
 
         const cleanBlob = await new Promise(r => canvas.toBlob(r, 'image/png'));
 
-        const getRes = await authFetch('/api/characters/get', {
-            method: 'POST',
-            body: JSON.stringify({ avatar_url: char.fileName })
-        });
-        if (!getRes.ok) throw new Error('无法读取角色数据');
-        const fullData = await getRes.json();
-
-        const dataBlock = fullData.data || fullData;
-
+        // 2. 使用 edit-avatar API 上传图片
+        // 这个 API 只替换图片，保留原有的元数据
         const fd = new FormData();
-        fd.append('ch_name', dataBlock.name || char.name);
         fd.append('avatar', cleanBlob, file.name);
         fd.append('avatar_url', char.fileName);
-        fd.append('json_data', JSON.stringify(fullData));
 
-        const explicitFields = [
-            'description', 'first_mes', 'personality', 'scenario',
-            'mes_example', 'creator_notes', 'system_prompt',
-            'post_history_instructions', 'creator', 'character_version',
-            'talkativeness'
-        ];
-
-        explicitFields.forEach(k => {
-            if (dataBlock[k] !== undefined && dataBlock[k] !== null) {
-                fd.append(k, dataBlock[k]);
-            }
-        });
-
-        if (Array.isArray(dataBlock.alternate_greetings)) {
-            dataBlock.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
-        }
-        if (Array.isArray(dataBlock.tags)) {
-            dataBlock.tags.forEach(t => fd.append('tags', t));
-        }
-
-        const isFav = dataBlock.extensions?.fav || dataBlock.fav;
-        fd.append('fav', isFav ? 'true' : 'false');
-
-        // 显式处理 character_book 以防止世界书解绑
-        if (dataBlock.character_book) {
-            if (typeof dataBlock.character_book === 'string') {
-                fd.append('character_book', dataBlock.character_book);
-            } else if (typeof dataBlock.character_book === 'object') {
-                fd.append('character_book', JSON.stringify(dataBlock.character_book));
-            }
-        }
-
-        const r = await authFetch('/api/characters/edit', {
+        const r = await authFetch('/api/characters/edit-avatar', {
             method: 'POST',
             body: fd
         });
 
         if (!r.ok) throw new Error(await r.text());
 
+        // 3. 更新头像 URL（添加时间戳防止缓存）
         char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
         
-        // 更换图片后持久化到 IndexedDB，确保重启后数据一致
-        // 虽然主要修改的是图片，但 avatarUrl 的更新需要持久化
+        // 4. 持久化到 IndexedDB，确保重启后数据一致
         await persistCharacterState(true);
         
         return true;
@@ -921,95 +911,115 @@ export async function saveCharacterData(fileName, updateCallback) {
             }
         }
 
-        const fd = new FormData();
+        // ============================================================
+        // 【重构 2026-03-26】改用 merge-attributes API
+        //
+        // 问题：使用 /api/characters/edit API 时，通过 FormData 发送根层级字段
+        //       会触发 "Deprecated character API write" 警告
+        //
+        // 解决方案：改用 /api/characters/merge-attributes API
+        // - 发送 JSON 格式数据，后端自动合并
+        // - 同时发送根层级和 data.* 字段（双写模式）
+        // - 后端 deepMerge 会正确处理，不会触发警告
+        //
+        // 参考：SillyTavern-CharacterLibrary 插件的实现
+        //       SillyTavernchat-main/src/endpoints/characters.js:1317 (merge-attributes)
+        //
+        // 回滚方法：恢复原来的 FormData + /api/characters/edit 逻辑
+        // ============================================================
 
-        fd.append('ch_name', charData.name || fileName.replace(/\.png$/i, ''));
-        fd.append('avatar_url', fileName);
-        fd.append('avatar', new Blob([''], { type: 'application/octet-stream' }), '');
-
-        // Removed 'tags' from this list to handle it explicitly
-        // 【修复】添加缺失字段，确保编辑时保留原有值
-        const fields = [
-            'fav', 'description', 'first_mes', 'personality', 'scenario',
-            'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
-            'character_version', 'creator', 'talkativeness', 'alternate_names',
-            // 新增：防止编辑时丢失关键字段
-            'create_date', 'chat',
-            'depth_prompt_prompt', 'depth_prompt_depth', 'depth_prompt_role',
-            'group_only_greetings'
-        ];
-
-        fields.forEach(k => {
-            if (charData[k] !== undefined && charData[k] !== null) {
-                fd.append(k, charData[k]);
-            }
-            // create_date 应该从根层级读取（与酒馆逻辑一致）
-            if (k === 'create_date' && fullData.create_date !== undefined) {
-                fd.set('create_date', fullData.create_date);
-            }
-            // 【修复】chat 字段也应该从根层级读取（与酒馆逻辑一致）
-            if (k === 'chat' && fullData.chat !== undefined) {
-                fd.set('chat', fullData.chat);
-            }
-            if (k === 'fav') {
-                if (charData.extensions && charData.extensions.fav !== undefined) {
-                    fd.set('fav', charData.extensions.fav.toString());
-                } else if (charData.fav !== undefined) {
-                    fd.set('fav', charData.fav.toString());
-                }
-            }
-        });
+        // 保留原有的 extensions 数据（如 gallery_id, favorites, chub link 等）
+        const existingExtensions = charData.extensions || fullData.data?.extensions || {};
         
-        // 【修复】date_last_chat 字段从根层级读取
-        if (fullData.date_last_chat !== undefined) {
-            fd.append('date_last_chat', fullData.date_last_chat);
+        // 保留原有的 data 对象（V3 字段如 assets, nickname, depth_prompt, group_only_greetings 等）
+        const existingData = fullData.data || {};
+        
+        // 保留原有的 spec 信息
+        const existingSpec = fullData.spec;
+        const existingSpecVersion = fullData.spec_version;
+        
+        // 构建发送给 merge-attributes API 的数据
+        // 参考：SillyTavern-CharacterLibrary 的 showSaveConfirmation 函数
+        const payload = {
+            avatar: fileName,
+            
+            // 保留 spec 信息
+            ...(existingSpec && { spec: existingSpec }),
+            ...(existingSpecVersion && { spec_version: existingSpecVersion }),
+            
+            // 根层级字段（向后兼容）
+            name: charData.name || fileName.replace(/\.png$/i, ''),
+            description: charData.description || '',
+            first_mes: charData.first_mes || '',
+            personality: charData.personality || '',
+            scenario: charData.scenario || '',
+            mes_example: charData.mes_example || '',
+            system_prompt: charData.system_prompt || '',
+            post_history_instructions: charData.post_history_instructions || '',
+            creator_notes: charData.creator_notes || charData.creatorcomment || '',
+            creator: charData.creator || '',
+            character_version: charData.character_version || '',
+            tags: charData.tags || [],
+            alternate_greetings: charData.alternate_greetings || [],
+            character_book: charData.character_book,
+            
+            // 保留 create_date
+            create_date: fullData.create_date,
+            
+            // data 对象（V2/V3 格式）
+            data: {
+                ...existingData,
+                // 覆盖编辑的字段
+                name: charData.name || fileName.replace(/\.png$/i, ''),
+                description: charData.description || '',
+                first_mes: charData.first_mes || '',
+                personality: charData.personality || '',
+                scenario: charData.scenario || '',
+                mes_example: charData.mes_example || '',
+                system_prompt: charData.system_prompt || '',
+                post_history_instructions: charData.post_history_instructions || '',
+                creator_notes: charData.creator_notes || charData.creatorcomment || '',
+                creator: charData.creator || '',
+                character_version: charData.character_version || '',
+                tags: charData.tags || [],
+                alternate_greetings: charData.alternate_greetings || [],
+                character_book: charData.character_book,
+                // 保留 extensions
+                extensions: existingExtensions
+            }
+        };
+        
+        // 处理 depth_prompt
+        if (charData.depth_prompt_prompt !== undefined ||
+            charData.depth_prompt_depth !== undefined ||
+            charData.depth_prompt_role !== undefined) {
+            payload.data.extensions.depth_prompt = {
+                prompt: charData.depth_prompt_prompt ?? '',
+                depth: charData.depth_prompt_depth ?? 4,
+                role: charData.depth_prompt_role ?? 'system'
+            };
         }
         
-        // 【修复】world 字段在 extensions.world 中，需要单独处理
-        const worldValue = charData.extensions?.world || charData.world || '';
-        if (worldValue) {
-            fd.append('world', worldValue);
+        // 处理 group_only_greetings
+        if (charData.group_only_greetings) {
+            payload.group_only_greetings = charData.group_only_greetings;
+            payload.data.group_only_greetings = charData.group_only_greetings;
         }
 
-        // Explicitly handle array fields to prevent data loss
-        if (charData.alternate_greetings && Array.isArray(charData.alternate_greetings)) {
-            charData.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
-        }
-
-        if (charData.tags && Array.isArray(charData.tags)) {
-            charData.tags.forEach(t => fd.append('tags', t));
-        }
-
-        // 显式处理 character_book 以防止世界书解绑
-        if (charData.character_book) {
-            if (typeof charData.character_book === 'string') {
-                fd.append('character_book', charData.character_book);
-            } else if (typeof charData.character_book === 'object') {
-                // 如果是对象形式，保留完整结构
-                fd.append('character_book', JSON.stringify(charData.character_book));
-            }
-        }
-
-        if (fullData.data && (fullData.spec === 'chara_card_v3' || fullData.data.name)) {
-            fullData.data = charData;
-        }
-        // 【修复】删除 chat 字段后再序列化，防止聊天关联丢失
-        const jsonDataToSend = JSON.parse(JSON.stringify(fullData));
-        if (jsonDataToSend.chat) delete jsonDataToSend.chat;
-        if (jsonDataToSend.data?.chat) delete jsonDataToSend.data.chat;
-        fd.append('json_data', JSON.stringify(jsonDataToSend));
-
-        const r = await authFetch('/api/characters/edit', {
+        const r = await authFetch('/api/characters/merge-attributes', {
             method: 'POST',
-            body: fd
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
         });
 
-        if (!r.ok) throw new Error(await r.text());
+        if (!r.ok) {
+            const errorText = await r.text();
+            throw new Error(errorText);
+        }
         
-        // 【修复】后端 /api/characters/edit 返回纯文本 "OK"，不是 JSON
-        // 使用本地数据（包含聊天关联字段）同步状态
-        const responseText = await r.text();
-        console.log('[CharManager] saveCharacterData: 后端返回', responseText);
+        console.log('[CharManager] saveCharacterData: merge-attributes 成功');
         
         // 使用本地数据作为最终数据源
         // 注意：需要合并根层级字段（chat、create_date、date_last_chat）到 finalCharData
@@ -1129,6 +1139,15 @@ export async function deleteWorldInfo(wiName, skipRefresh = false) {
     }
 }
 
+/**
+ * 更新角色数据
+ * 使用 merge-attributes API 更新元数据，避免 "Deprecated character API write" 警告
+ *
+ * @param {string} fileName - 角色文件名
+ * @param {object} newCharData - 新的角色数据
+ * @param {Blob|null} imageBlob - 可选的新图片
+ * @param {object} options - 选项
+ */
 export async function updateCharacter(fileName, newCharData, imageBlob = null, options = {}) {
     // 使用串行队列防止同一文件的并发写操作互相覆盖
     const { wait, done } = enqueueFileWrite(fileName);
@@ -1150,11 +1169,8 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
 
     try {
         // 1. 清理旧世界书逻辑
-        // 如果新数据指定了新的 WB，且旧 WB 不再被使用，则尝试删除旧 WB
         if (cleanOldWorldInfo && char.character_book && newCharData.character_book) {
             const oldWI = char.character_book;
-            // 如果新旧 WB 不同（且旧的不为空）
-            // 注意：这里简单比较名称，如果是对象则比较 name
             let oldWIName = typeof oldWI === 'object' ? oldWI.name : oldWI;
             let newWIName = typeof newCharData.character_book === 'object' ? newCharData.character_book.name : newCharData.character_book;
 
@@ -1163,7 +1179,7 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
                 if (!isUsedByOthers) {
                     try {
                         console.log('[CharManager] 自动清理旧世界书:', oldWIName);
-                        await deleteWorldInfo(oldWIName, true); // skipRefresh=true
+                        await deleteWorldInfo(oldWIName, true);
                     } catch (e) {
                         console.warn('[CharManager] 清理旧世界书失败:', e);
                     }
@@ -1171,123 +1187,136 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
             }
         }
 
-        // 2. 构建 FormData
-        const fd = new FormData();
-        fd.append('ch_name', newCharData.name || char.name);
-        fd.append('avatar_url', fileName);
-        
-        if (imageBlob) {
-            fd.append('avatar', imageBlob);
-        } else {
-            fd.append('avatar', new Blob([''], { type: 'application/octet-stream' }), '');
-        }
-
-        // 3. 保留 Source Link
+        // 2. 保留 Source Link
         if (preserveSourceLink) {
             const savedLink = char.source_link || '';
             if (savedLink) {
                 if (!newCharData.extensions) newCharData.extensions = {};
                 newCharData.extensions.source_url = savedLink;
-                // 删除旧字段以保持整洁（可选）
                 if (newCharData.extensions.source_link) delete newCharData.extensions.source_link;
             }
         }
 
-        // 4. 添加字段
-        // 【修复】添加缺失字段，确保编辑时保留原有值
-        const fields = [
-            'description', 'first_mes', 'personality', 'scenario',
-            'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions',
-            'character_version', 'creator', 'talkativeness',
-            // 新增：防止编辑时丢失关键字段
-            'create_date', 'chat',
-            'depth_prompt_prompt', 'depth_prompt_depth', 'depth_prompt_role',
-            'group_only_greetings'
-        ];
+        // 3. 如果有图片，先上传图片
+        if (imageBlob) {
+            const fd = new FormData();
+            fd.append('avatar', imageBlob);
+            fd.append('avatar_url', fileName);
 
-        fields.forEach(k => {
-            if (newCharData[k] !== undefined && newCharData[k] !== null) {
-                fd.append(k, newCharData[k]);
+            const imgRes = await authFetch('/api/characters/edit-avatar', {
+                method: 'POST',
+                body: fd
+            });
+
+            if (!imgRes.ok) throw new Error('上传图片失败: ' + await imgRes.text());
+        }
+
+        // 4. 获取现有数据以保留 extensions 和 data
+        const existingExtensions = char.data?.extensions || {};
+        const existingData = char.data || {};
+        const existingSpec = char.spec;
+        const existingSpecVersion = char.spec_version;
+
+        // 5. 构建 merge-attributes payload
+        const payload = {
+            avatar: fileName,
+            
+            // 保留 spec 信息
+            ...(existingSpec && { spec: existingSpec }),
+            ...(existingSpecVersion && { spec_version: existingSpecVersion }),
+            
+            // 根层级字段
+            name: newCharData.name || char.name,
+            description: newCharData.description || '',
+            first_mes: newCharData.first_mes || '',
+            personality: newCharData.personality || '',
+            scenario: newCharData.scenario || '',
+            mes_example: newCharData.mes_example || '',
+            system_prompt: newCharData.system_prompt || '',
+            post_history_instructions: newCharData.post_history_instructions || '',
+            creator_notes: newCharData.creator_notes || '',
+            creator: newCharData.creator || '',
+            character_version: newCharData.character_version || '',
+            tags: newCharData.tags || [],
+            alternate_greetings: newCharData.alternate_greetings || [],
+            character_book: newCharData.character_book,
+            
+            // 保留 create_date
+            create_date: newCharData.create_date || char.create_date,
+            
+            // data 对象
+            data: {
+                ...existingData,
+                name: newCharData.name || char.name,
+                description: newCharData.description || '',
+                first_mes: newCharData.first_mes || '',
+                personality: newCharData.personality || '',
+                scenario: newCharData.scenario || '',
+                mes_example: newCharData.mes_example || '',
+                system_prompt: newCharData.system_prompt || '',
+                post_history_instructions: newCharData.post_history_instructions || '',
+                creator_notes: newCharData.creator_notes || '',
+                creator: newCharData.creator || '',
+                character_version: newCharData.character_version || '',
+                tags: newCharData.tags || [],
+                alternate_greetings: newCharData.alternate_greetings || [],
+                character_book: newCharData.character_book,
+                extensions: {
+                    ...existingExtensions,
+                    ...(newCharData.extensions || {})
+                }
             }
-            // 【修复】如果 newCharData 没有 create_date 字段，从现有 char 数据中补充
-            // 注意：chat 字段不再单独添加到 FormData，而是通过 json_data 传递
-            if (k === 'create_date' && !newCharData.create_date && char.create_date) {
-                fd.set('create_date', char.create_date);
-            }
-        });
-        
-        // 【修复】date_last_chat 字段从现有数据补充
-        if (!newCharData.date_last_chat && char.date_last_chat) {
-            fd.append('date_last_chat', char.date_last_chat);
-        }
-        
-        // 【修复】world 字段在 extensions.world 中，需要单独处理
-        const worldValue = newCharData.extensions?.world || newCharData.world || char.data?.extensions?.world || '';
-        if (worldValue) {
-            fd.append('world', worldValue);
+        };
+
+        // 6. 处理 depth_prompt
+        if (newCharData.depth_prompt_prompt !== undefined ||
+            newCharData.depth_prompt_depth !== undefined ||
+            newCharData.depth_prompt_role !== undefined) {
+            payload.data.extensions.depth_prompt = {
+                prompt: newCharData.depth_prompt_prompt ?? '',
+                depth: newCharData.depth_prompt_depth ?? 4,
+                role: newCharData.depth_prompt_role ?? 'system'
+            };
         }
 
-        if (newCharData.alternate_greetings && Array.isArray(newCharData.alternate_greetings)) {
-            newCharData.alternate_greetings.forEach(g => fd.append('alternate_greetings', g));
+        // 7. 处理 group_only_greetings
+        if (newCharData.group_only_greetings) {
+            payload.group_only_greetings = newCharData.group_only_greetings;
+            payload.data.group_only_greetings = newCharData.group_only_greetings;
         }
 
-        if (newCharData.tags && Array.isArray(newCharData.tags)) {
-            newCharData.tags.forEach(t => fd.append('tags', t));
-        }
-
-        // 5. 处理收藏状态
-        const isFav = newCharData.extensions?.fav || newCharData.fav;
-        fd.append('fav', isFav ? 'true' : 'false');
-
-        // 6. 处理世界书
-        if (newCharData.character_book) {
-            if (typeof newCharData.character_book === 'string') {
-                fd.append('character_book', newCharData.character_book);
-            } else if (typeof newCharData.character_book === 'object') {
-                fd.append('character_book', JSON.stringify(newCharData.character_book));
-            }
-        }
-
-        // 7. 附加完整 JSON 数据 (如果提供)
-        // 【修复】删除 chat 字段后再序列化，防止聊天关联丢失
-        if (fullCardData) {
-            const jsonDataToSend = JSON.parse(JSON.stringify(fullCardData));
-            if (jsonDataToSend.chat) delete jsonDataToSend.chat;
-            if (jsonDataToSend.data?.chat) delete jsonDataToSend.data.chat;
-            fd.append('json_data', JSON.stringify(jsonDataToSend));
-        }
-
-        const r = await authFetch('/api/characters/edit', {
+        // 8. 调用 merge-attributes API
+        const r = await authFetch('/api/characters/merge-attributes', {
             method: 'POST',
-            body: fd
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
         });
 
-        if (!r.ok) throw new Error(await r.text());
+        if (!r.ok) {
+            const errorText = await r.text();
+            throw new Error(errorText);
+        }
 
-        // 【修复】后端 /api/characters/edit 返回纯文本 "OK"，不是 JSON
-        // 使用本地数据（包含聊天关联字段）同步状态
-        const responseText = await r.text();
-        console.log('[CharManager] updateCharacter: 后端返回', responseText);
-        
-        // 使用本地数据作为最终数据源
-        // 注意：需要从现有 char 数据中补充聊天关联字段（如果 newCharData 没有）
+        console.log('[CharManager] updateCharacter: merge-attributes 成功');
+
+        // 9. 更新本地状态
         const finalCharData = {
             ...newCharData,
-            // 确保聊天关联字段被保留（优先使用 newCharData，否则从现有 char 数据中获取）
             chat: newCharData.chat ?? char.chat,
             create_date: newCharData.create_date ?? char.create_date,
             date_last_chat: newCharData.date_last_chat ?? char.date_last_chat,
             chat_date: newCharData.chat_date ?? char.chat_date
         };
 
-        // 8. 更新本地状态
         Object.assign(char, finalCharData);
         char.avatarUrl = '/characters/' + encodeURIComponent(char.fileName) + '?t=' + Date.now();
         
-        // 9. 同步更新酒馆内存中的角色数据，防止刷新时被旧数据覆盖
+        // 10. 同步更新酒馆内存中的角色数据
         syncCharDataToMemory(fileName, finalCharData);
         
-        // 10. 刷新酒馆的角色列表缓存，确保原生操作能读取到最新数据
+        // 11. 刷新酒馆的角色列表缓存
         try {
             const ctx = getSTContext();
             if (ctx && typeof ctx.getCharacters === 'function') {
@@ -1297,13 +1326,12 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
             console.warn('[CharManager] 刷新酒馆角色列表失败:', e);
         }
         
-        // 持久化到 IndexedDB，确保重启后数据一致
+        // 持久化到 IndexedDB
         await persistCharacterState(true);
         
         if (notifySuccess) notify('角色更新成功', 'success');
         return true;
     } finally {
-        // 释放串行队列
         done();
     }
 }
@@ -1414,12 +1442,16 @@ export async function renameCharacterFile(char, newName) {
         }
         
         // 2. 更新 ctx.characters
+        // 【Luker 兼容】avatar 字段不在 legacyCharacterRootFieldSpecs 中，可以直接修改
+        // 但 name 字段需要写入 data.name 路径，避免触发警告
         const ctx = getSTContext();
         if (ctx && ctx.characters) {
             const ctxChar = ctx.characters.find(c => c.avatar === oldFileName);
             if (ctxChar) {
                 ctxChar.avatar = newFileName;
-                ctxChar.name = newName;
+                // 写入 data.name 路径，Luker 会自动同步到根层级
+                if (!ctxChar.data) ctxChar.data = {};
+                ctxChar.data.name = newName;
             }
         }
 
