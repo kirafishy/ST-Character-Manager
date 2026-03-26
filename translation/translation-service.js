@@ -1,6 +1,7 @@
 import { getSTContext } from '../context.js';
 import { getAuthHeaders, authFetch } from '../api.js';
 import { parseSSELines, parseSSELine, extractSSEContent, StreamingParserState, parseStreamingTranslationChunk } from '../utils/streaming-parser.js';
+import { state } from '../state.js';
 
 /**
  * 安全解析 JSON，处理可能存在的 Markdown 代码块或非标准格式
@@ -199,7 +200,7 @@ export class TranslationService {
             { role: 'user', content: `${contextStr}\n\nData to translate (JSON format):\n${contentStr}\n\nPlease translate the values in the JSON above to ${targetLangName}. Keep keys unchanged. Output ONLY the JSON object.${extraInstructions}` }
         ];
 
-        if (this.settings.debugMode) {
+        if (state.settings.debugMode) {
             console.log('[CharManager] [Translation] Request Messages:', JSON.parse(JSON.stringify(messages)));
         }
 
@@ -236,7 +237,7 @@ export class TranslationService {
                                 if (newKeys.length === 0) return;
                                 
                                 // 调试日志：只打印新完成的字段
-                                if (this.settings.debugMode) {
+                                if (state.settings.debugMode) {
                                     const newPairs = {};
                                     newKeys.forEach(k => newPairs[k] = completePairs[k]);
                                     console.log('[CharManager] [Translation] 新完成字段:', newKeys.join(', '));
@@ -264,7 +265,7 @@ export class TranslationService {
                     responseText = await this._callTavernAPI(messages);
                 }
 
-                if (this.settings.debugMode) {
+                if (state.settings.debugMode) {
                     console.log('[CharManager] [Translation] Raw Response:', responseText);
                 }
 
@@ -574,7 +575,7 @@ export class TranslationService {
             this.abortController = null;
         }
 
-        if (this.settings.debugMode) {
+        if (state.settings.debugMode) {
             console.log('[CharManager] [Translation] API Request:', JSON.parse(JSON.stringify(messages)));
         }
 
@@ -597,7 +598,7 @@ export class TranslationService {
                     responseText = await this._callTavernAPI(messages);
                 }
 
-                if (this.settings.debugMode) {
+                if (state.settings.debugMode) {
                     console.log('[CharManager] [Translation] API Response:', responseText);
                 }
 
