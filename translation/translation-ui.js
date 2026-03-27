@@ -315,8 +315,11 @@ function buildDialogHTML() {
                             ${t('close') === 'Close' ? 'Anti-trunc' : '防截断'}
                         </label>
                     </div>
-                    <div style="display:flex;gap:4px">
-                        <button id="cmTransSelectAll" class="cm-trans-btn">☑ ${t('close') === 'Close' ? 'All' : '全选'}</button>
+                    <div style="display:flex;gap:4px;align-items:center">
+                        <label class="cm-trans-filter-label" style="cursor:pointer">
+                            <input type="checkbox" id="cmTransSelectAllCb">
+                            ${t('close') === 'Close' ? 'Select All' : '全选'}
+                        </label>
                         <button id="cmTransInvertSel" class="cm-trans-btn">🔄 ${t('close') === 'Close' ? 'Inv' : '反选'}</button>
                     </div>
                 </div>
@@ -554,15 +557,27 @@ function buildItemHTML(group, key, item) {
 // ========== 事件绑定 ==========
 
 function bindAllEvents(ov) {
-    // 全选
-    const selectAllBtn = ov.querySelector('#cmTransSelectAll');
-    if (selectAllBtn) {
-        selectAllBtn.onclick = () => {
+    // 全选/取消全选 checkbox
+    const selectAllCb = ov.querySelector('#cmTransSelectAllCb');
+    if (selectAllCb) {
+        // 初始化状态：复用 updateSelectAllCheckbox 统一处理（含半选态）
+        updateSelectAllCheckbox(ov);
+        
+        selectAllCb.onchange = () => {
             const checkboxes = ov.querySelectorAll('.cm-trans-checkbox');
-            checkboxes.forEach(cb => {
-                selectedItems.add(cb.dataset.id);
-                cb.checked = true;
-            });
+            if (selectAllCb.checked) {
+                // 全选
+                checkboxes.forEach(cb => {
+                    selectedItems.add(cb.dataset.id);
+                    cb.checked = true;
+                });
+            } else {
+                // 取消全选
+                checkboxes.forEach(cb => {
+                    selectedItems.delete(cb.dataset.id);
+                    cb.checked = false;
+                });
+            }
             updateSelectedCount(ov);
         };
     }
@@ -582,6 +597,8 @@ function bindAllEvents(ov) {
                 }
             });
             updateSelectedCount(ov);
+            // 同步更新全选 checkbox 状态
+            updateSelectAllCheckbox(ov);
         };
     }
 
@@ -730,6 +747,8 @@ function bindDynamicEvents(ov) {
             if (cb.checked) selectedItems.add(cb.dataset.id);
             else selectedItems.delete(cb.dataset.id);
             updateSelectedCount(ov);
+            // 同步更新全选 checkbox 状态
+            updateSelectAllCheckbox(ov);
         };
     });
 
@@ -830,6 +849,30 @@ function updateSelectedCount(ov) {
         const isEn = (state.settings.translationUILanguage === 'en');
         btn.textContent = isEn ? `🌍 Translate Selected (${selectedItems.size})` : `🌍 翻译选中 (${selectedItems.size})`;
     }
+}
+
+/**
+ * 更新全选 checkbox 的状态
+ * @param {HTMLElement} ov - 弹窗元素
+ */
+function updateSelectAllCheckbox(ov) {
+    const selectAllCb = ov.querySelector('#cmTransSelectAllCb');
+    if (!selectAllCb) return;
+    
+    const checkboxes = ov.querySelectorAll('.cm-trans-checkbox');
+    const totalCheckboxes = checkboxes.length;
+    
+    // 统计当前可见 checkbox 的实际选中数量（而非全局 selectedItems.size）
+    // 避免筛选/重绘后全局状态与可见 UI 不一致
+    let checkedCount = 0;
+    checkboxes.forEach(cb => {
+        if (cb.checked) checkedCount++;
+    });
+    
+    // 更新全选状态：全部选中时勾选，否则不勾选
+    selectAllCb.checked = totalCheckboxes > 0 && checkedCount === totalCheckboxes;
+    // 半选状态（部分选中）通过 indeterminate 属性表示
+    selectAllCb.indeterminate = checkedCount > 0 && checkedCount < totalCheckboxes;
 }
 
 function refreshBody(ov) {

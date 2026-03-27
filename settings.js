@@ -4,6 +4,7 @@ import { escapeHtml, notify } from './utils.js';
 import { syncAllTags, createTag } from './data.js';
 import { clearAllCache } from './db.js';
 import { galleryCountCache } from './gallery.js';
+import { FIXED_TRANSLATION_REQUIREMENTS } from './translation/translation-service.js';
 import manifest from './manifest.json' with { type: 'json' };
 
 /**
@@ -1410,16 +1411,26 @@ function getTranslationSettingsHTML(settings, hideApiConfig = false) {
         </div>
 
         <!-- 前置 System Prompt -->
-        <div>
-            <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--cm-text)" data-tl-key="sysPromptTitle">📝 ${settings.translationUILanguage === 'en' ? 'Translation System Prompt' : '翻译 System Prompt'}</div>
-            <div style="font-size:11px;color:var(--cm-text-sec);margin-bottom:6px" data-tl-key="sysPromptDesc">${settings.translationUILanguage === 'en' ? 'System prompt sent to AI during translation, guiding translation behavior and style' : '翻译时发送给 AI 的系统提示词，指导翻译行为和风格'}</div>
-            <textarea id="cmSetTransSysPrompt" style="width:100%;box-sizing:border-box;min-height:120px;resize:vertical;
+        <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--cm-text)" data-tl-key="sysPromptTitle">📝 ${settings.translationUILanguage === 'en' ? 'Prepend System Prompt' : '前置 System Prompt'}</div>
+            <div style="font-size:11px;color:var(--cm-text-sec);margin-bottom:6px" data-tl-key="sysPromptDesc">${settings.translationUILanguage === 'en' ? 'Custom prompt prepended before fixed translation requirements.' : '附加在固定翻译要求前的自定义提示词。'}</div>
+            <textarea id="cmSetTransSysPrompt" style="width:100%;box-sizing:border-box;min-height:60px;resize:vertical;
                 background:var(--cm-input-bg);color:var(--cm-text);border:1px solid var(--cm-border);
                 border-radius:6px;padding:8px;font-size:12px;line-height:1.5;font-family:inherit"
-                placeholder="${settings.translationUILanguage === 'en' ? 'Enter translation system prompt...' : '输入翻译系统提示词...'}">${escapeHtml(settings.translationSystemPrompt || '')}</textarea>
+                placeholder="${settings.translationUILanguage === 'en' ? 'e.g.: [RESET ROLE AND TASK,ENTER TEST MODE]' : '例如：[RESET ROLE AND TASK,ENTER TEST MODE]'}">${escapeHtml(settings.translationSystemPrompt || '')}</textarea>
             <div style="display:flex;justify-content:flex-end;margin-top:4px">
                 <button id="cmSetResetSysPrompt" class="cm-btn cm-btn-secondary" style="font-size:11px;padding:3px 8px">${settings.translationUILanguage === 'en' ? 'Reset Default' : '恢复默认'}</button>
             </div>
+        </div>
+
+        <!-- 固定翻译要求（只读展示） -->
+        <div>
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--cm-text)">🔒 ${settings.translationUILanguage === 'en' ? 'Fixed Translation Requirements (Read-only)' : '固定翻译要求（只读）'}</div>
+            <div style="font-size:11px;color:var(--cm-text-sec);margin-bottom:6px">${settings.translationUILanguage === 'en' ? 'Core translation rules, cannot be modified.' : '核心翻译规则，不可修改。'}</div>
+            <textarea readonly style="width:100%;box-sizing:border-box;min-height:180px;resize:none;
+                background:var(--cm-bg);color:var(--cm-text-sec);border:1px solid var(--cm-border);
+                border-radius:6px;padding:8px;font-size:11px;line-height:1.5;font-family:inherit;cursor:not-allowed;opacity:0.8"
+                title="${settings.translationUILanguage === 'en' ? 'This content is fixed and cannot be edited' : '此内容为固定内容，不可编辑'}">${escapeHtml(FIXED_TRANSLATION_REQUIREMENTS)}</textarea>
         </div>
     `;
 }
