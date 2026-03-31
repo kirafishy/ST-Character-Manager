@@ -3,8 +3,8 @@ import { authFetch } from '../api.js';
 import { doc, parentWin, getSTContext, getSTCharacters } from '../context.js';
 import { escapeHtml } from '../utils.js';
 import { TranslationService } from './translation-service.js';
-import { extractTranslatableData, applyTranslation } from './data-extractor.js';
-import { writePngText } from './png-writer.js';
+import { extractTranslatableData, applyTranslation, syncExportMirrorFields } from './data-extractor.js';
+import { writeCharacterCardPng } from './png-writer.js';
 import { t } from './i18n.js';
 import { scanAndFilterGlossary } from './glossary-scanner.js';
 import { detectMVU, analyzeMVUStructure, generateMVUProtectionPrompt, preprocessMVUContent, postprocessMVUContent } from './mvu-handler.js';
@@ -1286,6 +1286,226 @@ function updateItemUI(ov, group, key) {
 
 // ========== 导出逻辑 ==========
 
+/**
+ * 需要清理的运行时字段列表
+ * 这些字段由酒馆后端在加载角色卡时动态生成，不应出现在导出文件中
+ */
+const RUNTIME_FIELDS = [
+    'json_data',
+    'avatar',
+    'date_added',
+    'chat_size',
+    'date_last_chat',
+    'data_size'
+];
+
+const EXPORT_DEBUG_FIELDS = [
+    'name',
+    'description',
+    'personality',
+    'scenario',
+    'first_mes',
+    'mes_example',
+    'tags',
+    'creator_notes',
+    'system_prompt',
+    'post_history_instructions',
+    'alternate_greetings',
+    'character_book'
+];
+
+/**
+ * 是否启用翻译调试日志
+ * @returns {boolean}
+ */
+function isTranslationDebugEnabled() {
+    return Boolean(state.settings.debugMode);
+}
+
+/**
+ * 输出翻译调试日志
+ * @param {'log'|'warn'|'error'} level - 日志级别
+ * @param {string} message - 日志消息
+ * @param {object} [payload] - 附加数据
+ */
+function logTranslationDebug(level, message, payload) {
+    if (!isTranslationDebugEnabled()) return;
+
+    const method = console[level] || console.log;
+    if (payload === undefined) {
+        method(`[CharManager] [Translation] ${message}`);
+        return;
+    }
+
+    method(`[CharManager] [Translation] ${message}`, payload);
+}
+
+/**
+ * 统计角色卡中的运行时字段残留情况
+ * @param {object} cardData - 角色卡对象
+ * @returns {{hasRuntimeFields: boolean, root: string[], data: string[], all: string[]}}
+ */
+function collectRuntimeFieldPresence(cardData) {
+    const summary = {
+        hasRuntimeFields: false,
+        root: [],
+        data: [],
+        all: []
+    };
+
+    if (!cardData || typeof cardData !== 'object') {
+        return summary;
+    }
+
+    RUNTIME_FIELDS.forEach(field => {
+        if (cardData[field] !== undefined) {
+            summary.root.push(field);
+            summary.all.push(field);
+        }
+    });
+
+    if (cardData.data && typeof cardData.data === 'object') {
+        RUNTIME_FIELDS.forEach(field => {
+            if (cardData.data[field] !== undefined) {
+                summary.data.push(field);
+                summary.all.push(`data.${field}`);
+            }
+        });
+    }
+
+    summary.hasRuntimeFields = summary.all.length > 0;
+    return summary;
+}
+
+/**
+ * 构建字段调试摘要
+ * @param {unknown} value - 字段值
+ * @returns {object}
+ */
+function summarizeFieldValue(value) {
+    if (value === undefined) return { present: false };
+    if (value === null) return { present: true, type: 'null' };
+
+    if (Array.isArray(value)) {
+        return {
+            present: true,
+            type: 'array',
+            length: value.length,
+            sample: value.slice(0, 3)
+        };
+    }
+
+    if (typeof value === 'string') {
+        return {
+            present: true,
+            type: 'string',
+            length: value.length,
+            preview: value.slice(0, 80)
+        };
+    }
+
+    if (typeof value === 'object') {
+        return {
+            present: true,
+            type: 'object',
+            keys: Object.keys(value).slice(0, 8)
+        };
+    }
+
+    return {
+        present: true,
+        type: typeof value,
+        value
+    };
+}
+
+/**
+ * 构建角色卡关键字段摘要
+ * @param {object} cardData - 角色卡对象
+ * @returns {{root: object, data: object}}
+ */
+function buildCardDebugSummary(cardData) {
+    const summary = {
+        root: {},
+        data: {}
+    };
+
+    const dataLayer = cardData && typeof cardData === 'object' && cardData.data && typeof cardData.data === 'object'
+        ? cardData.data
+        : null;
+
+    EXPORT_DEBUG_FIELDS.forEach(field => {
+        summary.root[field] = summarizeFieldValue(cardData?.[field]);
+        summary.data[field] = summarizeFieldValue(dataLayer?.[field]);
+    });
+
+    return summary;
+}
+
+/**
+ * 输出角色卡摘要日志
+ * @param {string} stage - 阶段名
+ * @param {object} cardData - 角色卡对象
+ */
+function logCardDebugSnapshot(stage, cardData) {
+    logTranslationDebug('log', `${stage}：关键字段摘要`, {
+        runtime: collectRuntimeFieldPresence(cardData),
+        fields: buildCardDebugSummary(cardData)
+    });
+}
+
+/**
+ * 规范化导出角色卡数据，清理运行时字段
+ * @param {object} charData - 翻译后的角色卡数据（来自 buildTranslatedCharData）
+ * @returns {object} 清理后的纯净角色卡对象
+ */
+function sanitizeExportCardData(charData) {
+    if (!charData || typeof charData !== 'object') return charData;
+
+    const beforeRuntime = collectRuntimeFieldPresence(charData);
+    logTranslationDebug('log', '导出规范化前摘要', {
+        runtime: beforeRuntime,
+        fields: buildCardDebugSummary(charData)
+    });
+
+    const cleaned = JSON.parse(JSON.stringify(charData));
+    let removedFields = [];
+
+    // 清理根层运行时字段
+    RUNTIME_FIELDS.forEach(field => {
+        if (cleaned[field] !== undefined) {
+            delete cleaned[field];
+            removedFields.push(field);
+        }
+    });
+
+    // 清理 data 层运行时字段（如果存在）
+    if (cleaned.data && typeof cleaned.data === 'object') {
+        RUNTIME_FIELDS.forEach(field => {
+            if (cleaned.data[field] !== undefined) {
+                delete cleaned.data[field];
+                removedFields.push(`data.${field}`);
+            }
+        });
+    }
+
+    // 双写同步：核心字段根层与 data 层保持一致
+    syncExportMirrorFields(cleaned);
+
+    const afterRuntime = collectRuntimeFieldPresence(cleaned);
+    logTranslationDebug('log', '导出规范化后摘要', {
+        removedFields,
+        runtime: afterRuntime,
+        fields: buildCardDebugSummary(cleaned)
+    });
+
+    if (afterRuntime.hasRuntimeFields) {
+        logTranslationDebug('warn', '导出规范化后仍检测到运行时字段残留', afterRuntime);
+    }
+
+    return cleaned;
+}
+
 function buildTranslatedCharData() {
     const flatTranslated = {};
     Object.keys(currentTranslationData).forEach(group => {
@@ -1314,7 +1534,7 @@ function getTranslatedName() {
 
 function doExportJson() {
     try {
-        const newCharData = buildTranslatedCharData();
+        const newCharData = sanitizeExportCardData(buildTranslatedCharData());
         const jsonStr = JSON.stringify(newCharData, null, 2);
         const blob = new Blob([jsonStr], { type: 'application/json' });
         const translatedName = getTranslatedName();
@@ -1332,11 +1552,10 @@ function doExportPng() {
     }
 
     try {
-        const newCharData = buildTranslatedCharData();
-        const jsonStr = JSON.stringify(newCharData);
-        const base64Data = btoa(unescape(encodeURIComponent(jsonStr)));
-        const key = (newCharData.spec === 'chara_card_v3') ? 'ccv3' : 'chara';
-        const pngBlob = writePngText(originalPngBuffer, key, base64Data);
+        const newCharData = sanitizeExportCardData(buildTranslatedCharData());
+        const pngBlob = writeCharacterCardPng(originalPngBuffer, newCharData, {
+            debug: isTranslationDebugEnabled()
+        });
         const translatedName = getTranslatedName();
         downloadBlob(pngBlob, `${translatedName}_translated.png`);
         _notify(t('notifyExportPNGSuccess'), 'success');
@@ -1400,6 +1619,12 @@ async function doOverwriteOriginal(ov) {
             if (!translatedTarget.extensions) translatedTarget.extensions = {};
             translatedTarget.extensions.cm_manager = newCharData.extensions.cm_manager;
         }
+
+        logCardDebugSnapshot('覆盖原卡提交前', translatedFullData);
+        const overwriteRuntime = collectRuntimeFieldPresence(translatedFullData);
+        if (overwriteRuntime.hasRuntimeFields) {
+            logTranslationDebug('warn', '覆盖原卡提交前仍检测到运行时字段残留', overwriteRuntime);
+        }
         
         await _updateCharacter(currentChar.fileName, charData, null, {
             cleanOldWorldInfo: true,
@@ -1442,13 +1667,19 @@ async function doImportAsNew(ov) {
         // 显示加载遮罩
         showOperationLoading(ov, t('notifyImporting') || '正在导入新卡...');
 
-        const fullCardData = buildTranslatedCharData();
+        const fullCardData = sanitizeExportCardData(buildTranslatedCharData());
         
         // 导入新卡时，保留 cm_manager.tags（翻译后的标签）
         // 这样 importTags 会直接使用翻译后的标签，无需弹窗确认
         // 注意：不再删除 cm_manager.tags，让标签直接导入
         
         const jsonStr = JSON.stringify(fullCardData);
+
+        logCardDebugSnapshot('导入新卡提交前', fullCardData);
+        const importRuntime = collectRuntimeFieldPresence(fullCardData);
+        if (importRuntime.hasRuntimeFields) {
+            logTranslationDebug('warn', '导入新卡提交前仍检测到运行时字段残留', importRuntime);
+        }
         
         const rawName = getTranslatedName();
         // 简单清理文件名
@@ -1460,10 +1691,9 @@ async function doImportAsNew(ov) {
             // 如果有原图，直接写入 PNG 块并导入 PNG
             // 这样酒馆后端会自动识别并处理图片和元数据
             try {
-                // 写入 tEXt 块
-                const base64Data = btoa(unescape(encodeURIComponent(jsonStr)));
-                const key = (fullCardData.spec === 'chara_card_v3') ? 'ccv3' : 'chara';
-                const pngBlob = writePngText(originalPngBuffer, key, base64Data);
+                const pngBlob = writeCharacterCardPng(originalPngBuffer, fullCardData, {
+                    debug: isTranslationDebugEnabled()
+                });
                 importFile = new File([pngBlob], `${safeName}.png`, { type: 'image/png' });
             } catch (pngErr) {
                 console.warn('[CharManager] [Translation] PNG 写入失败，降级为 JSON 导入:', pngErr);

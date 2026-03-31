@@ -410,3 +410,104 @@ export function applyTranslation(charData, translatedData, options = {}) {
 
     return newData;
 }
+
+/**
+ * 导出专用双写同步函数
+ * 将核心字段同时写入根层与 data 层，确保导出后回导的一致性
+ * 仅对导出对象操作，不影响 UI 内部状态
+ *
+ * @param {object} exportObj - 待同步的导出对象（已翻译并规范化）
+ * @returns {object} 同步后的导出对象（原地修改并返回）
+ */
+export function syncExportMirrorFields(exportObj) {
+    if (!exportObj || typeof exportObj !== 'object') return exportObj;
+
+    // 确保 data 层存在
+    if (!exportObj.data || typeof exportObj.data !== 'object') {
+        exportObj.data = {};
+    }
+
+    const root = exportObj;
+    const data = exportObj.data;
+
+    // 1. 核心双写字段：根层与 data 层保持一致
+    const mirrorFields = [
+        'name',
+        'description',
+        'personality',
+        'scenario',
+        'first_mes',
+        'mes_example'
+    ];
+
+    mirrorFields.forEach(field => {
+        // 优先取 data 层（翻译结果主要落在 data 层）
+        const dataVal = data[field];
+        const rootVal = root[field];
+
+        if (dataVal !== undefined) {
+            // data 层有值，同步到根层
+            root[field] = dataVal;
+        } else if (rootVal !== undefined) {
+            // data 层为空，用根层值补齐 data 层
+            data[field] = rootVal;
+        }
+    });
+
+    // 2. tags 同步：根层 tags 与 data.tags 保持一致
+    // 优先取 data.tags（翻译后的标签），其次取根层 tags
+    const dataTags = data.tags;
+    const rootTags = root.tags;
+
+    if (Array.isArray(dataTags)) {
+        root.tags = [...dataTags];
+    } else if (Array.isArray(rootTags)) {
+        data.tags = [...rootTags];
+    }
+
+    // 3. alternate_greetings 保持数组结构，不做错误字符串化
+    if (Array.isArray(data.alternate_greetings)) {
+        root.alternate_greetings = [...data.alternate_greetings];
+    } else if (Array.isArray(root.alternate_greetings)) {
+        data.alternate_greetings = [...root.alternate_greetings];
+    }
+
+    // 4. character_book 保持对象结构
+    if (data.character_book && typeof data.character_book === 'object') {
+        root.character_book = JSON.parse(JSON.stringify(data.character_book));
+    } else if (root.character_book && typeof root.character_book === 'object') {
+        data.character_book = JSON.parse(JSON.stringify(root.character_book));
+    }
+
+    // 5. 兼容字段保守补齐
+    // creator_notes -> creatorcomment 兼容位
+    if (data.creator_notes && typeof data.creator_notes === 'string') {
+        if (!root.creatorcomment || !root.creatorcomment.trim()) {
+            root.creatorcomment = data.creator_notes;
+        }
+    } else if (root.creatorcomment && typeof root.creatorcomment === 'string') {
+        if (!data.creator_notes || !data.creator_notes.trim()) {
+            data.creator_notes = root.creatorcomment;
+        }
+    }
+
+    // system_prompt 兼容补齐
+    if (data.system_prompt !== undefined) {
+        if (root.system_prompt === undefined) {
+            root.system_prompt = data.system_prompt;
+        }
+    } else if (root.system_prompt !== undefined) {
+        data.system_prompt = root.system_prompt;
+    }
+
+    // post_history_instructions 兼容补齐
+    if (data.post_history_instructions !== undefined) {
+        if (root.post_history_instructions === undefined) {
+            root.post_history_instructions = data.post_history_instructions;
+        }
+    } else if (root.post_history_instructions !== undefined) {
+        data.post_history_instructions = root.post_history_instructions;
+    }
+
+    return exportObj;
+}

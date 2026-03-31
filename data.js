@@ -1212,10 +1212,13 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
         }
 
         // 4. 获取现有数据以保留 extensions 和 data
-        const existingExtensions = char.data?.extensions || {};
-        const existingData = char.data || {};
-        const existingSpec = char.spec;
-        const existingSpecVersion = char.spec_version;
+        // 【修复 2026-03-31】优先使用 fullCardData（翻译模块传入的新鲜数据），
+        // 避免使用 state.characters 中的陈旧缓存导致 character_book 等嵌套对象丢失
+        const sourceData = fullCardData || char;
+        const existingExtensions = sourceData.data?.extensions || sourceData.extensions || {};
+        const existingData = sourceData.data || sourceData || {};
+        const existingSpec = sourceData.spec || char.spec;
+        const existingSpecVersion = sourceData.spec_version || char.spec_version;
 
         // 5. 构建 merge-attributes payload
         const payload = {
@@ -1260,7 +1263,8 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
                 character_version: newCharData.character_version || '',
                 tags: newCharData.tags || [],
                 alternate_greetings: newCharData.alternate_greetings || [],
-                character_book: newCharData.character_book,
+                // 【修复 2026-03-31】character_book 放在 extensions 之前，确保翻译后的数据不被 ...existingData 残留覆盖
+                ...(newCharData.character_book !== undefined && { character_book: newCharData.character_book }),
                 extensions: {
                     ...existingExtensions,
                     ...(newCharData.extensions || {})

@@ -17,3 +17,7 @@ changelog/
 .trae/
 .cline/
 .stfolder/
+codemap.md
+HANDOFF.md
+PROGRESS.md
+feature-list.json
