@@ -3021,7 +3021,7 @@ export class CharacterDetails {
             position: fixed;
             top: ${rect.bottom + 4}px;
             left: ${rect.left}px;
-            z-index: ${Z_INDEX.DIALOG + 10};
+            z-index: ${Z_INDEX.MODAL_DROPDOWN};
             background: var(--bg-color, #1a1a2e);
             border: 1px solid var(--border-color, #333);
             border-radius: 8px;
