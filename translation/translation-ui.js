@@ -931,6 +931,10 @@ async function runTranslation(ov, mode, groupFilter) {
     // 重置取消状态
     translationState.reset();
     
+    // 记录翻译前的统计，用于计算本次执行的变化
+    const prevDone = countItems('done');
+    const prevFailed = countItems('failed');
+    
     const tasks = [];
 
     Object.keys(currentTranslationData).forEach(group => {
@@ -1044,7 +1048,25 @@ async function runTranslation(ov, mode, groupFilter) {
         }
 
         if (!translationState.isCancelled()) {
-            _notify(t('notifyTranslationCompleted', { count: countItems('done') }), 'success');
+            // 统计本次执行的翻译结果（减去执行前的累计值）
+            const currentDone = countItems('done');
+            const currentFailed = countItems('failed');
+            const newSuccess = currentDone - prevDone;
+            const newFailed = Math.max(0, currentFailed - prevFailed);
+            _notify(t('notifyTranslationResult', { success: newSuccess, failed: newFailed }), newSuccess > 0 ? 'success' : 'error');
+            
+            // 自动清除已成功翻译项的勾选状态
+            const itemsToRemove = [];
+            selectedItems.forEach(itemId => {
+                const [group, key] = itemId.split('::');
+                const item = currentTranslationData[group]?.[key];
+                if (item && item.status === STATUS.SUCCESS) {
+                    itemsToRemove.push(itemId);
+                }
+            });
+            itemsToRemove.forEach(id => selectedItems.delete(id));
+            updateSelectedCount(ov);
+            updateSelectAllCheckbox(ov);
         }
         updateProgressBar(ov);
     } finally {
@@ -1832,9 +1854,11 @@ function doImportProgress(ov) {
                 });
             });
 
-            // 恢复术语表
+            // 恢复术语表并更新 UI
             if (progressData.glossary && Array.isArray(progressData.glossary)) {
                 glossaryData = progressData.glossary;
+                // 更新术语表 UI，确保导入后术语表正确显示
+                renderGlossaryTable(ov);
             }
 
             refreshBody(ov);
