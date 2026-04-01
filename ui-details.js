@@ -16,6 +16,88 @@ import { openTranslationDialog } from './translation/translation-ui.js';
 import { calculateTokens } from './utils.js';
 import { resolveDetailPageCoverDisplay } from './utils/cover-display.js';
 
+// ========== URL 导入辅助函数 ==========
+
+/**
+ * 检测字符串是否为有效 URL
+ * @param {string} value - 待检测的字符串
+ * @returns {boolean}
+ */
+function isValidUrl(value) {
+    try {
+        return ['http:', 'https:'].includes(new URL(value).protocol);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * 从 URL 中提取主机名
+ * @param {string} url - URL 字符串
+ * @returns {string}
+ */
+function getHostFromUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        return urlObj.hostname;
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * 平台检测配置
+ * @type {Array<{hosts: string[], sourceType: string}>}
+ */
+const PLATFORM_URL_CONFIGS = [
+    { hosts: ['chub.ai', 'characterhub.org'], sourceType: 'Chub' },
+    { hosts: ['janitorai'], sourceType: 'JanitorAI' },
+    { hosts: ['pygmalion.chat'], sourceType: 'Pygmalion' },
+    { hosts: ['aicharactercards.com'], sourceType: 'AICharacterCards' },
+    { hosts: ['realm.risuai.net'], sourceType: 'RisuAI' },
+    { hosts: ['perchance.org'], sourceType: 'Perchance' }
+];
+
+/**
+ * UUID 检测配置
+ * @type {Array<{pattern: RegExp, sourceType: string}>}
+ */
+const UUID_PATTERNS = [
+    { pattern: /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i, sourceType: 'Pygmalion UUID' },
+    { pattern: /^[a-f0-9-]+_character$/i, sourceType: 'JanitorAI UUID' },
+    { pattern: /^AICC\//i, sourceType: 'AICharacterCards UUID' },
+    { pattern: /^[\w-]+\/[\w-]+$/, sourceType: 'Chub UUID' }
+];
+
+/**
+ * 检测输入类型并返回对应的 API 端点和类型信息
+ * @param {string} input - 用户输入的 URL 或 UUID
+ * @returns {{ endpoint: string, inputType: 'url' | 'uuid', sourceType: string }}
+ */
+function detectImportSourceType(input) {
+    if (isValidUrl(input)) {
+        const host = getHostFromUrl(input);
+        for (const config of PLATFORM_URL_CONFIGS) {
+            if (config.hosts.some(h => host.includes(h))) {
+                return { endpoint: '/api/content/importURL', inputType: 'url', sourceType: config.sourceType };
+            }
+        }
+        return { endpoint: '/api/content/importURL', inputType: 'url', sourceType: 'URL' };
+    }
+
+    for (const { pattern, sourceType } of UUID_PATTERNS) {
+        if (pattern.test(input)) {
+            return { endpoint: '/api/content/importUUID', inputType: 'uuid', sourceType };
+        }
+    }
+
+    if (input.includes('lorebook')) {
+        return { endpoint: '/api/content/importUUID', inputType: 'uuid', sourceType: 'Chub Lorebook UUID' };
+    }
+
+    return { endpoint: '/api/content/importUUID', inputType: 'uuid', sourceType: 'UUID' };
+}
+
 /**
  * 从 SillyTavern 上下文获取指定函数
  * @param {string} name - 函数名称
@@ -2917,7 +2999,40 @@ export class CharacterDetails {
         );
     }
 
+    /**
+     * 选择更新方式对话框
+     */
     handleUpdate() {
+        createBaseDialog(
+            '选择更新方式',
+            '<div style="display:flex;flex-direction:column;gap:12px;padding:8px 0;">' +
+            '<button id="cmUpdateFile" class="cm-btn cm-btn-primary" style="width:100%;text-align:left;padding:12px 16px;">' +
+            '<span style="font-size:16px;">📁</span> 从本地文件更新' +
+            '<div style="font-size:12px;color:var(--cm-text-sec);margin-top:4px;font-weight:normal;">选择 PNG/WebP 文件覆盖当前角色卡</div>' +
+            '</button>' +
+            '<button id="cmUpdateUrl" class="cm-btn cm-btn-primary" style="width:100%;text-align:left;padding:12px 16px;">' +
+            '<span style="font-size:16px;">🔗</span> 从 URL 更新' +
+            '<div style="font-size:12px;color:var(--cm-text-sec);margin-top:4px;font-weight:normal;">输入角色卡链接在线更新</div>' +
+            '</button>' +
+            '</div>',
+            [
+                { text: '取消', id: 'cmUpdateCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => close() }
+            ]
+        );
+
+        // 延迟绑定事件（对话框渲染后）
+        requestAnimationFrame(() => {
+            const fileBtn = doc.querySelector('#cmUpdateFile');
+            const urlBtn = doc.querySelector('#cmUpdateUrl');
+            if (fileBtn) fileBtn.onclick = () => { this.handleUpdateFromFile(); };
+            if (urlBtn) urlBtn.onclick = () => { this.handleUpdateFromUrl(); };
+        });
+    }
+
+    /**
+     * 从本地文件更新角色卡
+     */
+    async handleUpdateFromFile() {
         const input = doc.createElement('input');
         input.type = 'file';
         input.accept = '.png,.webp';
@@ -2961,6 +3076,119 @@ export class CharacterDetails {
             }
         };
         input.click();
+    }
+
+    /**
+     * 从 URL 更新角色卡
+     */
+    async handleUpdateFromUrl() {
+        const sourceHint = '支持 Chub.ai、JanitorAI、Pygmalion 等平台的角色卡链接或 UUID';
+
+        createBaseDialog(
+            '从 URL 更新角色卡',
+            '<div style="padding:8px 0;">' +
+            '<p style="font-size:13px;color:var(--cm-text-sec);margin-bottom:12px;">' + escapeHtml(sourceHint) + '</p>' +
+            '<input type="text" id="cmUrlInput" class="cm-input" placeholder="输入角色卡 URL 或 UUID">' +
+            '</div>',
+            [
+                { text: '取消', id: 'cmUrlCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => close() },
+                {
+                    text: '更新', id: 'cmUrlSubmit', cls: 'cm-btn-primary',
+                    onClick: async (ov, close) => {
+                        const urlInput = ov.querySelector('#cmUrlInput');
+                        const sourceValue = urlInput.value.trim();
+                        if (!sourceValue) {
+                            notify('请输入 URL 或 UUID', 'error');
+                            return;
+                        }
+                        close();
+                        await this.doUpdateFromUrl(sourceValue);
+                    }
+                }
+            ],
+            (ov) => ov.querySelector('#cmUrlInput').focus()
+        );
+    }
+
+    /**
+     * 执行 URL 下载与覆盖更新
+     * @param {string} sourceValue - URL 或 UUID
+     */
+    async doUpdateFromUrl(sourceValue) {
+        try {
+            const sourceInfo = detectImportSourceType(sourceValue);
+            notify('正在从 ' + sourceInfo.sourceType + ' 下载...', 'info');
+
+            // 下载角色卡
+            const response = await authFetch(sourceInfo.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [sourceInfo.inputType]: sourceValue })
+            });
+
+            if (!response.ok) {
+                throw new Error('下载失败: HTTP ' + response.status);
+            }
+
+            // 检查内容类型
+            const contentType = response.headers.get('Content-Type') || '';
+            const customContentType = response.headers.get('X-Custom-Content-Type') || '';
+
+            if (customContentType === 'lorebook') {
+                throw new Error('不支持导入世界书(Lorebook)，请导入角色卡');
+            }
+
+            if (!contentType.startsWith('image/') && !contentType.includes('json') && customContentType !== 'character') {
+                throw new Error('返回的内容不是有效的角色卡格式');
+            }
+
+            // 解析响应数据
+            const blob = await response.blob();
+            let cardData;
+            let dataBlock;
+
+            if (contentType.startsWith('image/')) {
+                // PNG/WebP 卡片
+                const buf = await blob.arrayBuffer();
+                cardData = await parsePNG(buf);
+                if (!cardData) throw new Error('无法解析图片数据');
+                dataBlock = cardData.data || cardData;
+            } else {
+                // JSON 数据
+                const text = await blob.text();
+                cardData = JSON.parse(text);
+                dataBlock = cardData.data || cardData;
+            }
+
+            // 覆盖确认
+            const charName = dataBlock.name || this.char.name;
+            const doUpdate = await showConfirm(
+                '⚠️ 覆盖更新确认\n\n' +
+                '即将更新角色：' + charName + '\n' +
+                '1. 文件名保持不变\n' +
+                '2. 来源链接(Source Link) 将被保留\n' +
+                '3. 其他设定将被新卡替换\n\n' +
+                '确定继续吗？'
+            );
+            if (!doUpdate) return;
+
+            notify('正在更新角色卡...', 'info');
+
+            await updateCharacter(this.char.fileName, dataBlock, blob, {
+                cleanOldWorldInfo: true,
+                preserveSourceLink: true,
+                refreshUI: true,
+                notifySuccess: true,
+                fullCardData: cardData
+            });
+
+            // 更新成功后刷新详情页
+            this.show();
+
+        } catch (e) {
+            console.error('[CharManager] URL 更新失败:', e);
+            notify('URL 更新失败: ' + e.message, 'error');
+        }
     }
 
     /**
