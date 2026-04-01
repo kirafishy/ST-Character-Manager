@@ -947,8 +947,8 @@ async function runTranslation(ov, mode, groupFilter) {
 
             if (mode === 'selected') {
                 if (!selectedItems.has(itemId)) return;
-            }
-            if (mode === 'all' || mode === 'group') {
+                // selected 模式下不再过滤 SUCCESS 状态，用户勾选什么就翻译什么
+            } else if (mode === 'all' || mode === 'group') {
                 if (item.status === STATUS.SUCCESS) return;
             }
 
@@ -1055,7 +1055,7 @@ async function runTranslation(ov, mode, groupFilter) {
             const newFailed = Math.max(0, currentFailed - prevFailed);
             _notify(t('notifyTranslationResult', { success: newSuccess, failed: newFailed }), newSuccess > 0 ? 'success' : 'error');
             
-            // 自动清除已成功翻译项的勾选状态
+            // 自动清除已成功翻译项的勾选状态（同步更新 DOM checkbox 视觉）
             const itemsToRemove = [];
             selectedItems.forEach(itemId => {
                 const [group, key] = itemId.split('::');
@@ -1064,7 +1064,12 @@ async function runTranslation(ov, mode, groupFilter) {
                     itemsToRemove.push(itemId);
                 }
             });
-            itemsToRemove.forEach(id => selectedItems.delete(id));
+            itemsToRemove.forEach(id => {
+                selectedItems.delete(id);
+                // 同步更新 DOM checkbox 视觉状态
+                const checkbox = ov.querySelector(`.cm-trans-checkbox[data-id="${id}"]`);
+                if (checkbox) checkbox.checked = false;
+            });
             updateSelectedCount(ov);
             updateSelectAllCheckbox(ov);
         }

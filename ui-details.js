@@ -3000,33 +3000,69 @@ export class CharacterDetails {
     }
 
     /**
-     * 选择更新方式对话框
+     * 选择更新方式：按钮下方 inline 小弹窗
      */
     handleUpdate() {
-        createBaseDialog(
-            '选择更新方式',
-            '<div style="display:flex;flex-direction:column;gap:12px;padding:8px 0;">' +
-            '<button id="cmUpdateFile" class="cm-btn cm-btn-primary" style="width:100%;text-align:left;padding:12px 16px;">' +
-            '<span style="font-size:16px;">📁</span> 从本地文件更新' +
-            '<div style="font-size:12px;color:var(--cm-text-sec);margin-top:4px;font-weight:normal;">选择 PNG/WebP 文件覆盖当前角色卡</div>' +
-            '</button>' +
-            '<button id="cmUpdateUrl" class="cm-btn cm-btn-primary" style="width:100%;text-align:left;padding:12px 16px;">' +
-            '<span style="font-size:16px;">🔗</span> 从 URL 更新' +
-            '<div style="font-size:12px;color:var(--cm-text-sec);margin-top:4px;font-weight:normal;">输入角色卡链接在线更新</div>' +
-            '</button>' +
-            '</div>',
-            [
-                { text: '取消', id: 'cmUpdateCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => close() }
-            ]
-        );
+        // 如果已有 popup，先关闭
+        const existing = doc.querySelector('#cmUpdatePopup');
+        if (existing) {
+            existing.remove();
+            return;
+        }
 
-        // 延迟绑定事件（对话框渲染后）
+        const updateBtn = doc.querySelector('[title*="用新卡覆盖"]');
+        if (!updateBtn) return;
+
+        const rect = updateBtn.getBoundingClientRect();
+
+        const popup = doc.createElement('div');
+        popup.id = 'cmUpdatePopup';
+        popup.style.cssText = `
+            position: fixed;
+            top: ${rect.bottom + 4}px;
+            left: ${rect.left}px;
+            z-index: ${Z_INDEX.DIALOG + 10};
+            background: var(--bg-color, #1a1a2e);
+            border: 1px solid var(--border-color, #333);
+            border-radius: 8px;
+            padding: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 220px;
+        `;
+
+        popup.innerHTML = `
+            <button id="cmUpdateFile" class="cm-btn cm-btn-primary" style="width:100%;text-align:left;padding:10px 14px;font-size:13px;">
+                📁 从本地文件更新
+                <div style="font-size:11px;color:var(--cm-text-sec);margin-top:2px;font-weight:normal;">选择 PNG/WebP 文件</div>
+            </button>
+            <button id="cmUpdateUrl" class="cm-btn cm-btn-primary" style="width:100%;text-align:left;padding:10px 14px;font-size:13px;">
+                🔗 从 URL 更新
+                <div style="font-size:11px;color:var(--cm-text-sec);margin-top:2px;font-weight:normal;">输入角色卡链接</div>
+            </button>
+        `;
+
+        doc.body.appendChild(popup);
+
+        // 点击外部关闭
+        const closePopup = (e) => {
+            if (!popup.contains(e.target)) {
+                popup.remove();
+                doc.removeEventListener('mousedown', closePopup);
+            }
+        };
+        // 延迟添加监听，避免立即触发
         requestAnimationFrame(() => {
-            const fileBtn = doc.querySelector('#cmUpdateFile');
-            const urlBtn = doc.querySelector('#cmUpdateUrl');
-            if (fileBtn) fileBtn.onclick = () => { this.handleUpdateFromFile(); };
-            if (urlBtn) urlBtn.onclick = () => { this.handleUpdateFromUrl(); };
+            doc.addEventListener('mousedown', closePopup);
         });
+
+        // 按钮事件
+        const fileBtn = popup.querySelector('#cmUpdateFile');
+        const urlBtn = popup.querySelector('#cmUpdateUrl');
+        if (fileBtn) fileBtn.onclick = (e) => { e.stopPropagation(); popup.remove(); doc.removeEventListener('mousedown', closePopup); this.handleUpdateFromFile(); };
+        if (urlBtn) urlBtn.onclick = (e) => { e.stopPropagation(); popup.remove(); doc.removeEventListener('mousedown', closePopup); this.handleUpdateFromUrl(); };
     }
 
     /**
