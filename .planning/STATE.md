@@ -1,6 +1,6 @@
 # Project State
 
-**Last activity:** 2026-04-01 - Quick task: 翻译 Toast 统计反馈
+**Last activity:** 2026-04-01 - Quick tasks: 翻译 Toast 统计反馈 + URL 更新
 
 ## Current Phase
 **Phase:** P8 (Translation Export Import Repair)
@@ -32,3 +32,4 @@
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | 翻译完成 toast 显示成功/失败统计，自动清除成功项勾选，修复导入后术语表 UI 未更新 | 2026-04-01 | 04e260a | 260401-dfx-toast |
+| 2 | 角色卡详情页更新按钮支持从 URL 更新 | 2026-04-01 | be0f1e8 | 260401-dk9-url |
