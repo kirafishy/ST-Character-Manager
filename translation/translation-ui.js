@@ -961,6 +961,17 @@ async function runTranslation(ov, mode, groupFilter) {
         return;
     }
 
+    // 将待翻译项的状态重置为 IDLE，确保差分统计能正确计算
+    // （否则已翻译为 SUCCESS 的项重新翻译时，prevDone 已包含它们，导致差值为 0）
+    tasks.forEach(t => {
+        const item = currentTranslationData[t.group][t.key];
+        item.status = STATUS.IDLE;
+        item.error = null;
+    });
+    // 重置后重新记录基准值
+    const baseDone = countItems('done');
+    const baseFailed = countItems('failed');
+
     isDirty = true;
 
     // 确保服务使用最新设置
@@ -1048,11 +1059,11 @@ async function runTranslation(ov, mode, groupFilter) {
         }
 
         if (!translationState.isCancelled()) {
-            // 统计本次执行的翻译结果（减去执行前的累计值）
+            // 统计本次执行的翻译结果（使用重置基准值后的差值）
             const currentDone = countItems('done');
             const currentFailed = countItems('failed');
-            const newSuccess = currentDone - prevDone;
-            const newFailed = Math.max(0, currentFailed - prevFailed);
+            const newSuccess = currentDone - baseDone;
+            const newFailed = Math.max(0, currentFailed - baseFailed);
             _notify(t('notifyTranslationResult', { success: newSuccess, failed: newFailed }), newSuccess > 0 ? 'success' : 'error');
             
             // 自动清除已成功翻译项的勾选状态（同步更新 DOM checkbox 视觉）
