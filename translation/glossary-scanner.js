@@ -16,6 +16,40 @@ import { TranslationService, TRANSLATION_ROLE_CONTEXT, TRANSLATION_CONTENT_RULES
 import { state } from '../state.js';
 
 /**
+ * 检查扫描是否已被用户取消。
+ * @param {AbortSignal} [signal] - 取消信号
+ */
+function throwIfAborted(signal) {
+    if (signal?.aborted) {
+        throw new DOMException('Glossary scan aborted', 'AbortError');
+    }
+}
+
+/**
+ * 可被 AbortSignal 中断的延迟。
+ * @param {number} ms - 延迟毫秒数
+ * @param {AbortSignal} [signal] - 取消信号
+ * @returns {Promise<void>}
+ */
+function delayWithAbort(ms, signal) {
+    throwIfAborted(signal);
+
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(new DOMException('Glossary scan aborted', 'AbortError'));
+        };
+
+        signal?.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+/**
  * 从角色卡数据中粗提取候选文本片段（不做类型判断，交给 AI）
  * @param {object} charData - 角色卡完整 JSON 数据
  * @returns {object} { charName, candidates: string[] } 去重后的候选词列表
@@ -163,10 +197,14 @@ function extractCandidatesFromText(text, candidateSet) {
  * @param {string[]} candidates - 粗提取的候选词列表
  * @param {string} charName - 角色名（提供上下文）
  * @param {object} settings - 翻译设置
+ * @param {{ signal?: AbortSignal }} [options] - 扫描选项
  * @returns {Promise<Array<{original: string, translation: string, type: string}>>}
  */
-export async function aiFilterAndTranslate(candidates, charName, settings) {
+export async function aiFilterAndTranslate(candidates, charName, settings, options = {}) {
     if (!candidates || candidates.length === 0) return [];
+
+    const { signal } = options;
+    throwIfAborted(signal);
 
     const service = new TranslationService(settings);
     const targetLang = TranslationService.getTargetLangName(settings);
@@ -177,16 +215,19 @@ export async function aiFilterAndTranslate(candidates, charName, settings) {
     const allResults = [];
 
     for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+        throwIfAborted(signal);
         const batch = candidates.slice(i, i + BATCH_SIZE);
         
         try {
-            const batchResults = await _aiFilterBatch(service, batch, charName, targetLang);
+            const batchResults = await _aiFilterBatch(service, batch, charName, targetLang, { signal });
+            throwIfAborted(signal);
             allResults.push(...batchResults);
             // 增加短暂延迟，避免触发速率限制
             if (i + BATCH_SIZE < candidates.length) {
-                await new Promise(r => setTimeout(r, 500));
+                await delayWithAbort(500, signal);
             }
         } catch (e) {
+            if (e.name === 'AbortError' || signal?.aborted) throw e;
             console.warn(`[GlossaryScanner] AI 筛选第 ${Math.floor(i / BATCH_SIZE) + 1} 批失败:`, e);
             // 失败批次不影响其他批次
         }
@@ -201,8 +242,12 @@ export async function aiFilterAndTranslate(candidates, charName, settings) {
  * @param {string[]} candidates - 候选词列表
  * @param {string} charName - 角色名
  * @param {string} targetLang - 目标语言
+ * @param {{ signal?: AbortSignal }} [options] - 扫描选项
  */
-async function _aiFilterBatch(service, candidates, charName, targetLang) {
+async function _aiFilterBatch(service, candidates, charName, targetLang, options = {}) {
+    const { signal } = options;
+    throwIfAborted(signal);
+
     // 仅复用角色设定和内容处理规则，不复用翻译输出格式约束
     // 因为术语扫描的输出格式（JSON 数组）与翻译任务（JSON 对象）不同
     // TRANSLATION_ROLE_CONTEXT 和 TRANSLATION_CONTENT_RULES 已在顶层静态导入
@@ -234,7 +279,8 @@ Output ONLY the JSON array, no other text.`;
         { role: 'user', content: `Candidate terms to analyze:\n${JSON.stringify(candidates)}` }
     ];
 
-    const result = await service.callAPI(messages);
+    const result = await service.callAPI(messages, { signal });
+    throwIfAborted(signal);
 
     // 结果应该是数组
     if (Array.isArray(result)) {
@@ -264,9 +310,13 @@ Output ONLY the JSON array, no other text.`;
  *
  * @param {object} charData - 角色卡 JSON 数据
  * @param {object} settings - 翻译设置
+ * @param {{ signal?: AbortSignal }} [options] - 扫描选项
  * @returns {Promise<Array<{original: string, translation: string, type: string}>>}
  */
-export async function scanAndFilterGlossary(charData, settings) {
+export async function scanAndFilterGlossary(charData, settings, options = {}) {
+    const { signal } = options;
+    throwIfAborted(signal);
+
     // 步骤1: 代码粗提取
     const { charName, candidates } = extractCandidateTerms(charData);
     
@@ -275,15 +325,18 @@ export async function scanAndFilterGlossary(charData, settings) {
     if (candidates.length > 0) {
         console.log(`[GlossaryScanner] 粗提取 ${candidates.length} 个候选词，交由 AI 筛选...`);
         // 步骤2: AI 筛选 + 翻译
-        results = await aiFilterAndTranslate(candidates, charName, settings);
+        results = await aiFilterAndTranslate(candidates, charName, settings, { signal });
     }
+
+    throwIfAborted(signal);
 
     // 步骤3: 如果提取结果较少（可能是非英文内容导致正则提取失败），尝试 AI 深度发现
     // 阈值设为 5，如果少于5个，说明可能漏掉了重要的专有名词
     if (results.length < 5) {
         console.log('[GlossaryScanner] 提取结果较少，尝试 AI 深度发现...');
         try {
-            const discovered = await discoverTermsWithAI(charData, settings);
+            const discovered = await discoverTermsWithAI(charData, settings, { signal });
+            throwIfAborted(signal);
             
             // 合并去重
             const existingKeys = new Set(results.map(r => r.original));
@@ -295,6 +348,7 @@ export async function scanAndFilterGlossary(charData, settings) {
             });
             console.log(`[GlossaryScanner] AI 深度发现补充了 ${discovered.length} 个词条`);
         } catch (e) {
+            if (e.name === 'AbortError' || signal?.aborted) throw e;
             console.warn('[GlossaryScanner] AI 深度发现失败:', e);
         }
     }
@@ -307,7 +361,10 @@ export async function scanAndFilterGlossary(charData, settings) {
 /**
  * 使用 AI 直接从文本片段中发现专有名词（用于非英文或正则提取失败的情况）
  */
-async function discoverTermsWithAI(charData, settings) {
+async function discoverTermsWithAI(charData, settings, options = {}) {
+    const { signal } = options;
+    throwIfAborted(signal);
+
     const data = charData.data || charData;
     const service = new TranslationService(settings);
     const targetLang = TranslationService.getTargetLangName(settings);
@@ -340,7 +397,8 @@ Return [] if nothing found.`;
         { role: 'user', content: textToAnalyze }
     ];
 
-    const result = await service.callAPI(messages);
+    const result = await service.callAPI(messages, { signal });
+    throwIfAborted(signal);
 
     if (Array.isArray(result)) {
         return result.filter(item =>

@@ -404,10 +404,11 @@ export class TranslationService {
     /**
      * 调用 OpenAI Compatible API
      */
-    async _callOpenAI(messages) {
+    async _callOpenAI(messages, options = {}) {
         const url = (this.settings.openaiBaseUrl || 'https://api.openai.com/v1').replace(/\/$/, '') + '/chat/completions';
         const apiKey = this.settings.openaiApiKey || '';
         const model = this.settings.openaiModel || 'gpt-3.5-turbo';
+        const externalSignal = options.signal || null;
 
         const headers = {
             'Content-Type': 'application/json',
@@ -427,15 +428,17 @@ export class TranslationService {
             ]
         };
 
-        // 创建新的 AbortController
-        this.abortController = new AbortController();
+        // 创建新的 AbortController；外部 signal 由调用方持有，不覆盖模块级 controller
+        if (!externalSignal) {
+            this.abortController = new AbortController();
+        }
 
         try {
             const res = await fetch(url, {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify(body),
-                signal: this.abortController.signal
+                signal: externalSignal || this.abortController.signal
             });
 
             if (!res.ok) {
@@ -460,7 +463,9 @@ export class TranslationService {
             throw e;
         } finally {
             // 请求完成后（无论成功、失败或中断）清除 controller
-            this.abortController = null;
+            if (!externalSignal) {
+                this.abortController = null;
+            }
         }
     }
 
@@ -568,9 +573,10 @@ export class TranslationService {
      * 
      * 如果必须用“当前酒馆模型”，我们需要 access `SillyTavern.getContext().generateText`.
      */
-    async _callTavernAPI(messages) {
+    async _callTavernAPI(messages, options = {}) {
         // 尝试获取 ST 上下文中的生成函数
         const ctx = getSTContext();
+        const externalSignal = options.signal || null;
         
         // 方案 A: 如果是新版 ST，可能暴露了 LLM 交互接口
         // 方案 B: 使用 /api/generate 并手动格式化 prompt (复杂)
@@ -580,7 +586,8 @@ export class TranslationService {
         // 许多 ST 用户使用 OAI 插件或兼容接口。
         
         // 如果 ctx.generateText 存在 (这通常是 text completion)
-        if (ctx && typeof ctx.generateText === 'function') {
+        // 注意：外部取消场景不能走 generateText，因为该接口没有 AbortSignal 入参，无法保证后台请求被断开。
+        if (!externalSignal && ctx && typeof ctx.generateText === 'function') {
             // 需要将 messages 转换为 string prompt
             let prompt = '';
             for (const m of messages) {
@@ -597,7 +604,7 @@ export class TranslationService {
         
         // 尝试调用 /api/v1/chat/completions (如果是 text-generation-webui 等后端)
         try {
-            return await this._callOpenAI(messages); // 尝试复用，用户可能配置了本地地址
+            return await this._callOpenAI(messages, options); // 尝试复用，用户可能配置了本地地址
         } catch (e) {
             throw new Error('无法调用酒馆原生 API，请在设置中配置 OpenAI 兼容服务信息。');
         }
@@ -617,9 +624,16 @@ export class TranslationService {
     /**
      * 公开的 API 调用方法，供外部模块（如术语表扫描器）使用
      * @param {Array<{role: string, content: string}>} messages - 消息数组
+     * @param {{ signal?: AbortSignal }} [options] - API 调用选项
      * @returns {Promise<object>} 解析后的 JSON 对象
      */
-    async callAPI(messages) {
+    async callAPI(messages, options = {}) {
+        const externalSignal = options.signal || null;
+
+        if (externalSignal?.aborted) {
+            throw new DOMException('API request aborted', 'AbortError');
+        }
+
         // API 配置验证
         if (this.settings.translationApi === 'openai') {
             if (!this.settings.openaiApiKey || !this.settings.openaiApiKey.trim()) {
@@ -631,7 +645,8 @@ export class TranslationService {
         }
         
         // 清理上一次请求残留的 controller（防止内存泄漏）
-        if (this.abortController) {
+        // 外部 signal 场景由调用方控制取消，不抢占模块级 controller
+        if (!externalSignal && this.abortController) {
             this.abortController.abort();
             this.abortController = null;
         }
@@ -654,9 +669,9 @@ export class TranslationService {
                 let responseText = '';
 
                 if (this.settings.translationApi === 'openai') {
-                    responseText = await this._callOpenAI(messages);
+                    responseText = await this._callOpenAI(messages, { signal: externalSignal });
                 } else {
-                    responseText = await this._callTavernAPI(messages);
+                    responseText = await this._callTavernAPI(messages, { signal: externalSignal });
                 }
 
                 if (state.settings.debugMode) {
@@ -671,7 +686,12 @@ export class TranslationService {
             } catch (e) {
                 console.error(`[CharManager] [Translation] API Error (Attempt ${attempt + 1}):`, e);
                 lastError = e;
-                
+
+                // 用户主动取消时必须立即退出，不能进入重试或退避等待
+                if (e.name === 'AbortError' || externalSignal?.aborted || (e.message && e.message.includes('aborted'))) {
+                    throw e;
+                }
+                 
                 if (e.message.includes('400') || e.message.includes('401')) {
                     throw e;
                 }

@@ -43,6 +43,8 @@ let glossaryData = [];             // 术语表数据
 let isGlossaryEditing = false;     // 术语表是否处于编辑模式
 let mvuAnalysis = null;            // MVU 框架分析结果（如果检测到）
 let isDirty = false;               // 是否有未保存的翻译进度
+let glossaryScanController = null; // 当前术语扫描请求的取消控制器
+let glossaryScanSnapshot = null;   // 扫描前术语表快照，用于取消后回滚
 
 // 视图控制状态
 let hideEmpty = false;
@@ -685,7 +687,13 @@ function bindAllEvents(ov) {
     // === 术语表扫描 ===
     const scanGlossaryBtn = ov.querySelector('#cmTransScanGlossary');
     if (scanGlossaryBtn) {
-        scanGlossaryBtn.onclick = () => doScanGlossary(ov);
+        scanGlossaryBtn.onclick = () => {
+            if (glossaryScanController) {
+                glossaryScanController.abort();
+                return;
+            }
+            doScanGlossary(ov);
+        };
     }
 
     // === 翻译设置 ===
@@ -1160,7 +1168,7 @@ async function translateGroup(ov, group, keys, charContext, options = {}) {
         
         // MVU 预处理
         const isMVUContent = mvuAnalysis && (group === 'regex' || group === 'scripts') &&
-                             (k.includes('replaceString') || key.includes('content'));
+                             (k.includes('replaceString') || k.includes('content'));
         if (isMVUContent) {
             const { processed, markers } = preprocessMVUContent(text, mvuAnalysis.lockedPaths);
             text = processed;
@@ -1908,22 +1916,25 @@ function buildGlossaryText() {
 
 async function doScanGlossary(ov) {
     const scanBtn = ov.querySelector('#cmTransScanGlossary');
+    glossaryScanController = new AbortController();
+    glossaryScanSnapshot = JSON.parse(JSON.stringify(glossaryData));
+
     if (scanBtn) {
-        scanBtn.disabled = true;
-        scanBtn.textContent = `⏳ ${t('scanningGlossary')}`;
+        scanBtn.disabled = false;
+        scanBtn.textContent = `⏹️ ${t('close') === 'Close' ? 'Cancel Scan' : '取消扫描'}`;
+        scanBtn.classList.remove('cm-trans-btn-warning');
+        scanBtn.classList.add('cm-trans-btn-danger');
     }
 
     try {
         // 使用新的 AI 筛选流程：代码粗提取 → AI 判断 + 翻译
         service.updateSettings(state.settings);
-        const results = await scanAndFilterGlossary(originalCharData, state.settings);
+        const results = await scanAndFilterGlossary(originalCharData, state.settings, {
+            signal: glossaryScanController.signal
+        });
         
         if (!results || results.length === 0) {
             _notify(t('noProperNouns'), 'info');
-            if (scanBtn) {
-                scanBtn.disabled = false;
-                scanBtn.textContent = `🔍 ${t('btnScanGlossary')}`;
-            }
             return;
         }
 
@@ -1939,11 +1950,31 @@ async function doScanGlossary(ov) {
         renderGlossaryTable(ov);
         _notify(t('scanComplete', { count: glossaryData.length }), 'success');
     } catch (e) {
-        _notify(t('notifyTranslationError', { error: e.message }), 'error');
+        if (e.name === 'AbortError' || glossaryScanController?.signal?.aborted) {
+            glossaryData = glossaryScanSnapshot || [];
+            if (glossaryData.length > 0) {
+                renderGlossaryTable(ov);
+            } else {
+                const panel = ov.querySelector('#cmTransGlossaryPanel');
+                const grid = ov.querySelector('#cmTransGlossaryGrid');
+                const countEl = ov.querySelector('#cmTransGlossaryCount');
+                if (panel) panel.style.display = 'none';
+                if (grid) grid.innerHTML = '';
+                if (countEl) countEl.textContent = '0';
+            }
+            _notify(t('close') === 'Close' ? 'Glossary scan cancelled' : '扫描已取消', 'info');
+        } else {
+            _notify(t('notifyTranslationError', { error: e.message }), 'error');
+        }
     } finally {
+        glossaryScanController = null;
+        glossaryScanSnapshot = null;
+
         if (scanBtn) {
             scanBtn.disabled = false;
             scanBtn.textContent = `🔍 ${t('btnScanGlossary')}`;
+            scanBtn.classList.remove('cm-trans-btn-danger');
+            scanBtn.classList.add('cm-trans-btn-warning');
         }
     }
 }
