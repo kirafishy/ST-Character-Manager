@@ -1,7 +1,7 @@
 import { getSTContext, doc } from './context.js';
 import { state } from './state.js';
-import { createTag, addTagToChar, saveTags, saveCharacterData, syncCmManagerTagsToSTMemory } from './data.js';
-import { log, escapeHtml, parsePNG } from './utils.js';
+import { createTag, addTagToChar, saveTags, saveCharacterData, syncCmManagerTagsToSTMemory, syncTagsToCard } from './data.js';
+import { log, escapeHtml, parsePNG, notify } from './utils.js';
 import { Z_INDEX } from './constants.js';
 import { authFetch } from './api.js';
 import { setCache } from './db.js';
@@ -11,6 +11,9 @@ const ANTI_TROLL_MAX_TAGS = 50;
 
 // cm_manager 扩展配置的 key
 export const CM_MANAGER_KEY = 'cm_manager';
+
+// 批量写入队列（用于收集需要批量写入的角色卡）
+export const pendingApiWrites = [];
 
 export const tag_import_setting = {
     ASK: 1,
@@ -425,9 +428,11 @@ async function applyTags(avatar, tagsToApply, skipSave = false, replace = false)
  * @param {object} character - The character object
  * @param {object} [options] - Options
  * @param {number} [options.importSetting=null] - Force a tag import setting
+ * @param {boolean} [options.skipSave=false] - Whether to skip saving tags.json
  * @param {boolean} [options.checkCmManager=true] - Whether to check cm_manager.tags first
+ * @param {boolean} [options.skipApiCall=false] - Whether to skip API calls (collect to pending queue)
  */
-export async function importTags(character, { importSetting = null, skipSave = false, checkCmManager = true } = {}) {
+export async function importTags(character, { importSetting = null, skipSave = false, checkCmManager = true, skipApiCall = false } = {}) {
     const ctx = getSTContext();
     if (!ctx) return;
 
@@ -438,6 +443,39 @@ export async function importTags(character, { importSetting = null, skipSave = f
     if (checkCmManager && cm.tags !== undefined) {
         // 使用 cm_manager.tags 作为标签来源
         const savedTagNames = cm.tags;
+        
+        // 检查 state.tagMap 是否有更新的数据（用于检测保存失败的情况）
+        const currentTagIds = state.tagMap[avatar] || [];
+        const currentTagNames = currentTagIds.map(id => {
+            const tag = state.tags.find(t => t.id === id);
+            return tag ? tag.name : null;
+        }).filter(Boolean);
+        
+        // 如果 state.tagMap 有数据但 cm.tags 为空，说明可能是保存失败
+        // 使用 state.tagMap 的数据作为更可靠的数据源
+        if (currentTagNames.length > 0 && (!savedTagNames || savedTagNames.length === 0)) {
+            console.warn(`[ST-Tags] 检测到数据不一致（cm.tags 为空但 state.tagMap 有数据），使用 state.tagMap 的数据: ${avatar}`);
+            
+            if (skipApiCall) {
+                // 只更新内存，收集到批量写入队列
+                cm.tags = currentTagNames;
+                const needsSync = state.settings.autoSyncTags;
+                pendingApiWrites.push({
+                    fileName: avatar,
+                    cmTags: currentTagNames,
+                    needsSync
+                });
+            } else {
+                // 尝试重新保存到文件，确保数据持久化
+                const saveResult = await saveCmManagerTags(avatar, currentTagNames);
+                if (saveResult) {
+                    cm.tags = currentTagNames;
+                }
+            }
+            // 无论保存是否成功，都不清空标签，保持 state.tagMap 的数据
+            return;
+        }
+        
         if (!savedTagNames || savedTagNames.length === 0) {
             // 用户之前选择不导入任何标签，清除现有标签关联
             clearCharTags(avatar);
@@ -445,13 +483,6 @@ export async function importTags(character, { importSetting = null, skipSave = f
         }
         
         // 检查是否需要更新
-        // 修复：getCharTags 需要从 data.js 导入，或者在这里使用 state.tagMap
-        const currentTagIds = state.tagMap[avatar] || [];
-        const currentTagNames = currentTagIds.map(id => {
-            const tag = state.tags.find(t => t.id === id);
-            return tag ? tag.name : null;
-        }).filter(Boolean);
-        
         const sortedSaved = [...savedTagNames].sort();
         const sortedCurrent = [...currentTagNames].sort();
         if (JSON.stringify(sortedSaved) === JSON.stringify(sortedCurrent)) {
@@ -482,12 +513,35 @@ export async function importTags(character, { importSetting = null, skipSave = f
     if (!importTagsList.length) return;
 
     // 检查是否需要更新 (即使 cm_manager.tags 不存在，如果当前插件标签与 data.tags 一致，也无需操作)
-    // 修复：getCharTags 需要从 data.js 导入，或者在这里使用 state.tagMap
     const currentTagIds = state.tagMap[avatar] || [];
     const currentTagNames = currentTagIds.map(id => {
         const tag = state.tags.find(t => t.id === id);
         return tag ? tag.name : null;
     }).filter(Boolean);
+    
+    // 【修复】如果 state.tagMap 已经有数据，说明用户之前已经处理过
+    // 直接恢复到 cm.tags，不需要弹窗询问
+    if (currentTagNames.length > 0) {
+        console.log(`[ST-Tags] state.tagMap 已有数据，直接恢复: ${avatar} -> ${currentTagNames.join(', ')}`);
+        cm.tags = currentTagNames;
+        
+        if (skipApiCall) {
+            // 只更新内存，收集到批量写入队列
+            const needsSync = state.settings.autoSyncTags;
+            pendingApiWrites.push({
+                fileName: avatar,
+                cmTags: currentTagNames,
+                needsSync
+            });
+        } else {
+            await saveCmManagerTags(avatar, currentTagNames);
+            // 如果开启了自动同步，同步到 data.tags
+            if (state.settings.autoSyncTags) {
+                await syncTagsToCard(avatar);
+            }
+        }
+        return;
+    }
     
     const sortedImport = [...importTagsList].sort();
     const sortedCurrent = [...currentTagNames].sort();
@@ -524,43 +578,147 @@ export async function importTags(character, { importSetting = null, skipSave = f
             tagsToApply = [...existingTags];
             break;
         case tag_import_setting.ASK:
-            tagsToApply = await showTagImportPopup(character, existingTags, newTags);
+            // 【修复】传入上下文信息，显示当前不同字段的标签
+            const contextInfo = {
+                stateTagMapTags: currentTagNames,
+                dataTags: importTagsList
+            };
+            const popupResult = await showTagImportPopup(character, existingTags, newTags, contextInfo);
+            tagsToApply = popupResult.tags;
+            // 注意：applyToAll 逻辑在 batchImportTags() 中处理，这里只使用 tags
             break;
         case tag_import_setting.NONE:
             tagsToApply = [];
             break;
     }
 
-    // Save user selection to cm_manager.tags
-    const selectedTagNames = tagsToApply.map(t => t.name);
-
     // Save cm_manager.tags to character card file
     // 关键逻辑：
     // 1. cm.tags 原本是 undefined（首次导入标签），必须保存到文件
     // 2. 用户明确决策（ASK/NONE），即使 skipSave=true 也要保存
     // 3. 其他情况（自动导入），遵循 skipSave 参数
-    const isExplicitDecision = setting === tag_import_setting.ASK || setting === tag_import_setting.NONE;
     const isFirstImport = cm.tags === undefined;  // 首次导入标签
+    const isExplicitDecision = setting === tag_import_setting.ASK || setting === tag_import_setting.NONE;
     let saveSuccess = true;
+    
+    // Save user selection to cm_manager.tags
+    // 【修复】合并 state.tagMap 中已有的标签，避免丢失用户手动添加的标签
+    // 但 NONE 模式下不合并，因为用户明确选择不导入任何标签
+    const currentTagIdsForSave = state.tagMap[avatar] || [];
+    const currentTagNamesForSave = currentTagIdsForSave.map(id => {
+        const tag = state.tags.find(t => t.id === id);
+        return tag ? tag.name : null;
+    }).filter(Boolean);
+    
+    // NONE 模式下不合并 state.tagMap，保持空数组
+    const selectedTagNames = setting === tag_import_setting.NONE
+        ? []
+        : [...new Set([
+            ...currentTagNamesForSave,
+            ...tagsToApply.map(t => t.name)
+        ])];
     
     if (!skipSave || isExplicitDecision || isFirstImport) {
         // 首次导入或明确决策，强制持久化
-        saveSuccess = await saveCmManagerTags(avatar, selectedTagNames);
+        if (skipApiCall) {
+            // 只更新内存，收集到批量写入队列
+            cm.tags = selectedTagNames;
+            const needsSync = state.settings.autoSyncTags;
+            pendingApiWrites.push({
+                fileName: avatar,
+                cmTags: selectedTagNames,
+                needsSync
+            });
+            saveSuccess = true;
+        } else {
+            saveSuccess = await saveCmManagerTags(avatar, selectedTagNames);
+            // 只有保存成功才更新内存中的 cm.tags
+            if (saveSuccess) {
+                cm.tags = selectedTagNames;
+            }
+        }
+    } else {
+        // 非首次导入/非明确决策，直接更新内存
+        cm.tags = selectedTagNames;
     }
     
-    // 只有保存成功才更新内存中的 cm.tags
-    if (saveSuccess) {
-        cm.tags = selectedTagNames;
-    } else {
-        console.warn(`[ST-Tags] importTags 保存失败，不更新内存: ${avatar}`);
+    // 【修复】如果 skipApiCall=false 且保存失败，记录日志但不直接 return
+    // 因为批量写入模式下失败会统一处理
+    if (!skipApiCall && !saveSuccess) {
+        console.warn(`[ST-Tags] importTags 保存失败: ${avatar}`);
+        // 保存失败时不更新 cm.tags，保持 undefined 状态
+        return;
     }
 
     // Apply tags (清空标签关联当用户选择不导入时)
+    // 【修复】显示操作进行中的提示
+    const charName = character.name || avatar.replace(/\.png$/i, '');
+    notify(`正在处理「${charName}」的标签...`, 'info');
+    
     if (tagsToApply && tagsToApply.length > 0) {
-        await applyTags(avatar, tagsToApply, skipSave, true);
-    } else if (tagsToApply.length === 0 && setting === tag_import_setting.ASK) {
-        // 用户明确选择"不导入"，清空内存中的标签关联
+        // 【修复】在替换模式下，先获取 state.tagMap 中已有的标签，然后合并到 tagsToApply 中
+        // 避免清空用户之前手动添加但未被 cm_manager.tags 记录的标签
+        const currentTagIds = state.tagMap[avatar] || [];
+        const currentTags = currentTagIds.map(id => {
+            const tag = state.tags.find(t => t.id === id);
+            return tag;
+        }).filter(Boolean);
+        
+        // 合并当前已有的标签和要应用的标签（去重）
+        const mergedTags = [...currentTags, ...tagsToApply.filter(t =>
+            !currentTags.some(ct => ct.name.toLowerCase() === t.name.toLowerCase())
+        )];
+        
+        if (mergedTags.length > 0) {
+            await applyTags(avatar, mergedTags, skipSave, true);
+            // 【修复】显示操作完成的提示
+            if (!skipSave) {
+                notify(`已为「${charName}」导入 ${mergedTags.length} 个标签`, 'success');
+            }
+        } else {
+            clearCharTags(avatar);
+        }
+    } else if (tagsToApply.length === 0 && (setting === tag_import_setting.ASK || setting === tag_import_setting.NONE)) {
+        // 用户明确选择"不导入"（ASK 或 NONE 模式）
+        // 【修复】当 cm.tags 是 undefined（首次导入）时，使用 state.tagMap 的数据作为 cm.tags
+        // 避免清空用户之前手动添加但保存失败的标签
+        if (isFirstImport) {
+            const currentTagNames = (state.tagMap[avatar] || []).map(id => {
+                const tag = state.tags.find(t => t.id === id);
+                return tag ? tag.name : null;
+            }).filter(Boolean);
+            
+            if (currentTagNames.length > 0) {
+                // state.tagMap 有数据，使用它作为 cm.tags
+                console.log(`[ST-Tags] 首次导入用户选择不导入，保留 state.tagMap 的数据: ${avatar} -> ${currentTagNames.join(', ')}`);
+                cm.tags = currentTagNames;
+                
+                if (skipApiCall) {
+                    // 只更新内存，收集到批量写入队列
+                    const needsSync = state.settings.autoSyncTags;
+                    pendingApiWrites.push({
+                        fileName: avatar,
+                        cmTags: currentTagNames,
+                        needsSync
+                    });
+                } else {
+                    // 保存到文件
+                    await saveCmManagerTags(avatar, currentTagNames);
+                    // 【修复】如果开启了自动同步，同步到 data.tags
+                    if (state.settings.autoSyncTags) {
+                        await syncTagsToCard(avatar);
+                    }
+                }
+                return;
+            }
+        }
+        // 其他情况：清空内存中的标签关联
         clearCharTags(avatar);
+    }
+    
+    // 【修复】如果开启了自动同步，在标签导入完成后同步到 data.tags
+    if (!skipApiCall && state.settings.autoSyncTags) {
+        await syncTagsToCard(avatar);
     }
 }
 
@@ -573,6 +731,13 @@ export function needsTagImport(character) {
     const cm = getCmManager(character);
     if (cm.tags !== undefined) return false;
     
+    // 【修复】如果 state.tagMap 已经有数据，说明用户之前已经处理过
+    // 不需要再次弹窗，而是应该在 importTags 中自动恢复
+    const avatar = character.fileName || character.avatar;
+    if (state.tagMap[avatar] && state.tagMap[avatar].length > 0) {
+        return false;
+    }
+    
     const rawTags = getRawTags(character);
     const fileName = character.fileName || character.avatar || character.name || 'unknown';
     const importTagsList = filterTags(rawTags, fileName);
@@ -584,10 +749,11 @@ export function needsTagImport(character) {
  * @param {object[]} characters - 需要导入标签的角色数组
  * @param {object} options - 选项
  * @param {boolean} [options.skipSave=false] - 是否跳过保存
+ * @param {boolean} [options.skipApiCall=false] - 是否跳过 API 调用（收集到 pending 队列）
  * @param {number} [options.concurrency] - 并发数，默认使用设置中的 scanBatchSize
  * @returns {Promise<{success: number, errors: number}>} 处理结果统计
  */
-export async function batchImportTags(characters, { skipSave = false, concurrency } = {}) {
+export async function batchImportTags(characters, { skipSave = false, skipApiCall = false, concurrency } = {}) {
     // 如果未指定并发数，使用设置中的批次大小
     if (concurrency === undefined) {
         concurrency = state.settings?.scanBatchSize || 15;
@@ -598,7 +764,7 @@ export async function batchImportTags(characters, { skipSave = false, concurrenc
     if (characters.length <= 3) {
         let success = 0;
         for (const char of characters) {
-            await importTags(char, { importSetting: tag_import_setting.ASK, skipSave });
+            await importTags(char, { importSetting: tag_import_setting.ASK, skipSave, skipApiCall });
             success++;
         }
         return { success, errors: 0 };
@@ -616,16 +782,27 @@ export async function batchImportTags(characters, { skipSave = false, concurrenc
                 const importTagsList = filterTags(rawTags, fileName);
                 const cm = getCmManager(char);
                 
-                // 保存到文件，检查返回值
-                const saveResult = await saveCmManagerTags(fileName, importTagsList);
-                
-                if (!saveResult) {
-                    // 保存失败，不更新内存中的 cm.tags，抛出错误让调用方知道
-                    throw new Error(`保存 cm_manager.tags 失败: ${fileName}`);
+                if (skipApiCall) {
+                    // 只更新内存，收集到批量写入队列
+                    cm.tags = importTagsList;
+                    const needsSync = state.settings.autoSyncTags;
+                    pendingApiWrites.push({
+                        fileName,
+                        cmTags: importTagsList,
+                        needsSync
+                    });
+                } else {
+                    // 保存到文件，检查返回值
+                    const saveResult = await saveCmManagerTags(fileName, importTagsList);
+                    
+                    if (!saveResult) {
+                        // 保存失败，不更新内存中的 cm.tags，抛出错误让调用方知道
+                        throw new Error(`保存 cm_manager.tags 失败: ${fileName}`);
+                    }
+                    
+                    // 保存成功才更新内存
+                    cm.tags = importTagsList;
                 }
-                
-                // 保存成功才更新内存
-                cm.tags = importTagsList;
                 
                 const { existingTags, newTags } = categorizeTags(importTagsList, fileName);
                 await applyTags(fileName, [...existingTags, ...newTags], skipSave);
@@ -643,18 +820,29 @@ export async function batchImportTags(characters, { skipSave = false, concurrenc
             // 全部跳过，设置空数组 - 使用并发处理
             const tasks = characters.map(char => async () => {
                 const fileName = char.fileName || char.avatar;
-                
-                // 保存空数组到文件，检查返回值
-                const saveResult = await saveCmManagerTags(fileName, []);
-                
-                if (!saveResult) {
-                    // 保存失败，抛出错误让调用方知道
-                    throw new Error(`保存 cm_manager.tags 失败: ${fileName}`);
-                }
-                
-                // 保存成功才更新内存
                 const cm = getCmManager(char);
-                cm.tags = [];
+                
+                if (skipApiCall) {
+                    // 只更新内存，收集到批量写入队列
+                    cm.tags = [];
+                    const needsSync = state.settings.autoSyncTags;
+                    pendingApiWrites.push({
+                        fileName,
+                        cmTags: [],
+                        needsSync
+                    });
+                } else {
+                    // 保存空数组到文件，检查返回值
+                    const saveResult = await saveCmManagerTags(fileName, []);
+                    
+                    if (!saveResult) {
+                        // 保存失败，抛出错误让调用方知道
+                        throw new Error(`保存 cm_manager.tags 失败: ${fileName}`);
+                    }
+                    
+                    // 保存成功才更新内存
+                    cm.tags = [];
+                }
             });
             const results = await runWithConcurrency(tasks, concurrency);
             const errors = results.filter(r => r.status === 'rejected').length;
@@ -666,8 +854,98 @@ export async function batchImportTags(characters, { skipSave = false, concurrenc
             
         case batch_tag_strategy.ASK_EACH:
             // 逐个询问（需要用户交互，无法并行）
-            for (const char of characters) {
-                await importTags(char, { importSetting: tag_import_setting.ASK, skipSave });
+            // 【修复】实现"应用于本次所有弹窗"逻辑
+            let globalChoice = null;  // 用户选择的策略（来自第一个弹窗）
+            let applyToAllFlag = false;  // 是否应用于所有弹窗
+            
+            for (let i = 0; i < characters.length; i++) {
+                const char = characters[i];
+                const remaining = characters.length - i - 1;
+                const avatar = char.fileName || char.avatar;
+                
+                // 获取角色的标签信息
+                const rawTags = getRawTags(char);
+                const importTagsList = filterTags(rawTags, avatar);
+                const currentTagIds = state.tagMap[avatar] || [];
+                const currentTagNames = currentTagIds.map(id => {
+                    const tag = state.tags.find(t => t.id === id);
+                    return tag ? tag.name : null;
+                }).filter(Boolean);
+                
+                const { existingTags, newTags } = categorizeTags(importTagsList, avatar);
+                const contextInfo = {
+                    stateTagMapTags: currentTagNames,
+                    dataTags: importTagsList
+                };
+                
+                let chosenTags;
+                
+                if (globalChoice !== null && applyToAllFlag) {
+                    // 应用之前的策略，跳过弹窗
+                    if (globalChoice === 'none') {
+                        chosenTags = [];
+                    } else if (globalChoice === 'existing') {
+                        chosenTags = existingTags;
+                    } else if (globalChoice === 'all') {
+                        chosenTags = [...existingTags, ...newTags];
+                    }
+                    
+                    // 直接应用选择的标签
+                    const cm = getCmManager(char);
+                    const selectedTagNames = globalChoice === 'none' ? [] : chosenTags.map(t => t.name);
+                    cm.tags = selectedTagNames;
+                    
+                    if (skipApiCall) {
+                        // 收集到批量写入队列
+                        const needsSync = state.settings.autoSyncTags;
+                        pendingApiWrites.push({
+                            fileName: avatar,
+                            cmTags: selectedTagNames,
+                            needsSync
+                        });
+                    }
+                    
+                    if (chosenTags && chosenTags.length > 0) {
+                        await applyTags(avatar, chosenTags, skipSave, true);
+                    } else {
+                        clearCharTags(avatar);
+                    }
+                } else {
+                    // 显示弹窗（传入剩余数量）
+                    const popupResult = await showTagImportPopup(char, existingTags, newTags, contextInfo, remaining);
+                    chosenTags = popupResult.tags;
+                    applyToAllFlag = popupResult.applyToAll;
+                    
+                    // 根据用户选择确定全局策略
+                    if (chosenTags.length === 0) {
+                        globalChoice = 'none';
+                    } else if (chosenTags.every(t => existingTags.some(et => et.id === t.id))) {
+                        globalChoice = 'existing';
+                    } else {
+                        globalChoice = 'all';
+                    }
+                    
+                    // 应用选择的标签
+                    const cm = getCmManager(char);
+                    const selectedTagNames = chosenTags.map(t => t.name);
+                    cm.tags = selectedTagNames;
+                    
+                    if (skipApiCall) {
+                        // 收集到批量写入队列
+                        const needsSync = state.settings.autoSyncTags;
+                        pendingApiWrites.push({
+                            fileName: avatar,
+                            cmTags: selectedTagNames,
+                            needsSync
+                        });
+                    }
+                    
+                    if (chosenTags.length > 0) {
+                        await applyTags(avatar, chosenTags, skipSave, true);
+                    } else {
+                        clearCharTags(avatar);
+                    }
+                }
             }
             return { success: characters.length, errors: 0 };
             
@@ -1008,9 +1286,13 @@ async function showBatchTagStrategyPopup(count) {
  * @param {object} character - 角色对象
  * @param {Array} existingTags - 已存在的标签列表
  * @param {Array} newTags - 新标签列表
- * @returns {Promise<Array>} - 返回要导入的标签数组
+ * @param {object} [contextInfo] - 上下文信息
+ * @param {string[]} [contextInfo.stateTagMapTags] - state.tagMap 中的标签名称
+ * @param {string[]} [contextInfo.dataTags] - data.tags 中的标签名称
+ * @param {number} [remainingCount=0] - 剩余需要处理的卡片数量
+ * @returns {Promise<{tags: Array, applyToAll: boolean}>} - 返回要导入的标签数组 + 是否应用于所有弹窗
  */
-async function showTagImportPopup(character, existingTags, newTags) {
+async function showTagImportPopup(character, existingTags, newTags, contextInfo = {}, remainingCount = 0) {
     return new Promise(resolve => {
         // 创建遮罩层
         const overlay = document.createElement('div');
@@ -1025,6 +1307,23 @@ async function showTagImportPopup(character, existingTags, newTags) {
                     选择下方的导入选项完成标签导入。
                 </div>
         `;
+        
+        // 【新增】显示当前不同字段的标签信息
+        if (contextInfo.stateTagMapTags || contextInfo.dataTags) {
+            bodyHtml += `
+                <div class="cm-tag-import-section" style="background: var(--cm-bg-sec); padding: 8px 12px; border-radius: 4px; margin-bottom: 12px;">
+                    <h4 style="margin-bottom: 8px; font-size: 12px;">当前标签状态</h4>
+                    <div style="font-size: 11px; color: var(--cm-text-sec);">
+                        ${contextInfo.stateTagMapTags && contextInfo.stateTagMapTags.length > 0
+                            ? `<div style="margin-bottom: 4px;"><span style="color: var(--cm-text);">插件已记录:</span> ${contextInfo.stateTagMapTags.map(t => `<span style="background: #4b5563; padding: 2px 6px; border-radius: 3px; margin: 2px;">${escapeHtml(t)}</span>`).join('')}</div>`
+                            : '<div style="margin-bottom: 4px; color: #9ca3af;">插件未记录任何标签</div>'}
+                        ${contextInfo.dataTags && contextInfo.dataTags.length > 0
+                            ? `<div><span style="color: var(--cm-text);">角色卡内置:</span> ${contextInfo.dataTags.map(t => `<span style="background: #6b7280; padding: 2px 6px; border-radius: 3px; margin: 2px;">${escapeHtml(t)}</span>`).join('')}</div>`
+                            : '<div style="color: #9ca3af;">角色卡无内置标签</div>'}
+                    </div>
+                </div>
+            `;
+        }
 
         // 已存在的标签区域
         if (existingTags.length > 0) {
@@ -1067,13 +1366,19 @@ async function showTagImportPopup(character, existingTags, newTags) {
         // 构建完整的弹窗 HTML
         overlay.innerHTML = `
             <div class="cm-tag-editor">
-                <div class="cm-tag-editor-header">
+                <div class="cm-tag-editor-header" style="display: flex; justify-content: space-between; align-items: center;">
                     <h3>导入标签 - ${escapeHtml(character.name)}</h3>
+                    ${remainingCount > 0 ? `<span style="font-size: 12px; color: var(--cm-text-sec);">剩余 ${remainingCount} 张</span>` : ''}
                 </div>
                 <div class="cm-tag-editor-body">
                     ${bodyHtml}
                 </div>
-                <div class="cm-tag-editor-footer">
+                <div class="cm-tag-editor-footer" style="display: flex; align-items: center; gap: 8px;">
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--cm-text-sec); margin-right: 12px;">
+                        <input type="checkbox" id="cm-apply-to-all" />
+                        <span>应用于本次所有弹窗</span>
+                    </label>
+                    <div style="flex-grow: 1;"></div>
                     <button class="cm-btn cm-btn-secondary" id="cm-tag-import-none">不导入</button>
                     ${existingTags.length > 0 ? '<button class="cm-btn cm-btn-secondary" id="cm-tag-import-existing">仅导入已存在</button>' : ''}
                     <button class="cm-btn cm-btn-primary" id="cm-tag-import-all">导入选中</button>
@@ -1089,8 +1394,10 @@ async function showTagImportPopup(character, existingTags, newTags) {
 
         // 关闭弹窗的函数（用户必须通过底部按钮明确选择）
         const closePopup = (result) => {
+            const applyToAllCheckbox = overlay.querySelector('#cm-apply-to-all');
+            const applyToAll = applyToAllCheckbox ? applyToAllCheckbox.checked : false;
             overlay.remove();
-            resolve(result);
+            resolve({ tags: result, applyToAll });
         };
 
         // 不导入按钮
@@ -1107,28 +1414,141 @@ async function showTagImportPopup(character, existingTags, newTags) {
             closePopup([...selectedExisting, ...selectedNew]);
         };
 
-        // 标签移除功能
+        // 标签移除/恢复功能（可切换）
         overlay.querySelectorAll('.cm-tag-import-remove').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
                 const badge = btn.closest('.cm-tag-import-badge');
                 const type = badge.dataset.type;
                 const idx = parseInt(badge.dataset.idx);
+                const isRemoved = badge.dataset.removed === 'true';
 
                 if (type === 'existing') {
                     const tag = existingTags[idx];
-                    selectedExisting = selectedExisting.filter(t => t.id !== tag.id);
+                    if (isRemoved) {
+                        // 恢复选中
+                        selectedExisting.push(tag);
+                        badge.dataset.removed = 'false';
+                        badge.style.opacity = '1';
+                        badge.style.textDecoration = 'none';
+                        btn.textContent = '×';
+                        btn.title = '移除';
+                    } else {
+                        // 取消选中
+                        selectedExisting = selectedExisting.filter(t => t.id !== tag.id);
+                        badge.dataset.removed = 'true';
+                        badge.style.opacity = '0.3';
+                        badge.style.textDecoration = 'line-through';
+                        btn.textContent = '✓';
+                        btn.title = '已移除';
+                    }
                 } else {
                     const tag = newTags[idx];
-                    selectedNew = selectedNew.filter(t => t.name !== tag.name);
+                    if (isRemoved) {
+                        // 恢复选中
+                        selectedNew.push(tag);
+                        badge.dataset.removed = 'false';
+                        badge.style.opacity = '1';
+                        badge.style.textDecoration = 'none';
+                        btn.textContent = '×';
+                        btn.title = '移除';
+                    } else {
+                        // 取消选中
+                        selectedNew = selectedNew.filter(t => t.name !== tag.name);
+                        badge.dataset.removed = 'true';
+                        badge.style.opacity = '0.3';
+                        badge.style.textDecoration = 'line-through';
+                        btn.textContent = '✓';
+                        btn.title = '已移除';
+                    }
                 }
-
-                badge.style.opacity = '0.3';
-                badge.style.textDecoration = 'line-through';
-                btn.disabled = true;
-                btn.textContent = '✓';
-                btn.title = '已移除';
             };
         });
     });
+}
+
+/**
+ * 批量写入标签到角色卡（带进度显示）
+ * @param {Array<{fileName: string, cmTags: string[], needsSync: boolean}>} writes - 待写入列表
+ * @param {Function} onProgress - 进度回调 (current, total)
+ * @returns {Promise<{success: number, failed: Array<{fileName: string, reason: string}>}>}
+ */
+export async function batchWriteTagsToCards(writes, onProgress) {
+    const results = { success: 0, failed: [] };
+    
+    if (!writes || writes.length === 0) {
+        return results;
+    }
+    
+    for (let i = 0; i < writes.length; i++) {
+        const { fileName, cmTags, needsSync } = writes[i];
+        
+        if (onProgress) {
+            onProgress(i + 1, writes.length);
+        }
+        
+        try {
+            // 构建一次性写入 cm_manager.tags 和 data.tags 的 payload
+            const payload = {
+                avatar: fileName,
+                data: {
+                    tags: cmTags,
+                    extensions: {
+                        cm_manager: {
+                            tags: cmTags
+                        }
+                    }
+                }
+            };
+            
+            const res = await authFetch('/api/characters/merge-attributes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!res.ok) {
+                const errorText = await res.text();
+                results.failed.push({
+                    fileName,
+                    reason: `HTTP ${res.status}: ${errorText.substring(0, 100)}`
+                });
+            } else {
+                results.success++;
+                
+                // 更新内存中的 tags 字段
+                const stateChar = state.characters.find(c => c.fileName === fileName);
+                if (stateChar) {
+                    if (needsSync) {
+                        stateChar.tags = cmTags;
+                    }
+                    if (stateChar.data) {
+                        stateChar.data.tags = cmTags;
+                    }
+                    if (stateChar.data?.extensions?.cm_manager) {
+                        stateChar.data.extensions.cm_manager.tags = cmTags;
+                    }
+                }
+                
+                console.log(`[ST-Tags] 批量写入成功: ${fileName} -> ${cmTags.join(', ')}`);
+            }
+        } catch (e) {
+            results.failed.push({
+                fileName,
+                reason: e.message || String(e)
+            });
+            console.warn(`[ST-Tags] 批量写入失败: ${fileName}`, e);
+        }
+    }
+    
+    return results;
+}
+
+/**
+ * 清空批量写入队列
+ */
+export function clearPendingApiWrites() {
+    pendingApiWrites.length = 0;
 }

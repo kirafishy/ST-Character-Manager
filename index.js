@@ -9,7 +9,7 @@ import { authFetch } from './api.js';
 import { state, saveSettings, DEFAULT_TAG_COLOR } from './state.js';
 import { getCache, setCache, clearCache, migrateFromLocalStorage } from './db.js';
 import { loadTags, saveTags, createTag, updateTag, deleteTag, getCharTags, addTagToChar, removeTagFromChar, getUntaggedChars, getCharsByTag, getFavChars, getTagCharCount, filterAndSortChars, compareChars, replaceCharacterImage, saveCharacterData, updateCharacter, toggleFavorite, updateCharacterVersion, renameCharacterFile, downloadChar, downloadAsZip, getCharChatHistory, getCharHistoryCount, deleteWorldInfo, syncAllTags, deleteChar } from './data.js';
-import { importTags, needsTagImport, batchImportTags, migrateToCmManager, migrateAndSaveCmManager, getCmManager } from './st-tags.js';
+import { importTags, needsTagImport, batchImportTags, migrateToCmManager, migrateAndSaveCmManager, getCmManager, pendingApiWrites, batchWriteTagsToCards, clearPendingApiWrites } from './st-tags.js';
 import { getGalleryItems, showGallery, galleryCountCache } from './gallery.js';
 import { showSettingsDialog } from './settings.js';
 import { initTranslationUI, openTranslationDialog } from './translation/translation-ui.js';
@@ -1339,7 +1339,7 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                 }
 
                 // 同步 Tag（使用 cm_manager.tags 或检查是否需要导入）
-                await importTags(stC, { skipSave: true, checkCmManager: true });
+                await importTags(stC, { skipSave: true, checkCmManager: true, skipApiCall: true });
 
                 newList.push(cached);
             } else {
@@ -1374,7 +1374,7 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
                             charsNeedTagImport.push(fresh);
                         } else {
                             // 已有 cm_manager.tags 或无标签，直接导入
-                            await importTags(fresh, { skipSave: true, checkCmManager: true });
+                            await importTags(fresh, { skipSave: true, checkCmManager: true, skipApiCall: true });
                         }
                         
                         newList.push(fresh);
@@ -1386,7 +1386,7 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
 
         // 批量处理需要标签导入确认的角色
         if (charsNeedTagImport.length > 0) {
-            await batchImportTags(charsNeedTagImport, { skipSave: true });
+            await batchImportTags(charsNeedTagImport, { skipSave: true, skipApiCall: true });
         }
 
         if (forceFull) updateProgressBar(100, '扫描完成！', '即将刷新列表...');
@@ -1450,6 +1450,28 @@ async function scan(showToast = true, forceFull = false, skipSync = false) {
         
         // 再次保存合并后的标签
         saveTags();
+        
+        // 批量写入 API（如果有待写入的角色卡）
+        if (pendingApiWrites.length > 0) {
+            updateProgressBar(0, `正在写入标签 0/${pendingApiWrites.length}`, '');
+            
+            const writeResult = await batchWriteTagsToCards(pendingApiWrites, (current, total) => {
+                updateProgressBar(Math.round((current / total) * 100), `正在写入标签 ${current}/${total}`, '');
+            });
+            
+            // 显示结果
+            if (writeResult.failed.length > 0) {
+                const failedNames = writeResult.failed.map(f => f.fileName.replace(/\.png$/i, '')).join(', ');
+                notify(`成功 ${writeResult.success} 张，失败 ${writeResult.failed.length} 张：${failedNames}`, 'warning');
+            } else {
+                notify(`成功写入 ${writeResult.success} 张角色卡标签`, 'success');
+            }
+            
+            // 清空队列
+            clearPendingApiWrites();
+            
+            updateProgressBar(100, '写入完成', '');
+        }
 
         state.characters = newList;
 
