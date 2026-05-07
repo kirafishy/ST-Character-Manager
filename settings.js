@@ -222,9 +222,9 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
     const content = `
         <div class="cm-settings-container">
             
-            <!-- 角色列表页 -->
+            <!-- 外观与显示 -->
             <div class="cm-settings-group">
-                <h4 class="cm-settings-title">${ICONS.image || '🎨'} 角色列表页</h4>
+                <h4 class="cm-settings-title">${ICONS.image || '🎨'} 外观与显示</h4>
                 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
@@ -245,6 +245,14 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <input type="range" id="cmSetZoomRange" min="60" max="300" step="20" value="${state.zoomLevel}" style="width:100px">
                         <span id="cmSetZoomVal" style="font-size:12px;width:40px;text-align:right">${state.zoomLevel}</span>
                     </div>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>侧边栏宽度</span>
+                        <small>恢复侧边栏到默认宽度</small>
+                    </div>
+                    <button id="cmResetSidebarBtn" class="cm-btn cm-btn-secondary">重置</button>
                 </div>
 
                 <div class="cm-setting-item">
@@ -301,13 +309,20 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <span class="cm-slider"></span>
                     </label>
                 </div>
+            </div>
 
+            <!-- 列表页 -->
+            <div class="cm-settings-group">
+                <h4 class="cm-settings-title">${ICONS.list || '📋'} 列表页</h4>
+                
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
-                        <span>侧边栏宽度</span>
-                        <small>恢复侧边栏到默认宽度</small>
+                        <span>默认排序方式</span>
+                        <small>每次打开时的默认排序</small>
                     </div>
-                    <button id="cmResetSidebarBtn" class="cm-btn cm-btn-secondary">重置</button>
+                    <select id="cmSetDefSort" class="cm-select-input" style="max-width:140px">
+                        ${defaultSortOptionsHtml}
+                    </select>
                 </div>
 
                 <!-- 封面显示模式 -->
@@ -383,17 +398,17 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>宏替换颜色主题</span>
-                        <small>\u8bbe\u7f6e {{user}} \u548c {{char}} \u7684\u9ad8\u4eae\u989c\u8272</small>
+                        <small>设置 {{user}} 和 {{char}} 的高亮颜色</small>
                     </div>
                     <select id="cmSetMacroTheme" class="cm-select-input">
-                        <option value="dark1" ${settings.macroColorTheme === 'dark1' ? 'selected' : ''}>\u6697\u82721 (\u6696\u6a59 vs \u51b7\u9752)</option>
-                        <option value="dark2" ${settings.macroColorTheme === 'dark2' ? 'selected' : ''}>\u6697\u82722 (\u7c89\u8272 vs \u84dd\u8272)</option>
-                        <option value="dark3" ${settings.macroColorTheme === 'dark3' ? 'selected' : ''}>\u6697\u82723 (\u84dd\u8272 vs \u7c89\u8272)</option>
-                        <option value="dark4" ${settings.macroColorTheme === 'dark4' ? 'selected' : ''}>\u6697\u82724 (\u91d1\u8272 vs \u7d2b\u8272)</option>
-                        <option value="dark5" ${settings.macroColorTheme === 'dark5' ? 'selected' : ''}>\u6697\u82725 (\u5929\u84dd vs \u8584\u8377\u7eff)</option>
-                        <option value="dark6" ${settings.macroColorTheme === 'dark6' ? 'selected' : ''}>\u6697\u82726 (\u7c89\u7ea2 vs \u9752\u7eff)</option>
-                        <option value="light1" ${settings.macroColorTheme === 'light1' ? 'selected' : ''}>\u4eae\u82721 (\u6df1\u6a59 vs \u6df1\u9752)</option>
-                        <option value="light2" ${settings.macroColorTheme === 'light2' ? 'selected' : ''}>\u4eae\u82722 (\u6df1\u84dd vs \u6df1\u7d2b)</option>
+                        <option value="dark1" ${settings.macroColorTheme === 'dark1' ? 'selected' : ''}>暗色1 (暖橙 vs 冷青)</option>
+                        <option value="dark2" ${settings.macroColorTheme === 'dark2' ? 'selected' : ''}>暗色2 (粉色 vs 蓝色)</option>
+                        <option value="dark3" ${settings.macroColorTheme === 'dark3' ? 'selected' : ''}>暗色3 (蓝色 vs 粉色)</option>
+                        <option value="dark4" ${settings.macroColorTheme === 'dark4' ? 'selected' : ''}>暗色4 (金色 vs 紫色)</option>
+                        <option value="dark5" ${settings.macroColorTheme === 'dark5' ? 'selected' : ''}>暗色5 (天蓝 vs 薄荷绿)</option>
+                        <option value="dark6" ${settings.macroColorTheme === 'dark6' ? 'selected' : ''}>暗色6 (粉红 vs 青绿)</option>
+                        <option value="light1" ${settings.macroColorTheme === 'light1' ? 'selected' : ''}>亮色1 (深橙 vs 深青)</option>
+                        <option value="light2" ${settings.macroColorTheme === 'light2' ? 'selected' : ''}>亮色2 (深蓝 vs 深紫)</option>
                         <option value="custom" ${settings.macroColorTheme === 'custom' ? 'selected' : ''}>自定义</option>
                     </select>
                 </div>
@@ -458,10 +473,24 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                 </div>
             </div>
 
-            <!-- 行为与功能 -->
+            <!-- 交互行为 -->
             <div class="cm-settings-group">
-                <h4 class="cm-settings-title">${ICONS.settings || '⚙️'} 行为与功能</h4>
+                <h4 class="cm-settings-title">${ICONS.rocket || '⚡'} 交互行为</h4>
                 
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>键盘快捷键</span>
+                        <small>设置启动管理器的快捷键</small>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <input type="text" id="cmShortcutInput" class="cm-input"
+                            placeholder="点击此处后按下快捷键"
+                            value="${state.openShortcut || ''}"
+                            readonly style="width:160px;cursor:pointer">
+                        <button id="cmClearShortcutBtn" class="cm-btn cm-btn-secondary" style="font-size:12px;padding:4px 10px">清除</button>
+                    </div>
+                </div>
+
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>启动时自动扫描</span>
@@ -494,16 +523,11 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <span class="cm-slider"></span>
                     </label>
                 </div>
+            </div>
 
-                <div class="cm-setting-item">
-                    <div class="cm-setting-label">
-                        <span>默认排序方式</span>
-                        <small>每次打开时的默认排序</small>
-                    </div>
-                    <select id="cmSetDefSort" class="cm-select-input" style="max-width:140px">
-                        ${defaultSortOptionsHtml}
-                    </select>
-                </div>
+            <!-- 标签管理 -->
+            <div class="cm-settings-group">
+                <h4 class="cm-settings-title">${ICONS.tag || '🏷️'} 标签管理</h4>
                 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
@@ -518,26 +542,6 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </select>
                 </div>
 
-                <!-- 键盘快捷键 -->
-                <div class="cm-setting-item">
-                    <div class="cm-setting-label">
-                        <span>键盘快捷键</span>
-                        <small>设置启动管理器的快捷键</small>
-                    </div>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <input type="text" id="cmShortcutInput" class="cm-input"
-                            placeholder="点击此处后按下快捷键"
-                            value="${state.openShortcut || ''}"
-                            readonly style="width:160px;cursor:pointer">
-                        <button id="cmClearShortcutBtn" class="cm-btn cm-btn-secondary" style="font-size:12px;padding:4px 10px">清除</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 标签设置 -->
-            <div class="cm-settings-group">
-                <h4 class="cm-settings-title">${ICONS.tag || '🏷️'} 标签设置</h4>
-                
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
                         <span>同步插件标签到原生标签</span>
@@ -572,73 +576,127 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                     </div>
                     <button id="cmImportTagPresetsBtn" class="cm-btn cm-btn-secondary">导入标签</button>
                 </div>
+            </div>
 
-                <!-- AI 智能概览设置子项 -->
+            <!-- AI 设置 -->
+            <div class="cm-settings-group">
+                <h4 class="cm-settings-title">${ICONS.robot || '🤖'} AI 设置</h4>
+                
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>最大标签数</span>
+                        <small>AI 为每个角色生成的最大标签数量 (${settings.aiMaxTags || 5})</small>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <input type="range" id="cmSetAiMaxTags" min="1" max="10" step="1" value="${settings.aiMaxTags || 5}" style="width:80px">
+                        <span id="cmSetAiMaxTagsVal" style="font-size:12px;width:20px;text-align:right">${settings.aiMaxTags || 5}</span>
+                    </div>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>覆盖已有标签</span>
+                        <small>启用后 AI 生成的标签将覆盖角色现有的标签</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetAiOverwriteTags" ${settings.aiOverwriteTags ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>覆盖已有概览</span>
+                        <small>启用后 AI 生成的概览将覆盖角色现有的概览</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetAiOverwriteSummary" ${settings.aiOverwriteSummary ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>批量模式每批上限</span>
+                        <small>批量 AI 概览生成时每批次最多处理的角色数 (${settings.aiBatchCharLimit || 10})<br><span style="color:var(--cm-text-sec);font-size:11px">⚠️ 过高可能导致 Token 超限或响应超时</span></small>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <input type="range" id="cmSetAiBatchCharLimit" min="1" max="30" step="1" value="${settings.aiBatchCharLimit || 10}" style="width:80px">
+                        <span id="cmSetAiBatchCharLimitVal" style="font-size:12px;width:20px;text-align:right">${settings.aiBatchCharLimit || 10}</span>
+                    </div>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>包含备用开场白</span>
+                        <small>将角色的备用开场白内容加入 AI 分析请求</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetAiIncludeAltGreetings" ${settings.aiIncludeAltGreetings ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>包含角色世界书</span>
+                        <small>将角色卡内嵌的世界书条目加入 AI 分析请求</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetAiIncludeCharBook" ${settings.aiIncludeCharBook ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
+
+                <!-- API 设置子项 -->
                 <div style="margin-top:12px;padding:10px;background:var(--cm-bg-ter);border-radius:8px">
-                    <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--cm-text)">🤖 AI 智能概览</div>
+                    <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--cm-text)">🔌 API 配置</div>
                     
                     <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
                         <div class="cm-setting-label">
-                            <span style="font-size:12px">最大标签数</span>
-                            <small>AI 为每个角色生成的最大标签数量 (${settings.aiMaxTags || 5})</small>
+                            <span style="font-size:12px">API 协议</span>
                         </div>
-                        <div style="display:flex;align-items:center;gap:8px">
-                            <input type="range" id="cmSetAiMaxTags" min="1" max="10" step="1" value="${settings.aiMaxTags || 5}" style="width:80px">
-                            <span id="cmSetAiMaxTagsVal" style="font-size:12px;width:20px;text-align:right">${settings.aiMaxTags || 5}</span>
-                        </div>
+                        <select id="cmSetAiApi" class="cm-select-input">
+                            <option value="openai" ${settings.translationApi === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
+                        </select>
                     </div>
 
                     <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
                         <div class="cm-setting-label">
-                            <span style="font-size:12px">覆盖已有标签</span>
-                            <small>启用后 AI 生成的标签将覆盖角色现有的标签</small>
+                            <span style="font-size:12px">API Base URL</span>
                         </div>
-                        <label class="cm-switch">
-                            <input type="checkbox" id="cmSetAiOverwriteTags" ${settings.aiOverwriteTags ? 'checked' : ''}>
-                            <span class="cm-slider"></span>
-                        </label>
+                        <input type="text" id="cmSetOpenaiUrlMain" class="cm-input" value="${settings.openaiBaseUrl || ''}" placeholder="https://api.openai.com/v1" style="width:100%;box-sizing:border-box">
                     </div>
 
                     <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
                         <div class="cm-setting-label">
-                            <span style="font-size:12px">覆盖已有概览</span>
-                            <small>启用后 AI 生成的概览将覆盖角色现有的概览</small>
+                            <span style="font-size:12px">API Key</span>
                         </div>
-                        <label class="cm-switch">
-                            <input type="checkbox" id="cmSetAiOverwriteSummary" ${settings.aiOverwriteSummary ? 'checked' : ''}>
-                            <span class="cm-slider"></span>
-                        </label>
+                        <input type="password" id="cmSetOpenaiKeyMain" class="cm-input" value="${settings.openaiApiKey || ''}" placeholder="sk-..." style="width:100%;box-sizing:border-box">
                     </div>
 
                     <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
                         <div class="cm-setting-label">
-                            <span style="font-size:12px">批量模式每批上限</span>
-                            <small>批量 AI 概览生成时每批次最多处理的角色数 (${settings.aiBatchCharLimit || 10})<br><span style="color:var(--cm-text-sec);font-size:11px">⚠️ 过高可能导致 Token 超限或响应超时</span></small>
+                            <span style="font-size:12px">模型</span>
                         </div>
-                        <div style="display:flex;align-items:center;gap:8px">
-                            <input type="range" id="cmSetAiBatchCharLimit" min="1" max="30" step="1" value="${settings.aiBatchCharLimit || 10}" style="width:80px">
-                            <span id="cmSetAiBatchCharLimitVal" style="font-size:12px;width:20px;text-align:right">${settings.aiBatchCharLimit || 10}</span>
+                        <div class="cm-setting-control cm-setting-control-stack">
+                            <div class="cm-setting-inline-controls">
+                                <select id="cmSetOpenaiModelMain" class="cm-select-input">
+                                    ${settings.openaiModel ? '<option value="' + settings.openaiModel + '" selected>' + settings.openaiModel + '</option>' : '<option value="">请先连接获取模型列表</option>'}
+                                </select>
+                                <button id="cmSetFetchModelsMain" class="cm-btn cm-btn-primary">🔗 连接</button>
+                            </div>
+                            <div id="cmSetModelStatusMain" class="cm-setting-status"></div>
                         </div>
-                    </div>
-
-                    <div class="cm-setting-item" style="margin:0;margin-bottom:8px">
-                        <div class="cm-setting-label">
-                            <span style="font-size:12px">包含备用开场白</span>
-                            <small>将角色的备用开场白内容加入 AI 分析请求</small>
-                        </div>
-                        <label class="cm-switch">
-                            <input type="checkbox" id="cmSetAiIncludeAltGreetings" ${settings.aiIncludeAltGreetings ? 'checked' : ''}>
-                            <span class="cm-slider"></span>
-                        </label>
                     </div>
 
                     <div class="cm-setting-item" style="margin:0">
                         <div class="cm-setting-label">
-                            <span style="font-size:12px">包含角色世界书</span>
-                            <small>将角色卡内嵌的世界书条目加入 AI 分析请求</small>
+                            <span style="font-size:12px">Debug Mode</span>
+                            <small>在控制台输出 AI 请求和响应信息（翻译、概览、标签生成）</small>
                         </div>
                         <label class="cm-switch">
-                            <input type="checkbox" id="cmSetAiIncludeCharBook" ${settings.aiIncludeCharBook ? 'checked' : ''}>
+                            <input type="checkbox" id="cmSetDebugMode" ${settings.debugMode ? 'checked' : ''}>
                             <span class="cm-slider"></span>
                         </label>
                     </div>
@@ -666,63 +724,9 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                  </div>
             </div>
 
-            <!-- API 设置 (通用) -->
+            <!-- 系统 -->
             <div class="cm-settings-group">
-                <h4 class="cm-settings-title">${ICONS.robot || '🤖'} API 设置</h4>
-                
-                <div class="cm-setting-item">
-                    <div class="cm-setting-label">
-                        <span>API 协议</span>
-                    </div>
-                    <select id="cmSetAiApi" class="cm-select-input">
-                        <option value="openai" ${settings.translationApi === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
-                    </select>
-                </div>
-
-                <div id="cmSetOpenaiMainConfig">
-                    <div class="cm-setting-item">
-                        <div class="cm-setting-label">
-                            <span>API Base URL</span>
-                        </div>
-                        <input type="text" id="cmSetOpenaiUrlMain" class="cm-input" value="${settings.openaiBaseUrl || ''}" placeholder="https://api.openai.com/v1" style="width:100%;box-sizing:border-box">
-                    </div>
-                    <div class="cm-setting-item">
-                        <div class="cm-setting-label">
-                            <span>API Key</span>
-                        </div>
-                        <input type="password" id="cmSetOpenaiKeyMain" class="cm-input" value="${settings.openaiApiKey || ''}" placeholder="sk-..." style="width:100%;box-sizing:border-box">
-                    </div>
-                    <div class="cm-setting-item">
-                        <div class="cm-setting-label">
-                            <span>模型</span>
-                        </div>
-                        <div class="cm-setting-control cm-setting-control-stack">
-                            <div class="cm-setting-inline-controls">
-                                <select id="cmSetOpenaiModelMain" class="cm-select-input">
-                                    ${settings.openaiModel ? '<option value="' + settings.openaiModel + '" selected>' + settings.openaiModel + '</option>' : '<option value="">请先连接获取模型列表</option>'}
-                                </select>
-                                <button id="cmSetFetchModelsMain" class="cm-btn cm-btn-primary">🔗 连接</button>
-                            </div>
-                            <div id="cmSetModelStatusMain" class="cm-setting-status"></div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="cm-setting-item">
-                    <div class="cm-setting-label">
-                        <span>Debug Mode</span>
-                        <small>在控制台输出 AI 请求和响应信息（翻译、概览、标签生成）</small>
-                    </div>
-                    <label class="cm-switch">
-                        <input type="checkbox" id="cmSetDebugMode" ${settings.debugMode ? 'checked' : ''}>
-                        <span class="cm-slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- 数据管理 -->
-            <div class="cm-settings-group">
-                <h4 class="cm-settings-title">${ICONS.database || '💾'} 数据与存储</h4>
+                <h4 class="cm-settings-title">${ICONS.database || '🔧'} 系统</h4>
                 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
