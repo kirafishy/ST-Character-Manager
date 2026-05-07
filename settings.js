@@ -517,6 +517,21 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <option value="none" ${settings.importTagStrategy === 'none' ? 'selected' : ''}>❌ 不导入任何标签</option>
                     </select>
                 </div>
+
+                <!-- 键盘快捷键 -->
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>键盘快捷键</span>
+                        <small>设置启动管理器的快捷键</small>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <input type="text" id="cmShortcutInput" class="cm-input"
+                            placeholder="点击此处后按下快捷键"
+                            value="${state.openShortcut || ''}"
+                            readonly style="width:160px;cursor:pointer">
+                        <button id="cmClearShortcutBtn" class="cm-btn cm-btn-secondary" style="font-size:12px;padding:4px 10px">清除</button>
+                    </div>
+                </div>
             </div>
 
             <!-- 标签设置 -->
@@ -1066,6 +1081,50 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindSelect('cmSetDefSort', 'defaultSort');
         bindSelect('cmSetDetailMode', 'detailContentMode');
         bindSelect('cmSetImportTagStrategy', 'importTagStrategy');
+
+        // 快捷键录制输入框
+        const shortcutInput = ov.querySelector('#cmShortcutInput');
+        if (shortcutInput) {
+            shortcutInput.onkeydown = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.key === 'Escape') {
+                    this.value = '';
+                    state.openShortcut = '';
+                    localStorage.setItem('cm_openShortcut', '');
+                    notify('快捷键已清除', 'info');
+                    this.blur();
+                    return;
+                }
+                const parts = [];
+                if (e.ctrlKey) parts.push('Ctrl');
+                if (e.shiftKey) parts.push('Shift');
+                if (e.altKey) parts.push('Alt');
+                if (e.metaKey) parts.push('Meta');
+                const key = e.key.toUpperCase();
+                if (!['CONTROL', 'SHIFT', 'ALT', 'META'].includes(key)) {
+                    parts.push(key);
+                    const sc = parts.join('+');
+                    this.value = sc;
+                    state.openShortcut = sc;
+                    localStorage.setItem('cm_openShortcut', sc);
+                    notify('快捷键已保存: ' + sc, 'success');
+                    this.blur();
+                }
+            };
+        }
+
+        // 清除快捷键按钮
+        const clearShortcutBtn = ov.querySelector('#cmClearShortcutBtn');
+        if (clearShortcutBtn) {
+            clearShortcutBtn.onclick = () => {
+                state.openShortcut = '';
+                localStorage.setItem('cm_openShortcut', '');
+                const input = ov.querySelector('#cmShortcutInput');
+                if (input) input.value = '';
+                notify('快捷键已清除', 'info');
+            };
+        }
 
         // Macro Color Theme
         const macroThemeSelect = ov.querySelector('#cmSetMacroTheme');

@@ -160,6 +160,7 @@ export const state = {
     tagSortMode: 'name',
     sidebarWidth: savedSidebarWidth,
     randomMode: localStorage.getItem('cm_random_mode') || 'all',
+    openShortcut: localStorage.getItem('cm_openShortcut') || '',  // 快捷键字符串，如 "Ctrl+Shift+X"
 
     // --- Infinite Scroll State ---
     filteredList: [],

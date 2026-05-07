@@ -4237,6 +4237,45 @@ async function init() {
         setTimeout(() => scan(), 1000);
     }
     
+    // 全局快捷键监听器
+    const shortcutListener = (e) => {
+        if (!state.openShortcut) return;
+        const parts = [];
+        if (e.ctrlKey) parts.push('Ctrl');
+        if (e.shiftKey) parts.push('Shift');
+        if (e.altKey) parts.push('Alt');
+        if (e.metaKey) parts.push('Meta');
+        const key = e.key.toUpperCase();
+        if (!['CONTROL', 'SHIFT', 'ALT', 'META'].includes(key)) parts.push(key);
+        const sc = parts.join('+');
+        if (sc === state.openShortcut) {
+            e.preventDefault();
+            // 优先级1：关闭画廊查看器
+            const galleryViewer = doc.querySelector('.cm-gallery-viewer');
+            if (galleryViewer) { galleryViewer.click(); return; }
+            // 优先级2：关闭文本弹窗
+            const textModal = doc.querySelector('.cm-text-modal-overlay');
+            if (textModal) { textModal.remove(); return; }
+            // 优先级3：关闭角色详情页
+            const detailOverlay = doc.querySelector('.cm-detail-overlay');
+            if (detailOverlay) {
+                const closeBtn = detailOverlay.querySelector('.cm-detail-close');
+                if (closeBtn) { closeBtn.click(); return; }
+                detailOverlay.remove();
+                return;
+            }
+            // 优先级4：关闭任意 createBaseDialog 弹窗（标签编辑器、确认框、设置面板等）
+            const overlays = doc.querySelectorAll('.cm-tag-editor-overlay');
+            if (overlays.length > 0) { overlays[overlays.length - 1].remove(); return; }
+            // 优先级5：切换管理器主窗口
+            const m = doc.getElementById(MODAL_ID);
+            if (m && m.style.display === 'block') closeModal();
+            else openModal();
+        }
+    };
+    window.addEventListener('keydown', shortcutListener);
+    if (parentWin !== window) parentWin.addEventListener('keydown', shortcutListener);
+    
     log(`角色卡管理器 小鱼改版 v${manifest.version} 已加载`);
 }
 
