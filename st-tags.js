@@ -453,26 +453,14 @@ export async function importTags(character, { importSetting = null, skipSave = f
         
         // 如果 state.tagMap 有数据但 cm.tags 为空，说明可能是保存失败
         // 使用 state.tagMap 的数据作为更可靠的数据源
+        // 【注意】这段逻辑在 cm.tags 已存在的情况下执行，说明用户之前已经做出过选择
+        // 如果 cm.tags 为空且 state.tagMap 有数据，很可能是保存失败导致的
         if (currentTagNames.length > 0 && (!savedTagNames || savedTagNames.length === 0)) {
             console.warn(`[ST-Tags] 检测到数据不一致（cm.tags 为空但 state.tagMap 有数据），使用 state.tagMap 的数据: ${avatar}`);
             
-            if (skipApiCall) {
-                // 只更新内存，收集到批量写入队列
-                cm.tags = currentTagNames;
-                const needsSync = state.settings.autoSyncTags;
-                pendingApiWrites.push({
-                    fileName: avatar,
-                    cmTags: currentTagNames,
-                    needsSync
-                });
-            } else {
-                // 尝试重新保存到文件，确保数据持久化
-                const saveResult = await saveCmManagerTags(avatar, currentTagNames);
-                if (saveResult) {
-                    cm.tags = currentTagNames;
-                }
-            }
-            // 无论保存是否成功，都不清空标签，保持 state.tagMap 的数据
+            // 数据恢复，不改变用户选择（cm.tags 应该保持为空，表示用户选择"不导入")
+            // 但不清空 state.tagMap 的数据，保持用户手动添加的标签
+            // 注意：这里不写入角色卡，因为 cm.tags 已经记录了用户的选择
             return;
         }
         
@@ -512,37 +500,14 @@ export async function importTags(character, { importSetting = null, skipSave = f
     const importTagsList = filterTags(rawTags, avatar);
     if (!importTagsList.length) return;
 
-    // 检查是否需要更新 (即使 cm_manager.tags 不存在，如果当前插件标签与 data.tags 一致，也无需操作)
+    // 检查是否需要更新
     const currentTagIds = state.tagMap[avatar] || [];
     const currentTagNames = currentTagIds.map(id => {
         const tag = state.tags.find(t => t.id === id);
         return tag ? tag.name : null;
     }).filter(Boolean);
     
-    // 【修复】如果 state.tagMap 已经有数据，说明用户之前已经处理过
-    // 直接恢复到 cm.tags，不需要弹窗询问
-    if (currentTagNames.length > 0) {
-        console.log(`[ST-Tags] state.tagMap 已有数据，直接恢复: ${avatar} -> ${currentTagNames.join(', ')}`);
-        cm.tags = currentTagNames;
-        
-        if (skipApiCall) {
-            // 只更新内存，收集到批量写入队列
-            const needsSync = state.settings.autoSyncTags;
-            pendingApiWrites.push({
-                fileName: avatar,
-                cmTags: currentTagNames,
-                needsSync
-            });
-        } else {
-            await saveCmManagerTags(avatar, currentTagNames);
-            // 如果开启了自动同步，同步到 data.tags
-            if (state.settings.autoSyncTags) {
-                await syncTagsToCard(avatar);
-            }
-        }
-        return;
-    }
-    
+    // 如果角色卡内置标签和插件标签一致，无需处理
     const sortedImport = [...importTagsList].sort();
     const sortedCurrent = [...currentTagNames].sort();
     if (JSON.stringify(sortedImport) === JSON.stringify(sortedCurrent)) {
@@ -1500,6 +1465,12 @@ export async function batchWriteTagsToCards(writes, onProgress) {
                     }
                 }
             };
+            
+            // 【新增】输出写入内容到 console
+            console.log(`[ST-Tags] 批量写入角色卡: ${fileName}`, {
+                'data.tags': cmTags,
+                'data.extensions.cm_manager.tags': cmTags
+            });
             
             const res = await authFetch('/api/characters/merge-attributes', {
                 method: 'POST',

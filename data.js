@@ -579,6 +579,13 @@ export async function syncTagsToCard(fileName) {
         }
 
         console.log('[TagSync] Sending merge payload for', fileName, payload);
+        
+        // 【新增】输出写入内容摘要到 console
+        const writeContent = {
+            'tags/finalTags': finalTags,
+            'extensions.cm_manager.tags': targetObj.extensions.cm_manager.tags
+        };
+        console.log(`[TagSync] 写入角色卡内容: ${fileName}`, writeContent);
 
         // 使用 /api/characters/merge-attributes 接口
         const saveRes = await authFetch('/api/characters/merge-attributes', {
@@ -1005,6 +1012,14 @@ export async function saveCharacterData(fileName, updateCallback) {
             payload.group_only_greetings = charData.group_only_greetings;
             payload.data.group_only_greetings = charData.group_only_greetings;
         }
+        
+        // 【新增】输出写入内容摘要到 console（只显示关键字段）
+        const writeContent = {
+            name: payload.name,
+            tags: payload.tags,
+            'data.extensions.cm_manager': payload.data?.extensions?.cm_manager
+        };
+        console.log(`[CharManager] 写入角色卡内容: ${fileName}`, writeContent);
 
         const r = await authFetch('/api/characters/merge-attributes', {
             method: 'POST',
@@ -1288,6 +1303,14 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
             payload.group_only_greetings = newCharData.group_only_greetings;
             payload.data.group_only_greetings = newCharData.group_only_greetings;
         }
+        
+        // 【新增】输出写入内容摘要到 console（只显示关键字段）
+        const writeContent = {
+            name: payload.name,
+            tags: payload.tags,
+            'data.extensions.cm_manager': payload.data?.extensions?.cm_manager
+        };
+        console.log(`[CharManager] updateCharacter 写入角色卡内容: ${fileName}`, writeContent);
 
         // 8. 调用 merge-attributes API
         const r = await authFetch('/api/characters/merge-attributes', {
