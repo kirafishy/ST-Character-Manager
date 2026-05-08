@@ -15,6 +15,7 @@ import { showSettingsDialog } from './settings.js';
 import { initTranslationUI, openTranslationDialog } from './translation/translation-ui.js';
 import { writePngText } from './translation/png-writer.js';
 import { CharacterDetails, showDetail } from './ui-details.js';
+import { createFloatBall, removeFloatBall } from './float-ball.js';
 
 console.log(`=== 角色卡管理器 小鱼改版 v${manifest.version} 启动 ===`);
 
@@ -4185,13 +4186,42 @@ function createButton() {
     }
 }
 
+function removeButton() {
+    const btn = doc.getElementById(BUTTON_ID);
+    if (btn) btn.remove();
+}
+
+function updateEntryMode(mode) {
+    const existingBtn = doc.getElementById(BUTTON_ID);
+    const existingBall = doc.getElementById('cmFloatBall');
+
+    switch (mode) {
+        case 'magicWand':
+            removeFloatBall();
+            if (!existingBtn) createButton();
+            break;
+
+        case 'floatBall':
+            if (existingBtn) existingBtn.remove();
+            if (!existingBall) createFloatBall(openModal);
+            break;
+
+        case 'both':
+            if (!existingBtn) createButton();
+            if (!existingBall) createFloatBall(openModal);
+            break;
+    }
+}
+
+window.cmUpdateEntryMode = updateEntryMode;
+
 async function init() {
     // injectStyles(); // Removed: using style.css
     // Restore dynamic styles
     doc.documentElement.style.setProperty('--cm-card-width', state.zoomLevel + 'px');
     doc.documentElement.style.setProperty('--cm-sidebar-width', state.sidebarWidth + 'px');
 
-    createButton();
+    updateEntryMode(state.settings.entryMode || 'magicWand');
     parentWin.openCharManager = openModal;
     window.openCharManager = openModal;
     

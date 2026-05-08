@@ -5460,3 +5460,31 @@ body.hide-card-note .cm-note {
         -webkit-line-clamp: 4;
     }
 }
+
+/* 悬浮球入口样式 */
+.cm-float-ball {
+    position: fixed;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(40, 40, 40, 0.85);
+    color: #fff;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 9999;
+    user-select: none;
+    transition: transform 0.15s ease, background 0.2s ease;
+}
+
+.cm-float-ball:hover {
+    transform: translateY(-50%) scale(1.1);
+    background: rgba(60, 60, 60, 0.95);
+}
+
+.cm-float-ball:active {
+    transform: translateY(-50%) scale(1.05);
+}

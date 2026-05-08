@@ -66,6 +66,8 @@ export const defaultSettings = {
     },
     // --- create_date 字段设置 ---
     autoAddCreateDate: false, // 全量刷新时自动为缺少 create_date 字段的角色卡添加该字段
+    // --- 入口方式设置 ---
+    entryMode: 'magicWand', // 入口方式: 'magicWand' (魔法棒) | 'floatBall' (悬浮球) | 'both' (两者都要)
 };
 
 // 读取已保存的设置

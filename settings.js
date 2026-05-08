@@ -493,6 +493,18 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
+                        <span>入口方式</span>
+                        <small>选择角色卡管理器的启动入口位置</small>
+                    </div>
+                    <select id="cmSetEntryMode" class="cm-select-input" style="max-width:140px">
+                        <option value="magicWand" ${settings.entryMode === 'magicWand' ? 'selected' : ''}>🪄 魔法棒</option>
+                        <option value="floatBall" ${settings.entryMode === 'floatBall' ? 'selected' : ''}>🔵 悬浮球</option>
+                        <option value="both" ${settings.entryMode === 'both' ? 'selected' : ''}>🔀 两者都要</option>
+                    </select>
+                </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
                         <span>启动时自动扫描</span>
                         <small>打开扩展时自动刷新列表 (关闭需手动点击刷新)</small>
                     </div>
@@ -929,6 +941,18 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
             themeBtn.onclick = () => {
                 toggleTheme();
                 themeBtn.textContent = state.isDarkMode ? '🌙 深色' : '☀️ 浅色';
+            };
+        }
+
+        // Entry Mode Select
+        const entryModeSelect = ov.querySelector('#cmSetEntryMode');
+        if (entryModeSelect) {
+            entryModeSelect.onchange = (e) => {
+                state.settings.entryMode = e.target.value;
+                saveSettings();
+                if (typeof window.cmUpdateEntryMode === 'function') {
+                    window.cmUpdateEntryMode(e.target.value);
+                }
             };
         }
 
