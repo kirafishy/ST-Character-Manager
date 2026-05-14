@@ -5482,10 +5482,17 @@ body.hide-card-note .cm-note {
 }
 
 .cm-float-ball:hover {
-    transform: translateY(-50%) scale(1.1);
+    transform: scale(1.1);
     background: rgba(60, 60, 60, 0.95);
 }
 
 .cm-float-ball:active {
-    transform: translateY(-50%) scale(1.05);
+    transform: scale(0.95);
+}
+
+.cm-float-ball.is-dragging {
+    cursor: grabbing;
+    transform: scale(1.05);
+    background: rgba(60, 60, 60, 0.95);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }

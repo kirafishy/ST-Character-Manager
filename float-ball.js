@@ -1,147 +1,66 @@
-import { doc } from './context.js';
+import { doc, parentWin } from './context.js';
 
 const BALL_ID = 'cmFloatBall';
 const POSITION_KEY = 'cm_floatBall_position';
 
-function getWin() {
-    return doc.defaultView || window;
+/**
+ * 获取 jQuery（从 SillyTavern 主窗口）
+ * @returns {jQuery|null}
+ */
+function getjQuery() {
+    try {
+        const $ = parentWin.$ || doc.defaultView.$ || window.$;
+        if ($ && $.fn && $.fn.draggable) {
+            return $;
+        }
+    } catch (e) {}
+    return null;
 }
 
+/**
+ * 加载保存的位置
+ * @returns {{ left: number, top: number }}
+ */
 function loadPosition() {
     try {
         const saved = localStorage.getItem(POSITION_KEY);
         if (saved) {
             const pos = JSON.parse(saved);
-            if (typeof pos.top === 'number' && typeof pos.right === 'number') {
-                return pos;
+            if (typeof pos.left === 'number' && typeof pos.top === 'number') {
+                const win = parentWin || window;
+                const ballSize = 48;
+                const margin = 10;
+                
+                if (pos.left >= margin && pos.left <= win.innerWidth - ballSize - margin &&
+                    pos.top >= margin && pos.top <= win.innerHeight - ballSize - margin) {
+                    return pos;
+                }
             }
         }
     } catch (e) {}
-    return { top: 50, right: 10 };
+    const win = parentWin || window;
+    return { 
+        left: Math.max(10, win.innerWidth - 58), 
+        top: Math.max(10, win.innerHeight / 2 - 24) 
+    };
 }
 
-function savePosition(top, right) {
+/**
+ * 保存位置
+ * @param {number} left
+ * @param {number} top
+ */
+function savePosition(left, top) {
     try {
-        localStorage.setItem(POSITION_KEY, JSON.stringify({ top, right }));
+        localStorage.setItem(POSITION_KEY, JSON.stringify({ left, top }));
     } catch (e) {}
 }
 
-function applyPosition(ball, pos) {
-    const win = getWin();
-    const ballSize = 48;
-    const minRight = 0;
-    const maxRight = win.innerWidth - ballSize;
-    const minTopPx = ballSize / 2;
-    const maxTopPx = win.innerHeight - ballSize / 2;
-
-    const right = Math.max(minRight, Math.min(maxRight, pos.right));
-
-    const topPx = win.innerHeight * (pos.top / 100);
-    const clampedTopPx = Math.max(minTopPx, Math.min(maxTopPx, topPx));
-    const topPercent = (clampedTopPx / win.innerHeight) * 100;
-
-    ball.style.top = topPercent + '%';
-    ball.style.right = right + 'px';
-    ball.style.transform = 'translateY(-50%)';
-}
-
-function getClientXY(e) {
-    if (e.touches && e.touches.length > 0) {
-        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    }
-    if (e.changedTouches && e.changedTouches.length > 0) {
-        return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
-    }
-    return { x: e.clientX, y: e.clientY };
-}
-
-function bindDragEvents(ball) {
-    const win = getWin();
-    let isDragging = false;
-    let startX = 0;
-    let startY = 0;
-    let startRight = 0;
-    let startTopPercent = 0;
-    let dragDistance = 0;
-
-    function dragStart(e) {
-        isDragging = true;
-        dragDistance = 0;
-
-        const pos = getClientXY(e);
-        startX = pos.x;
-        startY = pos.y;
-        startRight = parseInt(ball.style.right) || 10;
-        startTopPercent = parseFloat(ball.style.top) || 50;
-
-        ball.style.transition = 'none';
-        e.preventDefault();
-    }
-
-    function dragMove(e) {
-        if (!isDragging) return;
-
-        const pos = getClientXY(e);
-        const deltaX = startX - pos.x;
-        const deltaY = pos.y - startY;
-        dragDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-        const ballSize = 48;
-        const minRight = 0;
-        const maxRight = win.innerWidth - ballSize;
-        const minTopPx = ballSize / 2;
-        const maxTopPx = win.innerHeight - ballSize / 2;
-
-        let newRight = startRight + deltaX;
-        newRight = Math.max(minRight, Math.min(maxRight, newRight));
-
-        const startTopPx = win.innerHeight * (startTopPercent / 100);
-        let newTopPx = startTopPx + deltaY;
-        newTopPx = Math.max(minTopPx, Math.min(maxTopPx, newTopPx));
-
-        const newTopPercent = (newTopPx / win.innerHeight) * 100;
-
-        ball.style.right = newRight + 'px';
-        ball.style.top = newTopPercent + '%';
-        ball.style.transform = 'translateY(-50%)';
-
-        e.preventDefault();
-    }
-
-    function dragEnd() {
-        if (!isDragging) return;
-        isDragging = false;
-
-        ball.style.transition = '';
-
-        if (dragDistance > 5) {
-            savePosition(
-                parseFloat(ball.style.top),
-                parseInt(ball.style.right)
-            );
-        }
-
-        ball._dragDistance = dragDistance;
-    }
-
-    ball.addEventListener('mousedown', dragStart);
-    ball.addEventListener('touchstart', dragStart, { passive: false });
-    doc.addEventListener('mousemove', dragMove);
-    doc.addEventListener('touchmove', dragMove, { passive: false });
-    doc.addEventListener('mouseup', dragEnd);
-    doc.addEventListener('touchend', dragEnd);
-}
-
-function bindClickEvent(ball, openModalCallback) {
-    ball.addEventListener('click', () => {
-        if (ball._dragDistance > 5) {
-            ball._dragDistance = 0;
-            return;
-        }
-        openModalCallback();
-    });
-}
-
+/**
+ * 创建悬浮球
+ * @param {Function} openModalCallback - 打开弹窗的回调
+ * @returns {HTMLDivElement|null}
+ */
 export function createFloatBall(openModalCallback) {
     if (doc.getElementById(BALL_ID)) return null;
 
@@ -151,19 +70,77 @@ export function createFloatBall(openModalCallback) {
     ball.innerHTML = '📁';
     ball.title = '角色卡管理';
 
-    const savedPos = loadPosition();
-    applyPosition(ball, savedPos);
-
-    bindDragEvents(ball);
-    bindClickEvent(ball, openModalCallback);
+    const pos = loadPosition();
+    ball.style.left = pos.left + 'px';
+    ball.style.top = pos.top + 'px';
 
     doc.body.appendChild(ball);
+
+    const $ = getjQuery();
+    if (!$) {
+        console.warn('[CharManager] jQuery UI draggable 不可用，悬浮球无法拖动');
+        // 仍然绑定点击事件
+        ball.addEventListener('click', () => openModalCallback());
+        return ball;
+    }
+
+    // 拖动状态
+    let hasDragged = false;
+    let dragStartPos = { left: 0, top: 0 };
+    const DRAG_THRESHOLD = 5;
+
+    const $ball = $(ball);
+    
+    $ball.draggable({
+        start: (_event, ui) => {
+            hasDragged = false;
+            dragStartPos = {
+                left: ui.position?.left ?? 0,
+                top: ui.position?.top ?? 0,
+            };
+            ball.classList.add('is-dragging');
+        },
+        drag: (_event, ui) => {
+            const dx = Math.abs((ui.position?.left ?? 0) - dragStartPos.left);
+            const dy = Math.abs((ui.position?.top ?? 0) - dragStartPos.top);
+            if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+                hasDragged = true;
+            }
+        },
+        stop: (_event, ui) => {
+            ball.classList.remove('is-dragging');
+            savePosition(ui.position?.left ?? pos.left, ui.position?.top ?? pos.top);
+            setTimeout(() => {
+                hasDragged = false;
+            }, 100);
+        },
+        containment: 'window',
+        scroll: false,
+    });
+
+    $ball.css('position', 'fixed');
+
+    ball.addEventListener('click', () => {
+        if (!hasDragged) {
+            openModalCallback();
+        }
+    });
+
     return ball;
 }
 
+/**
+ * 移除悬浮球
+ */
 export function removeFloatBall() {
     const ball = doc.getElementById(BALL_ID);
     if (ball) {
+        const $ = getjQuery();
+        if ($) {
+            try {
+                $(ball).draggable('destroy');
+            } catch (e) {}
+        }
         ball.remove();
     }
 }
