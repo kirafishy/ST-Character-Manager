@@ -1,15 +1,12 @@
-/**
- * 悬浮球入口模块
- * 提供可拖拽的悬浮球作为插件入口
- */
+import { doc } from './context.js';
 
 const BALL_ID = 'cmFloatBall';
 const POSITION_KEY = 'cm_floatBall_position';
 
-/**
- * 加载保存的悬浮球位置
- * @returns {{top: number, right: number}} 位置对象，top 为百分比
- */
+function getWin() {
+    return doc.defaultView || window;
+}
+
 function loadPosition() {
     try {
         const saved = localStorage.getItem(POSITION_KEY);
@@ -23,33 +20,43 @@ function loadPosition() {
     return { top: 50, right: 10 };
 }
 
-/**
- * 保存悬浮球位置到 localStorage
- * @param {number} top - 垂直位置（百分比）
- * @param {number} right - 右侧距离（像素）
- */
 function savePosition(top, right) {
     try {
         localStorage.setItem(POSITION_KEY, JSON.stringify({ top, right }));
     } catch (e) {}
 }
 
-/**
- * 应用位置到悬浮球元素
- * @param {HTMLElement} ball - 悬浮球元素
- * @param {{top: number, right: number}} pos - 位置对象
- */
 function applyPosition(ball, pos) {
-    ball.style.top = pos.top + '%';
-    ball.style.right = pos.right + 'px';
+    const win = getWin();
+    const ballSize = 48;
+    const minRight = 0;
+    const maxRight = win.innerWidth - ballSize;
+    const minTopPx = ballSize / 2;
+    const maxTopPx = win.innerHeight - ballSize / 2;
+
+    const right = Math.max(minRight, Math.min(maxRight, pos.right));
+
+    const topPx = win.innerHeight * (pos.top / 100);
+    const clampedTopPx = Math.max(minTopPx, Math.min(maxTopPx, topPx));
+    const topPercent = (clampedTopPx / win.innerHeight) * 100;
+
+    ball.style.top = topPercent + '%';
+    ball.style.right = right + 'px';
     ball.style.transform = 'translateY(-50%)';
 }
 
-/**
- * 绑定拖拽事件
- * @param {HTMLElement} ball - 悬浮球元素
- */
+function getClientXY(e) {
+    if (e.touches && e.touches.length > 0) {
+        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    if (e.changedTouches && e.changedTouches.length > 0) {
+        return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+    }
+    return { x: e.clientX, y: e.clientY };
+}
+
 function bindDragEvents(ball) {
+    const win = getWin();
     let isDragging = false;
     let startX = 0;
     let startY = 0;
@@ -57,47 +64,51 @@ function bindDragEvents(ball) {
     let startTopPercent = 0;
     let dragDistance = 0;
 
-    const onMouseDown = (e) => {
+    function dragStart(e) {
         isDragging = true;
         dragDistance = 0;
 
-        startX = e.clientX;
-        startY = e.clientY;
+        const pos = getClientXY(e);
+        startX = pos.x;
+        startY = pos.y;
         startRight = parseInt(ball.style.right) || 10;
         startTopPercent = parseFloat(ball.style.top) || 50;
 
         ball.style.transition = 'none';
         e.preventDefault();
-    };
+    }
 
-    const onMouseMove = (e) => {
+    function dragMove(e) {
         if (!isDragging) return;
 
-        const deltaX = startX - e.clientX;
-        const deltaY = e.clientY - startY;
+        const pos = getClientXY(e);
+        const deltaX = startX - pos.x;
+        const deltaY = pos.y - startY;
         dragDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
         const ballSize = 48;
         const minRight = 0;
-        const maxRight = window.innerWidth - ballSize;
+        const maxRight = win.innerWidth - ballSize;
         const minTopPx = ballSize / 2;
-        const maxTopPx = window.innerHeight - ballSize / 2;
+        const maxTopPx = win.innerHeight - ballSize / 2;
 
         let newRight = startRight + deltaX;
         newRight = Math.max(minRight, Math.min(maxRight, newRight));
 
-        const startTopPx = window.innerHeight * (startTopPercent / 100);
+        const startTopPx = win.innerHeight * (startTopPercent / 100);
         let newTopPx = startTopPx + deltaY;
         newTopPx = Math.max(minTopPx, Math.min(maxTopPx, newTopPx));
 
-        const newTopPercent = (newTopPx / window.innerHeight) * 100;
+        const newTopPercent = (newTopPx / win.innerHeight) * 100;
 
         ball.style.right = newRight + 'px';
         ball.style.top = newTopPercent + '%';
         ball.style.transform = 'translateY(-50%)';
-    };
 
-    const onMouseUp = () => {
+        e.preventDefault();
+    }
+
+    function dragEnd() {
         if (!isDragging) return;
         isDragging = false;
 
@@ -111,18 +122,16 @@ function bindDragEvents(ball) {
         }
 
         ball._dragDistance = dragDistance;
-    };
+    }
 
-    ball.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    ball.addEventListener('mousedown', dragStart);
+    ball.addEventListener('touchstart', dragStart, { passive: false });
+    doc.addEventListener('mousemove', dragMove);
+    doc.addEventListener('touchmove', dragMove, { passive: false });
+    doc.addEventListener('mouseup', dragEnd);
+    doc.addEventListener('touchend', dragEnd);
 }
 
-/**
- * 绑定点击事件（区分拖拽）
- * @param {HTMLElement} ball - 悬浮球元素
- * @param {Function} openModalCallback - 点击时调用的打开管理器函数
- */
 function bindClickEvent(ball, openModalCallback) {
     ball.addEventListener('click', () => {
         if (ball._dragDistance > 5) {
@@ -133,15 +142,10 @@ function bindClickEvent(ball, openModalCallback) {
     });
 }
 
-/**
- * 创建悬浮球
- * @param {Function} openModalCallback - 点击时调用的打开管理器函数
- * @returns {HTMLElement|null} 悬浮球元素，若已存在则返回 null
- */
 export function createFloatBall(openModalCallback) {
-    if (document.getElementById(BALL_ID)) return null;
+    if (doc.getElementById(BALL_ID)) return null;
 
-    const ball = document.createElement('div');
+    const ball = doc.createElement('div');
     ball.id = BALL_ID;
     ball.className = 'cm-float-ball';
     ball.innerHTML = '📁';
@@ -153,15 +157,12 @@ export function createFloatBall(openModalCallback) {
     bindDragEvents(ball);
     bindClickEvent(ball, openModalCallback);
 
-    document.body.appendChild(ball);
+    doc.body.appendChild(ball);
     return ball;
 }
 
-/**
- * 移除悬浮球
- */
 export function removeFloatBall() {
-    const ball = document.getElementById(BALL_ID);
+    const ball = doc.getElementById(BALL_ID);
     if (ball) {
         ball.remove();
     }

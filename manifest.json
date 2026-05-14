@@ -3,7 +3,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Community",
-    "version": "2.5.1",
+    "version": "2.6.2",
     "auto_update": false,
     "loading_order": 100
 }
