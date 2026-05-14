@@ -535,6 +535,17 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
                         <span class="cm-slider"></span>
                     </label>
                 </div>
+
+                <div class="cm-setting-item">
+                    <div class="cm-setting-label">
+                        <span>将智绘姬生图同步上传至角色目录</span>
+                        <small>本插件的画廊只能读取角色目录内的图片，开启后可将生成的图片自动归档</small>
+                    </div>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetSyncImageToChar" ${settings.syncImageToChar ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
+                </div>
             </div>
 
             <!-- 标签管理 -->
@@ -813,6 +824,8 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
         bindCheck('cmSetAuthor', 'showAuthor');
         bindCheck('cmSetHoverBtns', 'showCardHoverButtons');
         bindCheck('cmSetCardNote', 'showCardNote');
+        bindCheck('cmSetAutoAddCreateDate', 'autoAddCreateDate');
+        bindCheck('cmSetSyncImageToChar', 'syncImageToChar');
         bindCheck('cmSetAutoScan', 'autoScan');
         bindCheck('cmSetAutoSyncTags', 'autoSyncTags');
         bindCheck('cmSetDebugMode', 'debugMode');

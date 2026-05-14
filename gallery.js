@@ -22,7 +22,7 @@ try {
     }
 } catch (e) { }
 
-function saveGalleryCountCache() {
+export function saveGalleryCountCache() {
     galleryCountCache._timestamp = Date.now();
     try {
         localStorage.setItem(GALLERY_CACHE_KEY, JSON.stringify(galleryCountCache));

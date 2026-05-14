@@ -5,7 +5,7 @@ import { escapeHtml, notify } from './utils.js';
 import manifest from './manifest.json' with { type: 'json' };
 
 export function createBaseDialog(title, bodyContent, footerButtons = [], onOpen = null, options = {}) {
-    const { stack = false } = options;
+    const { stack = false, zIndex } = options;
     if (!stack) {
         const existing = doc.querySelector('.cm-tag-editor-overlay');
         if (existing) existing.remove();
@@ -13,6 +13,7 @@ export function createBaseDialog(title, bodyContent, footerButtons = [], onOpen 
 
     const ov = doc.createElement('div');
     ov.className = state.isDarkMode ? 'cm-tag-editor-overlay cm-theme-dark' : 'cm-tag-editor-overlay cm-theme-light';
+    if (zIndex) ov.style.zIndex = zIndex;
 
     let footerHtml = '';
     if (footerButtons.length > 0) {
@@ -60,7 +61,7 @@ export function showConfirm(msg) {
         createBaseDialog('确认', '<div style="padding:10px;text-align:left;white-space:pre-wrap;line-height:1.5">' + escapeHtml(msg) + '</div>', [
             { text: '取消', id: 'cmConfirmCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => { close(); resolve(false); } },
             { text: '确定', id: 'cmConfirmOk', cls: 'cm-btn-primary', onClick: (ov, close) => { close(); resolve(true); } }
-        ], null, { stack: true });
+        ], null, { stack: true, zIndex: Z_INDEX.MODAL_CONFIRM || 700050 });
     });
 }
 

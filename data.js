@@ -5,6 +5,7 @@ import { COLORS } from './constants.js';
 import { authFetch } from './api.js';
 import { setCache, setCacheBatch } from './db.js';
 import { createBaseDialog } from './ui-utils.js';
+import { extractCharDataFromPNG, stripCharMetadataFromPNG } from './utils/png-metadata.js';
 
 // 文件写入串行队列 - 防止同一文件的并发写操作互相覆盖
 const fileWriteQueues = new Map();
@@ -1496,17 +1497,40 @@ export async function renameCharacterFile(char, newName) {
 export async function downloadChar(fn) {
     return new Promise(resolve => {
         let html = `<div style="padding:10px 14px">`;
-        html += `<div style="font-size:14px;margin-bottom:12px">请选择导出格式：</div>`;
+        html += `<div style="font-size:14px;margin-bottom:12px;font-weight:bold;">请选择导出方式：</div>`;
+        
+        // 组1：标准服务端导出
+        html += `<div style="background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.1)); padding:10px; border-radius:6px; margin-bottom:12px; border: 1px solid var(--SmartThemeBorderColor, #555);">`;
+        html += `<div style="font-size:12px; opacity:0.8; margin-bottom:8px;">`;
+        html += `☁️ <b>标准导出</b>（ 由酒馆服务端生成，使用酒馆原生导出接口）`;
+        html += `</div>`;
         html += `<div style="display:flex;flex-direction:column;gap:8px">`;
         html += `<label style="display:flex;align-items:center;cursor:pointer;font-size:13px">`;
         html += `<input type="radio" name="exportFormat" value="png" checked style="width:16px;height:16px;margin-right:8px">`;
-        html += `<span>PNG 格式（包含图片和元数据）</span>`;
+        html += `<span>完整角色卡 (PNG)</span>`;
         html += `</label>`;
         html += `<label style="display:flex;align-items:center;cursor:pointer;font-size:13px">`;
         html += `<input type="radio" name="exportFormat" value="json" style="width:16px;height:16px;margin-right:8px">`;
-        html += `<span>JSON 格式（纯文本数据）</span>`;
+        html += `<span>纯文本数据 (JSON)</span>`;
         html += `</label>`;
         html += `</div></div>`;
+
+        // 组2：纯前端底层提取
+        html += `<div style="background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.1)); padding:10px; border-radius:6px; border: 1px solid var(--SmartThemeBorderColor, #555);">`;
+        html += `<div style="font-size:12px; opacity:0.8; margin-bottom:8px;">`;
+        html += `💻 <b>底层提取</b>（ 不经过服务端过滤，直接读取硬盘里原始图片的数据）`;
+        html += `</div>`;
+        html += `<div style="display:flex;flex-direction:column;gap:8px">`;
+        html += `<label style="display:flex;align-items:center;cursor:pointer;font-size:13px">`;
+        html += `<input type="radio" name="exportFormat" value="raw_json" style="width:16px;height:16px;margin-right:8px">`;
+        html += `<span>提取原始设定 (Raw JSON)</span>`;
+        html += `</label>`;
+        html += `<label style="display:flex;align-items:center;cursor:pointer;font-size:13px">`;
+        html += `<input type="radio" name="exportFormat" value="clean_png" style="width:16px;height:16px;margin-right:8px">`;
+        html += `<span>剥离为纯净封面 (Clean PNG)</span>`;
+        html += `</label>`;
+        html += `</div></div>`;
+        html += `</div>`;
 
         createBaseDialog('导出角色', html, [
             { text: '取消', id: 'cmExportCancel', cls: 'cm-btn-secondary', onClick: (ov, close) => { close(); resolve(false); } },
@@ -1519,6 +1543,41 @@ export async function downloadChar(fn) {
                     
                     try {
                         const charObj = state.characters.find(c => c.fileName === fn);
+                        const safeCharName = (charObj?.name || fn.replace(/\.png$/i, '')).replace(/[\/\\?%*:|"<>]/g, '_');
+
+                        if (format === 'raw_json' || format === 'clean_png') {
+                            // 高级导出逻辑：前端处理
+                            notify('正在处理原始图片...', 'info');
+                            const response = await authFetch('/characters/' + encodeURIComponent(fn));
+                            if (!response.ok) throw new Error('无法获取原始图片文件');
+                            const arrayBuffer = await response.arrayBuffer();
+                            
+                            let blobUrl, downloadName;
+                            if (format === 'raw_json') {
+                                const rawJsonStr = extractCharDataFromPNG(arrayBuffer);
+                                const blob = new Blob([rawJsonStr], { type: 'application/json' });
+                                blobUrl = window.URL.createObjectURL(blob);
+                                downloadName = `${safeCharName}_raw.json`;
+                            } else if (format === 'clean_png') {
+                                const cleanBuffer = stripCharMetadataFromPNG(arrayBuffer);
+                                const blob = new Blob([cleanBuffer], { type: 'image/png' });
+                                blobUrl = window.URL.createObjectURL(blob);
+                                downloadName = `${safeCharName}_clean.png`;
+                            }
+
+                            const a = doc.createElement('a');
+                            a.href = blobUrl;
+                            a.download = downloadName;
+                            doc.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            window.URL.revokeObjectURL(blobUrl);
+                            notify('导出成功', 'success');
+                            resolve(true);
+                            return;
+                        }
+
+                        // 原有导出逻辑：服务端处理
                         if (charObj) {
                             // 导出前先强制使用最新数据覆盖服务端，以补全潜在缺失的 create_date 等字段
                             await updateCharacter(fn, charObj, null, {
@@ -1544,8 +1603,6 @@ export async function downloadChar(fn) {
                             const a = doc.createElement('a');
                             a.href = downloadUrl;
                             
-                            // 像酒馆原生一样，使用角色卡的名字作为导出的文件名
-                            const safeCharName = (charObj.name || fn.replace(/\.png$/i, '')).replace(/[\/\\?%*:|"<>]/g, '_');
                             a.download = `${safeCharName}.${format}`;
                             
                             doc.body.appendChild(a);
@@ -1558,7 +1615,7 @@ export async function downloadChar(fn) {
                         }
                     } catch (e) {
                         console.error('Export error: ', e);
-                        notify('导出过程发生异常', 'error');
+                        notify('导出过程发生异常: ' + e.message, 'error');
                     }
                     resolve(true);
                 }

@@ -16,6 +16,8 @@ import { initTranslationUI, openTranslationDialog } from './translation/translat
 import { writePngText } from './translation/png-writer.js';
 import { CharacterDetails, showDetail } from './ui-details.js';
 import { createFloatBall, removeFloatBall } from './float-ball.js';
+import { openMetadataSeparatorDialog } from './ui-metadata-separator.js';
+import { initInterceptor } from './interceptor.js';
 
 console.log(`=== 角色卡管理器 小鱼改版 v${manifest.version} 启动 ===`);
 
@@ -3428,6 +3430,7 @@ function createModal() {
         '<button class="cm-header-btn cm-mobile-only" id="cmMobileMenuBtn" title="更多">' + ICONS.menu + '</button>' +
         '<div class="cm-desktop-actions">' +
         '<button class="cm-header-btn" id="cmSettingsBtn" title="设置">' + ICONS.settings + '</button>' +
+        '<button class="cm-header-btn" id="cmMetadataSepBtn" title="元数据分离器">' + ICONS.box + '</button>' +
         '<button class="cm-header-btn" id="cmThemeBtn" title="切换主题">' + (state.isDarkMode ? ICONS.moon : ICONS.sun) + '</button>' +
         '<button class="cm-header-btn" id="cmMigrateBtn" title="从旧版本迁移数据" style="display:none;color:#fbbf24">📥</button>' +
         '<button class="cm-header-btn" id="cmImportBtn" title="导入角色/ZIP">' + ICONS.upload + '</button>' +
@@ -3526,6 +3529,7 @@ function createModal() {
     m.querySelector('#cmSyncBtn').onclick = () => scan(true, false);
     m.querySelector('#cmFullScanBtn').onclick = () => scan(true, true);
     m.querySelector('#cmThemeBtn').onclick = toggleTheme;
+    m.querySelector('#cmMetadataSepBtn').onclick = openMetadataSeparatorDialog;
     m.querySelector('#cmSettingsBtn').onclick = () => showSettingsDialog({
         createBaseDialog,
         toggleTheme,
@@ -4227,6 +4231,9 @@ async function init() {
     
     // 初始化翻译模块
     initTranslationUI({ createBaseDialog, notify, showConfirm, scan, importFiles, updateCharacter, refreshSingleCard });
+    
+    // 初始化网络请求拦截器
+    initInterceptor();
     
     // 监听 AI 概览生成标签事件，刷新列表页 tag DOM
     window.addEventListener('cm-tags-updated', (e) => {
