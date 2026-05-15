@@ -432,15 +432,26 @@ async function applyTags(avatar, tagsToApply, skipSave = false, replace = false)
  * @param {boolean} [options.checkCmManager=true] - Whether to check cm_manager.tags first
  * @param {boolean} [options.skipApiCall=false] - Whether to skip API calls (collect to pending queue)
  */
-export async function importTags(character, { importSetting = null, skipSave = false, checkCmManager = true, skipApiCall = false } = {}) {
+export async function importTags(character, { importSetting = null, skipSave = false, checkCmManager = true, skipApiCall = false, isManualImport = false } = {}) {
     const ctx = getSTContext();
     if (!ctx) return;
 
     const avatar = character.fileName || character.avatar;
     const cm = getCmManager(character);
     
+    // 【修复】选项B：如果手动导入，且记忆为拒绝标签(空数组)，但卡片自带标签，则忽略记忆
+    let useCmManager = checkCmManager;
+    if (isManualImport && useCmManager && cm.tags !== undefined && cm.tags.length === 0) {
+        const rawTags = getRawTags(character);
+        const importTagsList = filterTags(rawTags, avatar);
+        if (importTagsList.length > 0) {
+            console.log(`[ST-Tags] 手动导入：发现卡片自带标签，忽略无标签记忆，强制进入判断流程`);
+            useCmManager = false;
+        }
+    }
+    
     // 如果启用 cm_manager 检查，且 cm_manager.tags 存在（即使是空数组）
-    if (checkCmManager && cm.tags !== undefined) {
+    if (useCmManager && cm.tags !== undefined) {
         // 使用 cm_manager.tags 作为标签来源
         const savedTagNames = cm.tags;
         

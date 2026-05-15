@@ -183,7 +183,7 @@ async function doActualImport(files, remainingInQueue) {
 
                 // 迁移旧配置并导入标签
                 await migrateAndSaveCmManager(char);
-                await importTags(char, { skipSave: false, checkCmManager: true });
+                await importTags(char, { skipSave: false, checkCmManager: true, isManualImport: true });
                 
                 // 强制保存一次标签状态，确保新导入的标签被持久化
                 saveTags();
@@ -689,7 +689,7 @@ async function showUrlImportDialog() {
                         // 尝试导入角色自带的标签 (如果存在)
                         // 即使没有手动选择标签，角色卡本身可能自带标签，需要导入到 ST-CM
                         await migrateAndSaveCmManager(targetChar);
-                        await importTags(targetChar, { skipSave: false, checkCmManager: true });
+                        await importTags(targetChar, { skipSave: false, checkCmManager: true, isManualImport: true });
 
                         // 刷新界面以显示标签
                         renderView();
