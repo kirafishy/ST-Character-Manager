@@ -491,6 +491,108 @@
     opacity: .5
 }
 
+/* Select */
+.cm-select-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--cm-border);
+    border-radius: 6px;
+    background: var(--cm-btn-sec-bg);
+    padding: 0;
+    height: 28px;
+    box-sizing: border-box;
+    transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+
+.cm-select-wrap:hover {
+    border-color: var(--cm-primary, #2563eb);
+    background: var(--cm-hover);
+}
+
+.cm-select-wrap:focus-within {
+    border-color: var(--cm-primary, #2563eb);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.cm-select-wrap svg {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--cm-text-sec);
+    flex-shrink: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* 自定义下拉小箭头 */
+.cm-select-wrap::after {
+    content: '';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid var(--cm-text-sec);
+    pointer-events: none;
+    transition: transform 0.2s, border-top-color 0.2s;
+    z-index: 1;
+}
+
+.cm-select-wrap:hover::after {
+    border-top-color: var(--cm-text);
+}
+
+/* 强制包裹器内部的 select 完全透明且无边框，覆盖酒馆主题的全局样式 */
+.cm-select-wrap .cm-select-input {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    border: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    color: var(--cm-text) !important;
+    font-size: 12px;
+    padding: 0 24px 0 8px !important;
+    cursor: pointer;
+    outline: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: unset !important;
+    box-shadow: none !important;
+    box-sizing: border-box;
+    text-align: left;
+    margin: 0 !important;
+}
+
+/* 有图标时增加左边距，避免文字遮挡图标 */
+.cm-select-wrap svg + .cm-select-input {
+    padding-left: 26px !important;
+}
+
+.cm-select-input {
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--cm-text);
+    font-size: 12px;
+    padding: 0 24px 0 8px;
+    cursor: pointer;
+    outline: none;
+    width: auto;
+    height: 100%;
+    text-align: left;
+    margin-top: 3px;
+    min-height: 32px;
+}
+
 .cm-tabs {
     display: flex;
     gap: 4px;
@@ -5257,55 +5359,82 @@ body.hide-card-note .cm-note {
 }
 
 /* ========================================
-   当前卡与收藏卡高亮样式
-   ======================================== */
+    当前卡与收藏卡高亮样式
+    ======================================== */
 
-/* 当前卡高亮样式 - 金橙色渐变边框 + 发光效果 */
-.cm-card.cm-current {
-    border: 2px solid transparent;
-    background:
-        linear-gradient(var(--cm-card-bg), var(--cm-card-bg)) padding-box,
-        linear-gradient(135deg, #f59e0b, #f97316, #ef4444) border-box;
-    box-shadow: 0 0 20px rgba(249, 115, 22, 0.4);
-}
+    /* 彩虹跑马灯动画 - 方案十二 */
+    @keyframes cm-rainbow-rotate {
+        100% { transform: rotate(360deg); }
+    }
 
-/* 当前卡 hover 时增强发光效果 */
-.cm-card.cm-current:hover {
-    box-shadow: 0 0 25px rgba(249, 115, 22, 0.6);
-}
+    /* 当前卡高亮样式 - 彩虹跑马灯边框 */
+    .cm-card.cm-current {
+        padding: 3px;
+        border: none;
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.35);
+    }
 
-/* 收藏卡高亮样式 - 粉色边框 */
-.cm-card.cm-favorite {
-    border: 2px solid #ec4899;
-    box-shadow: 0 0 10px rgba(236, 72, 153, 0.3);
-}
+    /* 彩虹旋转光束层 */
+    .cm-card.cm-current::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: conic-gradient(from 0deg, 
+            #f43f5e, #eab308, #10b981, #3b82f6, #8b5cf6, #f43f5e
+        );
+        animation: cm-rainbow-rotate 3s linear infinite;
+        z-index: -2;
+    }
 
-/* 收藏卡 hover 时增强发光效果 */
-.cm-card.cm-favorite:hover {
-    box-shadow: 0 0 15px rgba(236, 72, 153, 0.5);
-}
+    /* 内容遮罩层 - 显示卡片背景色 */
+    .cm-card.cm-current::after {
+        content: '';
+        position: absolute;
+        inset: 3px;
+        background: var(--cm-bg-ter);
+        border-radius: 5px;
+        z-index: -1;
+    }
 
-/* 当前卡同时也是收藏卡时 - 优先显示当前卡样式 */
-.cm-card.cm-current.cm-favorite {
-    border: 2px solid transparent;
-    background:
-        linear-gradient(var(--cm-card-bg), var(--cm-card-bg)) padding-box,
-        linear-gradient(135deg, #f59e0b, #f97316, #ef4444) border-box;
-    box-shadow: 0 0 20px rgba(249, 115, 22, 0.4);
-}
+    /* 当前卡 hover 时增强发光效果 */
+    .cm-card.cm-current:hover {
+        box-shadow: 0 0 25px rgba(139, 92, 246, 0.5);
+    }
 
-/* 亮色主题适配 */
-.cm-theme-light .cm-card.cm-current {
-    background:
-        linear-gradient(var(--cm-card-bg), var(--cm-card-bg)) padding-box,
-        linear-gradient(135deg, #f59e0b, #f97316, #ef4444) border-box;
-    box-shadow: 0 0 15px rgba(249, 115, 22, 0.3);
-}
+    /* 收藏卡高亮样式 - 粉色边框 */
+    .cm-card.cm-favorite {
+        border: 2px solid #ec4899;
+        box-shadow: 0 0 10px rgba(236, 72, 153, 0.3);
+    }
 
-.cm-theme-light .cm-card.cm-favorite {
-    border: 2px solid #ec4899;
-    box-shadow: 0 0 8px rgba(236, 72, 153, 0.25);
-}
+    /* 收藏卡 hover 时增强发光效果 */
+    .cm-card.cm-favorite:hover {
+        box-shadow: 0 0 15px rgba(236, 72, 153, 0.5);
+    }
+
+    /* 当前卡同时也是收藏卡时 - 优先显示彩虹跑马灯 */
+    .cm-card.cm-current.cm-favorite {
+        padding: 3px;
+        border: none;
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.35);
+    }
+
+    /* 亮色主题适配 */
+    .cm-theme-light .cm-card.cm-current {
+        box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+    }
+
+    .cm-theme-light .cm-card.cm-current::after {
+        background: var(--cm-bg-ter);
+    }
+
+    .cm-theme-light .cm-card.cm-favorite {
+        border: 2px solid #ec4899;
+        box-shadow: 0 0 8px rgba(236, 72, 153, 0.25);
+    }
 
 /* ============================================
    封面显示模式样式
