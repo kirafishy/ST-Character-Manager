@@ -1399,14 +1399,49 @@ export async function toggleFavorite(fileName, currentFavState) {
         }
     }
     
-    // 非当前角色：通过 API 直接修改
+    // 非当前角色：按酒馆批量收藏逻辑最小化写入，避免重拼 tags 触发 Spec v1/v2 mismatch
     try {
-        await saveCharacterData(fileName, (data) => {
-            if (!data.extensions) data.extensions = {};
-            data.extensions.fav = newState;
-            data.fav = newState;
+        const stateChar = state.characters.find(c => c.fileName === fileName || c.avatar === fileName);
+        const payload = {
+            avatar: fileName,
+            ...(stateChar?.name && { name: stateChar.name }),
+            fav: newState,
+            data: {
+                extensions: {
+                    fav: newState,
+                },
+            },
+        };
+
+        const r = await authFetch('/api/characters/merge-attributes', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
         });
-        // saveCharacterData 已内部处理状态更新和持久化
+
+        if (!r.ok) {
+            const errorText = await r.text();
+            throw new Error(errorText);
+        }
+
+        if (stateChar) {
+            stateChar.fav = newState;
+            if (!stateChar.data) stateChar.data = {};
+            if (!stateChar.data.extensions) stateChar.data.extensions = {};
+            stateChar.data.extensions.fav = newState;
+        }
+
+        const stChar = getSTCharacters().find(c => c.avatar === fileName);
+        if (stChar) {
+            stChar.fav = newState;
+            if (!stChar.data) stChar.data = {};
+            if (!stChar.data.extensions) stChar.data.extensions = {};
+            stChar.data.extensions.fav = newState;
+        }
+
+        await setCache('characters', state.characters);
         notify(newState ? '已收藏' : '取消收藏', 'success');
         return newState;
     } catch (e) {
