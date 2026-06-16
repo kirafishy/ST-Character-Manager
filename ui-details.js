@@ -1763,6 +1763,11 @@ export class CharacterDetails {
         const generateMode = this.aiGenerateMode || 'both';
 
         try {
+            // 确保有完整数据
+            if (!this.char.data || this.char.data.description === undefined) {
+                await this.loadFullData();
+            }
+
             const { generateAIOverview } = await import('./ai-overview/ai-service.js');
             // 详情页主动点击生成时，总是覆盖已有内容
             const result = await generateAIOverview(this.char, true, true, generateMode);

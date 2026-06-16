@@ -1182,9 +1182,29 @@ function getCharInfo(d) {
 
 async function saveCache() {
     try {
+        // 低内存优化：列表缓存瘦身，去除体积庞大的 data 完整对象，仅保留必要列表/状态字段
+        const shallowChars = state.characters.map(c => {
+            const shallow = { ...c };
+            if (shallow.data) {
+                // 保留对列表渲染和标签必要的扩展状态，丢弃 description/book/scenario 等大文本
+                const slimData = { 
+                    name: shallow.data.name,
+                    tags: shallow.data.tags,
+                    extensions: {
+                        cm_manager: shallow.data.extensions?.cm_manager || {}
+                    }
+                };
+                if (shallow.data.extensions?.fav !== undefined) {
+                    slimData.extensions.fav = shallow.data.extensions.fav;
+                }
+                shallow.data = slimData;
+            }
+            return shallow;
+        });
+        
         // 使用 IndexedDB 保存，彻底解决 LocalStorage 容量限制问题
-        await setCache('characters', state.characters);
-        console.log('[CharManager] Cache saved to IndexedDB. Items:', state.characters.length);
+        await setCache('characters', shallowChars);
+        console.log('[CharManager] Cache saved to IndexedDB. Items:', shallowChars.length);
     } catch (e) {
         console.error('[CharManager] Failed to save cache:', e);
         notify('无法保存缓存: ' + e.message, 'error');
@@ -2860,6 +2880,35 @@ async function batchAIGenerateTags(mode = 'serial', tokenLimit = 4096, overwrite
         const { generateAIOverview, generateBatchOverview } = await import('./ai-overview/ai-service.js');
         const { showBatchResultModal } = await import('./ui-utils.js');
         
+        // 低内存优化：在发送给 AI 前回源获取缺失的完整数据
+        for (let i = 0; i < targetChars.length; i++) {
+            if (cancelled) break;
+            const char = targetChars[i];
+            if (!char.data || char.data.description === undefined) {
+                updateProgressBar(
+                    0,
+                    `正在读取角色卡：${char.name} (${i + 1}/${total})`,
+                    ''
+                );
+                try {
+                    const r = await authFetch('/api/characters/get', {
+                        method: 'POST',
+                        body: JSON.stringify({ avatar_url: char.fileName || char.avatar })
+                    });
+                    if (r.ok) {
+                        const fullData = await r.json();
+                        if (fullData.data && (fullData.spec === 'chara_card_v3' || fullData.data.name)) {
+                            Object.assign(char, { data: fullData.data });
+                        } else {
+                            Object.assign(char, fullData);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[CharManager] 批量生成 AI 概览前回源数据失败:', char.fileName, e);
+                }
+            }
+        }
+
         let result = { success: 0, errors: 0, batchInfo: { total: 0, failed: 0 } };
         
         if (mode === 'serial') {
@@ -3442,6 +3491,7 @@ function createModal() {
         '<div class="cm-mobile-menu" id="cmMobileMenu" style="display:none">' +
         '<div class="cm-menu-item" id="cmMenuImport">' + ICONS.upload + ' 导入文件</div>' +
         '<div class="cm-menu-item" id="cmMenuUrlImport">' + ICONS.link + ' URL 导入</div>' +
+        '<div class="cm-menu-item" id="cmMenuAIGenerate">🪄 AI 概览</div>' +
         '<div class="cm-menu-item" id="cmMenuSettings">' + ICONS.settings + ' 设置</div>' +
         '<div class="cm-menu-item" id="cmMenuTheme">' + (state.isDarkMode ? ICONS.moon : ICONS.sun) + ' 切换主题</div>' +
         '<div class="cm-menu-item" id="cmMenuMigrate" style="display:none">📥 迁移数据</div>' +
@@ -3578,6 +3628,13 @@ function createModal() {
 
         bindMenu('#cmMenuImport', '#cmImportBtn');
         bindMenu('#cmMenuUrlImport', '#cmUrlImportBtn');
+        const aiMenu = m.querySelector('#cmMenuAIGenerate');
+        if (aiMenu) {
+            aiMenu.onclick = () => {
+                showAITagConfigDialog();
+                mobileMenu.style.display = 'none';
+            };
+        }
         bindMenu('#cmMenuSettings', '#cmSettingsBtn');
         bindMenu('#cmMenuTheme', '#cmThemeBtn');
         bindMenu('#cmMenuMigrate', '#cmMigrateBtn');
@@ -4010,7 +4067,8 @@ function createModal() {
                 const shouldDeleteWi = confirmRes.delWi && char.character_book && targetWIs.has(char.character_book);
                 await deleteChar(char, {
                     deleteChats: confirmRes.delChats,
-                    deleteWi: shouldDeleteWi
+                    deleteWi: shouldDeleteWi,
+                    skipNativeUi: true
                 });
                 // deleteChar 已内部处理 state.characters 清理和持久化，此处移除冗余代码
                 ok++;
