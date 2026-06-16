@@ -320,25 +320,39 @@ function clearCharTags(avatar) {
         delete state.tagMap[avatar];
     }
     
-    // 同步更新内存中角色对象的所有 tags 相关字段（避免下次扫描重复触发）
+    // 只同步插件私有标签记忆，不改酒馆原生 tags/data.tags。
     const char = state.characters.find(c => c.fileName === avatar || c.avatar === avatar);
     if (char) {
-        // 更新根层级 tags
-        char.tags = [];
-        // 更新 data.tags
-        if (char.data) {
-            char.data.tags = [];
-        }
-        // 更新 data.extensions.cm_manager.tags
-        if (char.data?.extensions?.cm_manager) {
-            char.data.extensions.cm_manager.tags = [];
-        } else {
-            if (!char.data) char.data = {};
-            if (!char.data.extensions) char.data.extensions = {};
-            if (!char.data.extensions.cm_manager) char.data.extensions.cm_manager = {};
-            char.data.extensions.cm_manager.tags = [];
-        }
+        if (!char.data) char.data = {};
+        if (!char.data.extensions) char.data.extensions = {};
+        if (!char.data.extensions.cm_manager) char.data.extensions.cm_manager = {};
+        char.data.extensions.cm_manager.tags = [];
+
+        if (!char.extensions) char.extensions = char.data.extensions;
+        if (!char.extensions.cm_manager) char.extensions.cm_manager = char.data.extensions.cm_manager;
+        char.extensions.cm_manager.tags = [];
     }
+}
+
+/**
+ * 同步插件私有标签到内存，不触碰酒馆原生 tags/data.tags。
+ * @param {string} avatar - 角色头像文件名
+ */
+function syncCmManagerTagsInMemory(avatar) {
+    const tagNames = (state.tagMap[avatar] || [])
+        .map(id => state.tags.find(t => t.id === id)?.name)
+        .filter(Boolean);
+    const char = state.characters.find(c => c.fileName === avatar || c.avatar === avatar);
+    if (!char) return;
+
+    if (!char.data) char.data = {};
+    if (!char.data.extensions) char.data.extensions = {};
+    if (!char.data.extensions.cm_manager) char.data.extensions.cm_manager = {};
+    char.data.extensions.cm_manager.tags = tagNames;
+
+    if (!char.extensions) char.extensions = char.data.extensions;
+    if (!char.extensions.cm_manager) char.extensions.cm_manager = char.data.extensions.cm_manager;
+    char.extensions.cm_manager.tags = tagNames;
 }
 
 /**
@@ -399,26 +413,8 @@ async function applyTags(avatar, tagsToApply, skipSave = false, replace = false)
         log(`Applied ${addedCount} tags to "${charName}": [${addedTagNames.join(', ')}]`);
     }
     
-    // 同步更新内存中角色对象的所有 tags 相关字段（避免下次扫描重复触发）
-    // 注意：无论 addedCount 是否 > 0，都要更新内存中的字段（replace 模式下清空标签时 addedCount=0）
-    const char = state.characters.find(c => c.fileName === avatar || c.avatar === avatar);
-    if (char) {
-        // 更新根层级 tags
-        char.tags = addedTagNames;
-        // 更新 data.tags
-        if (char.data) {
-            char.data.tags = addedTagNames;
-        }
-        // 更新 data.extensions.cm_manager.tags
-        if (char.data?.extensions?.cm_manager) {
-            char.data.extensions.cm_manager.tags = addedTagNames;
-        } else {
-            if (!char.data) char.data = {};
-            if (!char.data.extensions) char.data.extensions = {};
-            if (!char.data.extensions.cm_manager) char.data.extensions.cm_manager = {};
-            char.data.extensions.cm_manager.tags = addedTagNames;
-        }
-    }
+    // 同步插件私有标签记忆，避免污染酒馆原生标签字段。
+    syncCmManagerTagsInMemory(avatar);
     
     return addedCount;
 }
@@ -1214,7 +1210,7 @@ async function showBatchTagStrategyPopup(count) {
                     <div class="cm-batch-strategy-content">
                         <div class="cm-batch-strategy-hint">
                             发现 <strong>${count}</strong> 张角色卡包含标签但未设置导入策略。<br>
-                            请选择如何处理这些标签：
+                            请选择如何处理这些标签。若每次刷新都重复弹窗，请到设置 → 标签管理，将“导入时角色卡内置标签处理策略”改为“自动导入所有”或“不导入任何标签”。
                         </div>
                         <div class="cm-batch-strategy-options">
                             <button class="cm-btn cm-btn-primary cm-batch-strategy-btn" data-strategy="${batch_tag_strategy.IMPORT_ALL}">
@@ -1280,7 +1276,7 @@ async function showTagImportPopup(character, existingTags, newTags, contextInfo 
             <div class="cm-tag-import-content">
                 <div class="cm-tag-import-hint">
                     点击标签上的 × 可以移除不想导入的标签。<br>
-                    选择下方的导入选项完成标签导入。
+                    选择下方的导入选项完成标签导入。若每次刷新都重复弹窗，请到设置 → 标签管理，将“导入时角色卡内置标签处理策略”改为“自动导入所有”或“不导入任何标签”。
                 </div>
         `;
         
@@ -1464,11 +1460,10 @@ export async function batchWriteTagsToCards(writes, onProgress) {
         }
         
         try {
-            // 构建一次性写入 cm_manager.tags 和 data.tags 的 payload
+            // 默认只写插件私有标签；只有显式同步时才触碰酒馆原生 tags/data.tags。
             const payload = {
                 avatar: fileName,
                 data: {
-                    tags: cmTags,
                     extensions: {
                         cm_manager: {
                             tags: cmTags
@@ -1476,10 +1471,15 @@ export async function batchWriteTagsToCards(writes, onProgress) {
                     }
                 }
             };
+
+            if (needsSync) {
+                payload.tags = cmTags;
+                payload.data.tags = cmTags;
+            }
             
             // 【新增】输出写入内容到 console
             console.log(`[ST-Tags] 批量写入角色卡: ${fileName}`, {
-                'data.tags': cmTags,
+                'data.tags': needsSync ? cmTags : '(未同步)',
                 'data.extensions.cm_manager.tags': cmTags
             });
             
