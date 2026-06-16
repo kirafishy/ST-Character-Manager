@@ -232,22 +232,36 @@ export async function removeTagFromChar(fileName, tagId, skipSync = false, markU
  * @returns {Promise<boolean>} 是否保存成功
  */
 async function saveCmManagerTagsToCard(fileName, tagNames) {
-    const result = await saveCharacterData(fileName, (data) => {
-        if (!data.extensions) data.extensions = {};
-        if (!data.extensions.cm_manager) {
-            data.extensions.cm_manager = {};
+    try {
+        const res = await authFetch('/api/characters/merge-attributes', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                avatar: fileName,
+                data: {
+                    extensions: {
+                        cm_manager: {
+                            tags: tagNames
+                        }
+                    }
+                }
+            })
+        });
+
+        if (!res.ok) {
+            console.warn(`[CharManager] saveCmManagerTagsToCard 失败: ${fileName}`, await res.text());
+            return false;
         }
-        data.extensions.cm_manager.tags = tagNames;
-    });
-    
-    if (result) {
+
         // 同步更新酒馆内存中的角色对象，防止快速刷新时被旧数据覆盖
         syncCmManagerTagsToSTMemory(fileName, tagNames);
-    } else {
-        console.warn(`[CharManager] saveCmManagerTagsToCard 失败: ${fileName}`);
+        return true;
+    } catch (e) {
+        console.warn(`[CharManager] saveCmManagerTagsToCard 失败: ${fileName}`, e);
+        return false;
     }
-    
-    return result;
 }
 
 /**
@@ -1117,6 +1131,9 @@ export async function deleteWorldInfo(wiName, skipRefresh = false) {
         return false;
     }
 
+    // 去除末尾的 .json，因为后端接口会自动追加
+    wiName = wiName.replace(/\.json$/i, '');
+
     try {
         let r = await authFetch('/api/worldinfo/delete', {
             method: 'POST',
@@ -1612,18 +1629,7 @@ export async function downloadChar(fn) {
                             return;
                         }
 
-                        // 原有导出逻辑：服务端处理
-                        if (charObj) {
-                            // 导出前先强制使用最新数据覆盖服务端，以补全潜在缺失的 create_date 等字段
-                            await updateCharacter(fn, charObj, null, {
-                                cleanOldWorldInfo: false,
-                                preserveSourceLink: true,
-                                refreshUI: false,
-                                notifySuccess: false
-                            });
-                        }
-
-                        // 发起原生导出请求
+                        // 标准导出逻辑：直接调用酒馆原生导出接口，避免导出前隐式改写角色卡
                         const response = await authFetch('/api/characters/export', {
                             method: 'POST',
                             headers: {
@@ -1861,20 +1867,8 @@ export async function deleteWiEntry(wiName, uid) {
     }
 }
 
-export async function deleteChar(char, { deleteChats = false, deleteWi = false } = {}) {
+export async function deleteChar(char, { deleteChats = false, deleteWi = false, skipNativeUi = false } = {}) {
     const fileName = char.fileName || char.avatar;
-
-    // 清理角色卡文件中的 cm_manager 扩展数据（防止同名新卡继承旧标签）
-    try {
-        await saveCharacterData(fileName, (data) => {
-            if (data.extensions && data.extensions.cm_manager) {
-                delete data.extensions.cm_manager;
-                console.log('[CharManager] 已清理 cm_manager 扩展数据:', fileName);
-            }
-        });
-    } catch (e) {
-        console.warn('[CharManager] 清理 cm_manager 数据失败:', e);
-    }
 
     if (deleteWi && char.character_book) {
         try {
@@ -1887,8 +1881,8 @@ export async function deleteChar(char, { deleteChats = false, deleteWi = false }
         }
     }
 
-    // 优先尝试调用酒馆原生的删除逻辑
-    if (typeof window.deleteCharacter === 'function') {
+    // 优先尝试调用酒馆原生的删除逻辑，除非明确要求跳过（例如批量删除时为了避免 UI 频繁全量刷新而卡死）
+    if (!skipNativeUi && typeof window.deleteCharacter === 'function') {
         if (deleteChats) {
             try {
                 // 确保传入正确的 fileName
@@ -1910,7 +1904,7 @@ export async function deleteChar(char, { deleteChats = false, deleteWi = false }
 
         await window.deleteCharacter(fileName);
     } else {
-        // Fallback: 使用 API 删除
+        // Fallback or Bulk Delete: 使用 API 删除
         const r = await authFetch('/api/characters/delete', {
             method: 'POST',
             body: JSON.stringify({
@@ -1919,27 +1913,12 @@ export async function deleteChar(char, { deleteChats = false, deleteWi = false }
             })
         });
         
-        if (!r.ok) throw new Error('删除失败');
+        if (!r.ok && r.status !== 400) throw new Error('删除失败');
 
         // 同步移除酒馆内存中的角色，防止快速刷新时误判为新角色
         if (parentWin.characters && Array.isArray(parentWin.characters)) {
             const idx = parentWin.characters.findIndex(c => c.avatar === fileName);
             if (idx !== -1) parentWin.characters.splice(idx, 1);
-        }
-
-        // 刷新酒馆原生的角色列表
-        try {
-            if (parentWin.SillyTavern && parentWin.SillyTavern.getContext) {
-                const context = parentWin.SillyTavern.getContext();
-                if (typeof context.getCharacters === 'function') {
-                    await context.getCharacters();
-                }
-            } else if (typeof parentWin.getCharacters === 'function') {
-                // Fallback for older versions
-                await parentWin.getCharacters();
-            }
-        } catch (e) {
-            console.warn('[CharManager] Failed to refresh character list:', e);
         }
     }
 
