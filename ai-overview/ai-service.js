@@ -3,7 +3,7 @@
  * 复用翻译模块的 OpenAI 配置，为角色卡生成概览和标签
  */
 import { state } from '../state.js';
-import { authFetch } from '../api.js';
+import { parentWin } from '../context.js';
 import { buildOverviewPrompt, buildBatchOverviewPrompt } from './prompt-builder.js';
 import { parseOverviewResult, parseBatchOverviewResult, processOverviewResult } from './result-parser.js';
 import { parseSSELines, parseSSELine, extractSSEContent, StreamingParserState, parseStreamingOverviewChunk } from '../utils/streaming-parser.js';
@@ -414,7 +414,8 @@ async function callOpenAI(config, prompt, maxTokens = 2048) {
         console.log('[CharManager] [AI Overview] Request:', JSON.stringify(body, null, 2));
     }
     
-    const res = await authFetch(url, {
+    const fetchApi = parentWin?.fetch || window.fetch || fetch;
+    const res = await fetchApi(url, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${config.apiKey}`,
@@ -479,7 +480,8 @@ async function callOpenAIStreaming(config, prompt, onChunk, maxTokens = 4096, si
     }
     
     try {
-        const res = await authFetch(url, {
+        const fetchApi = parentWin?.fetch || window.fetch || fetch;
+        const res = await fetchApi(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${config.apiKey}`,

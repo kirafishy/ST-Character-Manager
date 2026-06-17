@@ -144,7 +144,8 @@ async function doActualImport(files, remainingInQueue) {
         return;
     }
 
-    updateProgressBar(60, '正在刷新列表...');
+    const totalImported = importedChars.length;
+    updateProgressBar(60, `正在刷新列表...（${totalImported} 张角色卡，如果数量较多请耐心等待）`);
 
     // 2. 刷新原生列表 (确保 ctx.characters 更新)
     if (ctx && ctx.getCharacters) {
@@ -4208,7 +4209,8 @@ async function openModal() {
 
     // 检查是否有未同步的标签
     if (state.settings.autoSyncTags && state.hasUnsyncedTags) {
-        if (await showConfirm('检测到有未同步的标签，是否立即执行全量同步？\n\n这可能需要一些时间，期间请勿关闭页面。')) {
+        const unsyncedCount = state.unsyncedCards?.size || state.characters.length;
+        if (await showConfirm(`检测到有未同步的标签，是否立即执行全量同步？\n\n当前情况：你之前在"不同步"模式下修改过标签，现在开启了"同步插件标签到原生标签"。\n共有 ${unsyncedCount} 张角色卡需要同步。\n\n这可能需要一些时间，期间请勿关闭页面。`)) {
             const syncBtn = doc.getElementById('cmSyncBtn');
             if (syncBtn) syncBtn.disabled = true;
             showProgressBar('准备同步标签...');
