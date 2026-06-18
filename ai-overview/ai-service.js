@@ -400,15 +400,18 @@ async function callOpenAI(config, prompt, maxTokens = 2048) {
             { role: 'user', content: prompt }
         ],
         temperature: 1.0,
-        max_tokens: maxTokens,
-        // Gemini 安全设置：禁用所有内容过滤，避免角色卡内容被拦截
-        safety_settings: [
+        max_tokens: maxTokens
+    };
+
+    // 仅在 Gemini 模型上附加 safety_settings，避免其它服务网关在 unmarshal 阶段报错
+    if (/gemini/i.test(config.model || '')) {
+        body.safety_settings = [
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
-        ]
-    };
+        ];
+    }
     
     if (state.settings.debugMode) {
         console.log('[CharManager] [AI Overview] Request:', JSON.stringify(body, null, 2));
@@ -464,15 +467,18 @@ async function callOpenAIStreaming(config, prompt, onChunk, maxTokens = 4096, si
         ],
         temperature: 1.0,
         max_tokens: maxTokens,
-        stream: true,
-        // Gemini 安全设置
-        safety_settings: [
+        stream: true
+    };
+
+    // 仅在 Gemini 模型上附加 safety_settings，避免其它服务网关在 unmarshal 阶段报错
+    if (/gemini/i.test(config.model || '')) {
+        body.safety_settings = [
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
-        ]
-    };
+        ];
+    }
     
     // 输出请求日志（仅在 debugMode 下）
     if (state.settings.debugMode) {
