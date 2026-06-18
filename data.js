@@ -462,10 +462,6 @@ function syncCharDataToMemory(fileName, newCharData) {
 }
 
 /**
- * 将当前插件中的 Tag 同步写入到角色卡文件的 data.tags 字段
- * @param {string} fileName - 角色卡文件名
- */
-/**
  * 更换角色图片
  * 使用 /api/characters/edit-avatar API，只上传图片，不修改元数据
  *
@@ -514,6 +510,14 @@ export async function replaceCharacterImage(char, file) {
     }
 }
 
+/**
+ * 将当前插件中的 Tag 同步写入到角色卡文件的原生标签字段。
+ * 注意：SillyTavern 后端遇到 v1/v2 tags 不一致时会自动把 tags 复制到缺失字段，
+ * 并不会拒绝保存；本插件因此只按卡片分区写入，不主动双写根层 tags。
+ * 改版酒馆 Luker 会对根分区 tags 写入触发启用字段警告，后续不要为“修复 mismatch”
+ * 强行操作根分区 tags，除非确认目标酒馆版本需要这种行为。
+ * @param {string} fileName - 角色卡文件名
+ */
 export async function syncTagsToCard(fileName) {
     try {
         // 1. 获取当前插件为该角色设置的 Tag 名称列表
