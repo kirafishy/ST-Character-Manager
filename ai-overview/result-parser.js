@@ -2,7 +2,7 @@
  * AI 响应解析器
  * 解析 AI 返回的 JSON 结果并保存到角色卡
  */
-import { saveCharacterData, applyTagsByNames } from '../data.js';
+import { saveCharacterData, applyAIOverviewToCard, addTagToChar, removeTagFromChar, getCharTags, createTag, saveTags } from '../data.js';
 import { sanitizeTags, checkCharHasTags, getCharacterFileName } from '../utils.js';
 import { state } from '../state.js';
 import { getCmManager } from '../st-tags.js';
@@ -52,6 +52,48 @@ function safeParseJson(text) {
 }
 
 /**
+ * 仅在内存中应用标签到角色，不触发任何文件写入。
+ * 持久化由调用方通过 applyAIOverviewToCard 单次合并写入。
+ *
+ * @param {string} fileName 角色文件名
+ * @param {string[]} tagNames AI 生成的标签名称数组（已清洗）
+ * @param {boolean} replace 是否替换现有标签
+ * @returns {string[]} 最终生效的标签名称数组（用于持久化时写入 cm_manager.tags）
+ */
+function applyTagsInMemory(fileName, tagNames, replace = true) {
+    const normalized = [...new Set(tagNames.map(t => String(t).trim()).filter(Boolean))];
+
+    // 名称 -> ID（不存在则创建）
+    const targetTagIds = [];
+    for (const name of normalized) {
+        let tag = state.tags.find(t => t.name.toLowerCase() === name.toLowerCase());
+        if (!tag) {
+            tag = createTag(name);
+            if (!tag) tag = state.tags.find(t => t.name.toLowerCase() === name.toLowerCase());
+        }
+        if (tag) targetTagIds.push(tag.id);
+    }
+
+    const currentIds = state.tagMap[fileName] || [];
+
+    if (replace) {
+        state.tagMap[fileName] = [...targetTagIds];
+    } else {
+        const merged = [...currentIds];
+        for (const id of targetTagIds) {
+            if (!merged.includes(id)) merged.push(id);
+        }
+        state.tagMap[fileName] = merged;
+    }
+
+    saveTags();
+
+    return state.tagMap[fileName]
+        .map(id => state.tags.find(t => t.id === id)?.name)
+        .filter(Boolean);
+}
+
+/**
  * 解析单个角色的 AI 响应并保存
  * @param {string} aiResponse - AI 返回的原始文本
  * @param {object} character - 角色对象
@@ -73,36 +115,45 @@ export async function parseOverviewResult(aiResponse, character, hasTags, genera
         throw new Error('AI 未返回概览内容');
     }
     
-    const tagNamesGenerated = [];
     const fileName = character.fileName || character.avatar;
-    
-    // 1. 保存 summary（tags 模式跳过）
+
+    // 计算待持久化的载荷
+    const persistPayload = {};
+
+    // 1. summary
+    let finalSummary;
     if (generateMode !== 'tags' && result.summary) {
-        await saveCharacterData(fileName, (data) => {
-            const cm = getCmManager({ data });
-            // 如果强制生成概览，或者角色没有概览，则保存
-            if (forceGenerateSummary || !cm.summary) {
-                cm.summary = result.summary;
-            }
-        });
+        const cm = getCmManager(character);
+        if (forceGenerateSummary || !cm.summary) {
+            finalSummary = result.summary;
+            persistPayload.summary = finalSummary;
+            // 同步内存缓存
+            cm.summary = finalSummary;
+        }
     }
-    
-    // 2. 应用标签（summary 模式跳过）
-    const shouldApplyTags = generateMode !== 'summary' && (forceGenerateTags || !hasTags) && result.tags && Array.isArray(result.tags);
+
+    // 2. tags
+    const shouldApplyTags = generateMode !== 'summary' && (forceGenerateTags || !hasTags) && Array.isArray(result.tags);
+    let appliedTagNames = [];
     if (shouldApplyTags) {
         const sanitizedTags = sanitizeTags(result.tags);
-        
-        // 使用统一入口应用标签，确保 state.tags/state.tagMap 同步更新
-        const applyResult = await applyTagsByNames(fileName, sanitizedTags, { replace: forceGenerateTags });
-        tagNamesGenerated.push(...sanitizedTags);
-        
-        console.log(`[CharManager] [AI Overview] Tags applied to ${fileName}: +${applyResult.added} -${applyResult.removed} created:${applyResult.created}`);
+        appliedTagNames = applyTagsInMemory(fileName, sanitizedTags, forceGenerateTags);
+        persistPayload.tagNames = appliedTagNames;
+    }
+
+    // 3. 单次 merge-attributes 持久化（仅在确实有写入需要时调用）
+    if (Object.keys(persistPayload).length > 0) {
+        await applyAIOverviewToCard(fileName, persistPayload);
+    }
+
+    if (shouldApplyTags) {
+        console.log(`[CharManager] [AI Overview] Tags applied to ${fileName}: ${appliedTagNames.join(', ')}`);
     }
     
     return {
         summary: result.summary || '',
         tags: result.tags || [],
-        tagNamesGenerated
+        tagNamesGenerated: appliedTagNames
     };
 }
 
@@ -165,31 +216,31 @@ export async function parseBatchOverviewResult(aiResponse, characters, forceGene
         
         // 角色级错误隔离：每个角色的保存操作独立 try-catch
         try {
-            // 1. 先保存 summary
+            const persistPayload = {};
+
+            // 1. 计算 summary（仅在覆盖或原本无概览时写入）
             if (generateMode !== 'tags' && item.summary !== undefined) {
-                await saveCharacterData(fileName, (data) => {
-                    const cm = getCmManager({ data });
-                    // 如果强制生成概览，或者角色没有概览，则保存
-                    if (forceGenerateSummary || !cm.summary) {
-                        cm.summary = item.summary;
-                    }
-                });
+                const cm = getCmManager(char);
+                if (forceGenerateSummary || !cm.summary) {
+                    persistPayload.summary = item.summary;
+                    cm.summary = item.summary;
+                }
             }
             
-            // 2. 使用统一入口应用标签，确保 state.tags/state.tagMap 同步更新
-            // forceGenerateTags=true 时总是应用标签（replace=true），否则检查是否已有标签
+            // 2. 应用标签（仅当 forceGenerateTags=true 或角色原本没有标签时）
             const shouldApplyTags = forceGenerateTags || !checkCharHasTags(char);
-            
-            // tags 字段标准化：非数组时置为空数组
             const normalizedTags = (item.tags && Array.isArray(item.tags)) ? item.tags : [];
-            
+            let appliedTagNames = [];
             if (normalizedTags.length > 0 && shouldApplyTags) {
                 const sanitizedTags = sanitizeTags(normalizedTags);
-                // forceGenerateTags=true 时使用 replace:true 覆盖现有标签，否则使用 replace:false 合并
-                const applyResult = await applyTagsByNames(fileName, sanitizedTags, { replace: forceGenerateTags });
-                
-                console.log(`[CharManager] [AI Batch] ${char.name}: +${applyResult.added} -${applyResult.removed} created:${applyResult.created}`);
-                console.log(`[CharManager] [AI Batch] ${char.name} tagMap:`, state.tagMap[fileName]);
+                appliedTagNames = applyTagsInMemory(fileName, sanitizedTags, forceGenerateTags);
+                persistPayload.tagNames = appliedTagNames;
+                console.log(`[CharManager] [AI Batch] ${char.name}: ${appliedTagNames.join(', ')}`);
+            }
+
+            // 3. 单次 merge-attributes 持久化
+            if (Object.keys(persistPayload).length > 0) {
+                await applyAIOverviewToCard(fileName, persistPayload);
             }
             
             outputResults.push({
@@ -268,22 +319,28 @@ export async function processOverviewResult(overview, char, forceGenerateTags = 
     try {
         const fileName = getCharacterFileName(char);
         const hasExistingTags = checkCharHasTags(char);
-        
-        // 1. 更新并保存概览
+        const persistPayload = {};
+
+        // 1. 计算 summary
         if (generateMode !== 'tags' && overview.summary !== undefined) {
-            await saveCharacterData(fileName, (data) => {
-                const cm = getCmManager({ data });
-                cm.summary = overview.summary;
-            });
+            persistPayload.summary = overview.summary;
+            const cm = getCmManager(char);
+            cm.summary = overview.summary;
         }
         
-        // 2. 更新并保存标签
+        // 2. 计算 tags
         if (generateMode !== 'summary' && overview.tags && Array.isArray(overview.tags)) {
             if (forceGenerateTags || !hasExistingTags) {
                 const sanitizedTags = sanitizeTags(overview.tags);
-                await applyTagsByNames(fileName, sanitizedTags, { replace: forceGenerateTags });
-                console.log(`[CharManager] [AI Stream] ${char.name} tags applied.`);
+                const appliedTagNames = applyTagsInMemory(fileName, sanitizedTags, forceGenerateTags);
+                persistPayload.tagNames = appliedTagNames;
+                console.log(`[CharManager] [AI Stream] ${char.name} tags: ${appliedTagNames.join(', ')}`);
             }
+        }
+
+        // 3. 单次 merge-attributes 持久化
+        if (Object.keys(persistPayload).length > 0) {
+            await applyAIOverviewToCard(fileName, persistPayload);
         }
         
         return {

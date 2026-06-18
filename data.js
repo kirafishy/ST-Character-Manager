@@ -2028,3 +2028,61 @@ export async function applyTagsByNames(fileName, tagNames, options = {}) {
     
     return result;
 }
+
+/**
+ * AI 概览专用的轻量持久化入口
+ * 单次 merge-attributes 同时写入 summary 和 cm_manager.tags，避免：
+ *   - saveCharacterData 内的 GET 完整角色卡 + ctx.getCharacters 全量列表刷新（极慢）
+ *   - applyTagsByNames -> saveCmManagerTagsToCard 的二次 merge-attributes（再多一次 PNG 重写）
+ *
+ * @param {string} fileName 角色文件名
+ * @param {object} payload
+ * @param {string} [payload.summary] 待写入的 AI 概览（undefined 则不写）
+ * @param {string[]} [payload.tagNames] 最终应当生效的 cm_manager.tags 名称列表（undefined 则不写）
+ * @returns {Promise<boolean>}
+ */
+export async function applyAIOverviewToCard(fileName, { summary, tagNames } = {}) {
+    if (summary === undefined && tagNames === undefined) return true;
+
+    const cmObj = {};
+    if (summary !== undefined) cmObj.summary = summary;
+    if (tagNames !== undefined) cmObj.tags = tagNames;
+
+    try {
+        const res = await authFetch('/api/characters/merge-attributes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                avatar: fileName,
+                data: {
+                    extensions: {
+                        cm_manager: cmObj
+                    }
+                }
+            })
+        });
+
+        if (!res.ok) {
+            console.warn(`[CharManager] applyAIOverviewToCard 失败: ${fileName}`, await res.text());
+            return false;
+        }
+
+        // 同步内存中的角色对象，避免下次扫描误判
+        const stateChar = state.characters.find(c => c.fileName === fileName || c.avatar === fileName);
+        if (stateChar) {
+            if (!stateChar.data) stateChar.data = {};
+            if (!stateChar.data.extensions) stateChar.data.extensions = {};
+            if (!stateChar.data.extensions.cm_manager) stateChar.data.extensions.cm_manager = {};
+            Object.assign(stateChar.data.extensions.cm_manager, cmObj);
+        }
+
+        if (tagNames !== undefined) {
+            syncCmManagerTagsToSTMemory(fileName, tagNames);
+        }
+
+        return true;
+    } catch (e) {
+        console.warn(`[CharManager] applyAIOverviewToCard 异常: ${fileName}`, e);
+        return false;
+    }
+}
