@@ -3492,7 +3492,7 @@ function createModal() {
         '<div class="cm-mobile-menu" id="cmMobileMenu" style="display:none">' +
         '<div class="cm-menu-item" id="cmMenuImport">' + ICONS.upload + ' 导入文件</div>' +
         '<div class="cm-menu-item" id="cmMenuUrlImport">' + ICONS.link + ' URL 导入</div>' +
-        '<div class="cm-menu-item" id="cmMenuAIGenerate">🪄 AI 概览</div>' +
+        '<div class="cm-menu-item" id="cmMenuAIGenerate">' + ICONS.ai + ' AI 概览</div>' +
         '<div class="cm-menu-item" id="cmMenuSettings">' + ICONS.settings + ' 设置</div>' +
         '<div class="cm-menu-item" id="cmMenuTheme">' + (state.isDarkMode ? ICONS.moon : ICONS.sun) + ' 切换主题</div>' +
         '<div class="cm-menu-item" id="cmMenuMigrate" style="display:none">📥 迁移数据</div>' +

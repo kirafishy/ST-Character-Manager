@@ -2,7 +2,7 @@
  * AI 响应解析器
  * 解析 AI 返回的 JSON 结果并保存到角色卡
  */
-import { saveCharacterData, applyAIOverviewToCard, addTagToChar, removeTagFromChar, getCharTags, createTag, saveTags } from '../data.js';
+import { saveCharacterData, applyAIOverviewToCard, applyTagsByNames, getCharTags, createTag, saveTags } from '../data.js';
 import { sanitizeTags, checkCharHasTags, getCharacterFileName } from '../utils.js';
 import { state } from '../state.js';
 import { getCmManager } from '../st-tags.js';
@@ -52,48 +52,6 @@ function safeParseJson(text) {
 }
 
 /**
- * 仅在内存中应用标签到角色，不触发任何文件写入。
- * 持久化由调用方通过 applyAIOverviewToCard 单次合并写入。
- *
- * @param {string} fileName 角色文件名
- * @param {string[]} tagNames AI 生成的标签名称数组（已清洗）
- * @param {boolean} replace 是否替换现有标签
- * @returns {string[]} 最终生效的标签名称数组（用于持久化时写入 cm_manager.tags）
- */
-function applyTagsInMemory(fileName, tagNames, replace = true) {
-    const normalized = [...new Set(tagNames.map(t => String(t).trim()).filter(Boolean))];
-
-    // 名称 -> ID（不存在则创建）
-    const targetTagIds = [];
-    for (const name of normalized) {
-        let tag = state.tags.find(t => t.name.toLowerCase() === name.toLowerCase());
-        if (!tag) {
-            tag = createTag(name);
-            if (!tag) tag = state.tags.find(t => t.name.toLowerCase() === name.toLowerCase());
-        }
-        if (tag) targetTagIds.push(tag.id);
-    }
-
-    const currentIds = state.tagMap[fileName] || [];
-
-    if (replace) {
-        state.tagMap[fileName] = [...targetTagIds];
-    } else {
-        const merged = [...currentIds];
-        for (const id of targetTagIds) {
-            if (!merged.includes(id)) merged.push(id);
-        }
-        state.tagMap[fileName] = merged;
-    }
-
-    saveTags();
-
-    return state.tagMap[fileName]
-        .map(id => state.tags.find(t => t.id === id)?.name)
-        .filter(Boolean);
-}
-
-/**
  * 解析单个角色的 AI 响应并保存
  * @param {string} aiResponse - AI 返回的原始文本
  * @param {object} character - 角色对象
@@ -137,7 +95,11 @@ export async function parseOverviewResult(aiResponse, character, hasTags, genera
     let appliedTagNames = [];
     if (shouldApplyTags) {
         const sanitizedTags = sanitizeTags(result.tags);
-        appliedTagNames = applyTagsInMemory(fileName, sanitizedTags, forceGenerateTags);
+        const applyResult = await applyTagsByNames(fileName, sanitizedTags, { 
+            replace: forceGenerateTags,
+            skipSaveToFile: true
+        });
+        appliedTagNames = applyResult.finalTagNames;
         persistPayload.tagNames = appliedTagNames;
     }
 
@@ -233,7 +195,11 @@ export async function parseBatchOverviewResult(aiResponse, characters, forceGene
             let appliedTagNames = [];
             if (normalizedTags.length > 0 && shouldApplyTags) {
                 const sanitizedTags = sanitizeTags(normalizedTags);
-                appliedTagNames = applyTagsInMemory(fileName, sanitizedTags, forceGenerateTags);
+                const applyResult = await applyTagsByNames(fileName, sanitizedTags, { 
+                    replace: forceGenerateTags,
+                    skipSaveToFile: true
+                });
+                appliedTagNames = applyResult.finalTagNames;
                 persistPayload.tagNames = appliedTagNames;
                 console.log(`[CharManager] [AI Batch] ${char.name}: ${appliedTagNames.join(', ')}`);
             }
@@ -332,7 +298,11 @@ export async function processOverviewResult(overview, char, forceGenerateTags = 
         if (generateMode !== 'summary' && overview.tags && Array.isArray(overview.tags)) {
             if (forceGenerateTags || !hasExistingTags) {
                 const sanitizedTags = sanitizeTags(overview.tags);
-                const appliedTagNames = applyTagsInMemory(fileName, sanitizedTags, forceGenerateTags);
+                const applyResult = await applyTagsByNames(fileName, sanitizedTags, { 
+                    replace: forceGenerateTags,
+                    skipSaveToFile: true
+                });
+                const appliedTagNames = applyResult.finalTagNames;
                 persistPayload.tagNames = appliedTagNames;
                 console.log(`[CharManager] [AI Stream] ${char.name} tags: ${appliedTagNames.join(', ')}`);
             }

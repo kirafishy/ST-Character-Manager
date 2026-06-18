@@ -335,27 +335,6 @@ function clearCharTags(avatar) {
 }
 
 /**
- * 同步插件私有标签到内存，不触碰酒馆原生 tags/data.tags。
- * @param {string} avatar - 角色头像文件名
- */
-function syncCmManagerTagsInMemory(avatar) {
-    const tagNames = (state.tagMap[avatar] || [])
-        .map(id => state.tags.find(t => t.id === id)?.name)
-        .filter(Boolean);
-    const char = state.characters.find(c => c.fileName === avatar || c.avatar === avatar);
-    if (!char) return;
-
-    if (!char.data) char.data = {};
-    if (!char.data.extensions) char.data.extensions = {};
-    if (!char.data.extensions.cm_manager) char.data.extensions.cm_manager = {};
-    char.data.extensions.cm_manager.tags = tagNames;
-
-    if (!char.extensions) char.extensions = char.data.extensions;
-    if (!char.extensions.cm_manager) char.extensions.cm_manager = char.data.extensions.cm_manager;
-    char.extensions.cm_manager.tags = tagNames;
-}
-
-/**
  * 根据 avatar 文件名获取角色名称
  * @param {string} avatar - 角色头像文件名
  * @returns {string} 角色名称
@@ -414,7 +393,10 @@ async function applyTags(avatar, tagsToApply, skipSave = false, replace = false)
     }
     
     // 同步插件私有标签记忆，避免污染酒馆原生标签字段。
-    syncCmManagerTagsInMemory(avatar);
+    const finalTagNames = (state.tagMap[avatar] || [])
+        .map(id => state.tags.find(t => t.id === id)?.name)
+        .filter(Boolean);
+    syncCmManagerTagsToSTMemory(avatar, finalTagNames);
     
     return addedCount;
 }

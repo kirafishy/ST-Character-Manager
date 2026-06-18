@@ -417,7 +417,7 @@ async function callOpenAI(config, prompt, maxTokens = 2048) {
         console.log('[CharManager] [AI Overview] Request:', JSON.stringify(body, null, 2));
     }
     
-    const fetchApi = parentWin?.fetch || window.fetch || fetch;
+    const fetchApi = parentWin?.fetch || window.fetch;
     const res = await fetchApi(url, {
         method: 'POST',
         headers: {
@@ -486,7 +486,7 @@ async function callOpenAIStreaming(config, prompt, onChunk, maxTokens = 4096, si
     }
     
     try {
-        const fetchApi = parentWin?.fetch || window.fetch || fetch;
+        const fetchApi = parentWin?.fetch || window.fetch;
         const res = await fetchApi(url, {
             method: 'POST',
             headers: {

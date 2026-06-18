@@ -265,42 +265,49 @@ async function saveCmManagerTagsToCard(fileName, tagNames) {
 }
 
 /**
- * 同步更新酒馆内存中角色对象的 cm_manager.tags
+ * 同步更新酒馆内存中角色对象的 cm_manager.tags 和 summary
  * @param {string} fileName - 角色文件名
- * @param {string[]} tagNames - 标签名称数组
+ * @param {string[]} [tagNames] - 标签名称数组 (可选)
+ * @param {string} [summary] - AI生成概览 (可选)
  */
-export function syncCmManagerTagsToSTMemory(fileName, tagNames) {
+export function syncCmManagerToSTMemory(fileName, { tags, summary } = {}) {
+    if (tags === undefined && summary === undefined) return;
+
+    const applyToChar = (char) => {
+        if (!char) return;
+        if (!char.data) char.data = {};
+        if (!char.data.extensions) char.data.extensions = {};
+        if (!char.data.extensions.cm_manager) char.data.extensions.cm_manager = {};
+        
+        if (tags !== undefined) char.data.extensions.cm_manager.tags = tags;
+        if (summary !== undefined) char.data.extensions.cm_manager.summary = summary;
+    };
+
     // 更新 state.characters 中的角色对象（最重要，因为插件主要使用这个）
-    const stateChar = state.characters.find(c => c.fileName === fileName);
-    if (stateChar) {
-        if (!stateChar.data) stateChar.data = {};
-        if (!stateChar.data.extensions) stateChar.data.extensions = {};
-        if (!stateChar.data.extensions.cm_manager) stateChar.data.extensions.cm_manager = {};
-        stateChar.data.extensions.cm_manager.tags = tagNames;
-    }
+    const stateChar = state.characters.find(c => c.fileName === fileName || c.avatar === fileName);
+    applyToChar(stateChar);
     
     // 更新 parentWin.characters 中的角色对象
     if (parentWin.characters && Array.isArray(parentWin.characters)) {
         const stChar = parentWin.characters.find(c => c.avatar === fileName);
-        if (stChar) {
-            if (!stChar.data) stChar.data = {};
-            if (!stChar.data.extensions) stChar.data.extensions = {};
-            if (!stChar.data.extensions.cm_manager) stChar.data.extensions.cm_manager = {};
-            stChar.data.extensions.cm_manager.tags = tagNames;
-        }
+        applyToChar(stChar);
     }
     
     // 更新 ctx.characters 中的角色对象
     const ctx = getSTContext();
     if (ctx && ctx.characters) {
         const ctxChar = ctx.characters.find(c => c.avatar === fileName);
-        if (ctxChar) {
-            if (!ctxChar.data) ctxChar.data = {};
-            if (!ctxChar.data.extensions) ctxChar.data.extensions = {};
-            if (!ctxChar.data.extensions.cm_manager) ctxChar.data.extensions.cm_manager = {};
-            ctxChar.data.extensions.cm_manager.tags = tagNames;
-        }
+        applyToChar(ctxChar);
     }
+}
+
+/**
+ * 同步更新酒馆内存中角色对象的 cm_manager.tags
+ * @param {string} fileName - 角色文件名
+ * @param {string[]} tagNames - 标签名称数组
+ */
+export function syncCmManagerTagsToSTMemory(fileName, tagNames) {
+    syncCmManagerToSTMemory(fileName, { tags: tagNames });
 }
 
 /**
@@ -1454,7 +1461,8 @@ export async function toggleFavorite(fileName, currentFavState) {
             stateChar.data.extensions.fav = newState;
         }
 
-        const stChar = getSTCharacters().find(c => c.avatar === fileName);
+        const stChars = getSTCharacters();
+        const stChar = Array.isArray(stChars) ? stChars.find(c => c.avatar === fileName) : null;
         if (stChar) {
             stChar.fav = newState;
             if (!stChar.data) stChar.data = {};
@@ -1956,13 +1964,14 @@ export async function deleteChar(char, { deleteChats = false, deleteWi = false, 
  * @param {object} [options] - 选项
  * @param {boolean} [options.replace=true] - 是否替换现有标签（true: 替换; false: 合并）
  * @param {boolean} [options.skipSync=true] - 是否跳过自动同步到 data.tags
- * @returns {Promise<{ added: number, removed: number, created: number }>}
+ * @param {boolean} [options.skipSaveToFile=false] - 是否跳过保存到文件 (用于AI批量生成时单次合并)
+ * @returns {Promise<{ added: number, removed: number, created: number, finalTagNames: string[] }>}
  */
 export async function applyTagsByNames(fileName, tagNames, options = {}) {
-    const { replace = true, skipSync = true } = options;
+    const { replace = true, skipSync = true, skipSaveToFile = false } = options;
     
     // 结果统计
-    const result = { added: 0, removed: 0, created: 0 };
+    const result = { added: 0, removed: 0, created: 0, finalTagNames: [] };
     
     // 1. 规范化标签名（去重、去空、trim）
     const normalizedNames = [...new Set(
@@ -2020,13 +2029,16 @@ export async function applyTagsByNames(fileName, tagNames, options = {}) {
         }
     }
     
+    // 获取最终的标签名称列表
+    const finalIds = state.tagMap[fileName] || [];
+    const finalTagNames = finalIds.map(id => {
+        const tag = state.tags.find(t => t.id === id);
+        return tag ? tag.name : null;
+    }).filter(Boolean);
+    result.finalTagNames = finalTagNames;
+    
     // 6. 统一保存 cm_manager.tags 到文件（仅一次）
-    if (result.added > 0 || result.removed > 0) {
-        const finalTagNames = targetTagIds.map(id => {
-            const tag = state.tags.find(t => t.id === id);
-            return tag ? tag.name : null;
-        }).filter(Boolean);
-        
+    if (!skipSaveToFile && (result.added > 0 || result.removed > 0)) {
         await saveCmManagerTagsToCard(fileName, finalTagNames);
     }
     
@@ -2072,17 +2084,7 @@ export async function applyAIOverviewToCard(fileName, { summary, tagNames } = {}
         }
 
         // 同步内存中的角色对象，避免下次扫描误判
-        const stateChar = state.characters.find(c => c.fileName === fileName || c.avatar === fileName);
-        if (stateChar) {
-            if (!stateChar.data) stateChar.data = {};
-            if (!stateChar.data.extensions) stateChar.data.extensions = {};
-            if (!stateChar.data.extensions.cm_manager) stateChar.data.extensions.cm_manager = {};
-            Object.assign(stateChar.data.extensions.cm_manager, cmObj);
-        }
-
-        if (tagNames !== undefined) {
-            syncCmManagerTagsToSTMemory(fileName, tagNames);
-        }
+        syncCmManagerToSTMemory(fileName, { tags: tagNames, summary });
 
         return true;
     } catch (e) {

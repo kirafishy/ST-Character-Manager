@@ -162,6 +162,10 @@ export class CharacterDetails {
         this.currentTab = 'details';
         this.tabContents = {};
         this.viewMode = localStorage.getItem('cm_detail_view_mode') || 'tabs'; // 'tabs' | 'legacy'
+        
+        // AI overview tracking
+        this.aiGenerating = false;
+        this.aiGenerateOriginalText = '🪄 生成';
     }
 
     show() {
