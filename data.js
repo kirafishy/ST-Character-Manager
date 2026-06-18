@@ -2086,6 +2086,11 @@ export async function applyAIOverviewToCard(fileName, { summary, tagNames } = {}
         // 同步内存中的角色对象，避免下次扫描误判
         syncCmManagerToSTMemory(fileName, { tags: tagNames, summary });
 
+        // 如果更新了标签且开启了原生标签同步，则执行同步
+        if (tagNames !== undefined && state.settings.autoSyncTags) {
+            await syncTagsToCard(fileName);
+        }
+
         return true;
     } catch (e) {
         console.warn(`[CharManager] applyAIOverviewToCard 异常: ${fileName}`, e);
