@@ -1706,8 +1706,8 @@ export class CharacterDetails {
                         <button class="cm-mode-toggle-btn ${this.aiGenerateMode === 'tags' ? 'active' : ''}" data-val="tags">仅标签</button>
                     </div>
                     <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;">
-                        <button class="cm-btn cm-btn-primary" id="cmAIGenerateBtn" style="white-space:nowrap;">
-                            🪄 生成
+                        <button class="cm-btn cm-btn-primary" id="cmAIGenerateBtn"${this.aiGenerating ? ' disabled' : ''} style="white-space:nowrap;">
+                            ${this.aiGenerating ? '生成中...' : '🪄 生成'}
                         </button>
                         <button class="cm-btn cm-btn-secondary" id="cmAIEditBtn" style="display:${summary ? 'inline-block' : 'none'};white-space:nowrap;">
                             📝 编辑
@@ -1754,10 +1754,12 @@ export class CharacterDetails {
     async generateAIOverview() {
         const btn = this.container.querySelector('#cmAIGenerateBtn');
         if (!btn || btn.disabled) return;
+        if (this.aiGenerating) return;
 
         const originalText = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = '生成中...';
+        this.aiGenerating = true;
+        this.aiGenerateOriginalText = originalText;
+        this._lockAIGenerateBtn(true);
 
         // 获取当前选择的生成模式
         const generateMode = this.aiGenerateMode || 'both';
@@ -1766,6 +1768,8 @@ export class CharacterDetails {
             // 确保有完整数据
             if (!this.char.data || this.char.data.description === undefined) {
                 await this.loadFullData();
+                // loadFullData 可能重渲染 AI 区块，需要重新锁住新按钮
+                this._lockAIGenerateBtn(true);
             }
 
             const { generateAIOverview } = await import('./ai-overview/ai-service.js');
@@ -1807,8 +1811,25 @@ export class CharacterDetails {
             console.error('[CharManager] [AI Overview] Generation failed:', e);
             notify(`生成失败：${e.message}`, 'error');
         } finally {
+            this.aiGenerating = false;
+            this._lockAIGenerateBtn(false);
+        }
+    }
+
+    /**
+     * 切换 AI 生成按钮的锁定状态。
+     * 由于 renderDetailsTab/loadFullData 会重建按钮 DOM，必须每次重新查询。
+     * @param {boolean} locked
+     */
+    _lockAIGenerateBtn(locked) {
+        const btn = this.container?.querySelector?.('#cmAIGenerateBtn');
+        if (!btn) return;
+        if (locked) {
+            btn.disabled = true;
+            btn.textContent = '生成中...';
+        } else {
             btn.disabled = false;
-            btn.textContent = originalText;
+            btn.textContent = this.aiGenerateOriginalText || '🪄 生成';
         }
     }
 
