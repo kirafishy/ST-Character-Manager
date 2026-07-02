@@ -4255,25 +4255,15 @@ function removeButton() {
     if (btn) btn.remove();
 }
 
-function updateEntryMode(mode) {
+function updateEntryMode(showFloatBallEntry) {
     const existingBtn = doc.getElementById(BUTTON_ID);
     const existingBall = doc.getElementById('cmFloatBall');
 
-    switch (mode) {
-        case 'magicWand':
-            removeFloatBall();
-            if (!existingBtn) createButton();
-            break;
-
-        case 'floatBall':
-            if (existingBtn) existingBtn.remove();
-            if (!existingBall) createFloatBall(openModal);
-            break;
-
-        case 'both':
-            if (!existingBtn) createButton();
-            if (!existingBall) createFloatBall(openModal);
-            break;
+    if (!existingBtn) createButton();
+    if (showFloatBallEntry) {
+        if (!existingBall) createFloatBall(openModal);
+    } else {
+        removeFloatBall();
     }
 }
 
@@ -4285,7 +4275,7 @@ async function init() {
     doc.documentElement.style.setProperty('--cm-card-width', state.zoomLevel + 'px');
     doc.documentElement.style.setProperty('--cm-sidebar-width', state.sidebarWidth + 'px');
 
-    updateEntryMode(state.settings.entryMode || 'magicWand');
+    updateEntryMode(state.settings.showFloatBallEntry);
     parentWin.openCharManager = openModal;
     window.openCharManager = openModal;
     

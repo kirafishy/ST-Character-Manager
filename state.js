@@ -66,8 +66,8 @@ export const defaultSettings = {
     },
     // --- create_date 字段设置 ---
     autoAddCreateDate: false, // 全量刷新时自动为缺少 create_date 字段的角色卡添加该字段
-    // --- 入口方式设置 ---
-    entryMode: 'magicWand', // 入口方式: 'magicWand' (魔法棒) | 'floatBall' (悬浮球) | 'both' (两者都要)
+    // --- 入口设置 ---
+    showFloatBallEntry: false, // 是否额外显示悬浮球入口；魔法棒入口始终显示
 };
 
 // 读取已保存的设置
@@ -76,7 +76,7 @@ const savedSettings = (() => {
 })();
 
 // 设置迁移：处理版本升级时的设置兼容性
-const migrateSettings = (settings) => {
+const migrateSettings = (settings, rawSettings = {}) => {
     // 旧版引号颜色主题迁移到新版本的映射
     const quoteColorThemeMap = {
         'purple': 'lavender',   // 紫色 -> 薰衣草影
@@ -89,7 +89,13 @@ const migrateSettings = (settings) => {
     if (settings.quoteColorTheme && quoteColorThemeMap[settings.quoteColorTheme]) {
         settings.quoteColorTheme = quoteColorThemeMap[settings.quoteColorTheme];
     }
-    
+
+    // 入口设置迁移：魔法棒入口固定显示，旧版 floatBall/both 迁移为悬浮球开关
+    if (rawSettings.showFloatBallEntry === undefined || rawSettings.showFloatBallEntry === null) {
+        settings.showFloatBallEntry = rawSettings.entryMode === 'floatBall' || rawSettings.entryMode === 'both';
+    }
+    delete settings.entryMode;
+
     // 新增设置项的默认值迁移（确保旧用户升级后新字段有值）
     if (settings.aiBatchMode === undefined || settings.aiBatchMode === null) {
         settings.aiBatchMode = 'serial';
@@ -137,7 +143,7 @@ const migrateSettings = (settings) => {
 };
 
 export const state = {
-    settings: migrateSettings({ ...defaultSettings, ...savedSettings }),
+    settings: migrateSettings({ ...defaultSettings, ...savedSettings }, savedSettings),
     hasUnsyncedTags: false, // 是否有未同步的标签
     unsyncedCards: new Set(), // 记录哪些卡片有未同步的标签
     characters: [], // 改为异步加载

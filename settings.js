@@ -493,14 +493,13 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
 
                 <div class="cm-setting-item">
                     <div class="cm-setting-label">
-                        <span>入口方式</span>
-                        <small>选择角色卡管理器的启动入口位置</small>
+                        <span>显示悬浮球入口</span>
+                        <small>魔法棒入口始终显示，开启后额外显示悬浮球</small>
                     </div>
-                    <select id="cmSetEntryMode" class="cm-select-input" style="max-width:140px">
-                        <option value="magicWand" ${settings.entryMode === 'magicWand' ? 'selected' : ''}>🪄 魔法棒</option>
-                        <option value="floatBall" ${settings.entryMode === 'floatBall' ? 'selected' : ''}>🔵 悬浮球</option>
-                        <option value="both" ${settings.entryMode === 'both' ? 'selected' : ''}>🔀 两者都要</option>
-                    </select>
+                    <label class="cm-switch">
+                        <input type="checkbox" id="cmSetShowFloatBallEntry" ${settings.showFloatBallEntry ? 'checked' : ''}>
+                        <span class="cm-slider"></span>
+                    </label>
                 </div>
 
                 <div class="cm-setting-item">
@@ -957,14 +956,14 @@ export function showSettingsDialog({ createBaseDialog, toggleTheme, renderView, 
             };
         }
 
-        // Entry Mode Select
-        const entryModeSelect = ov.querySelector('#cmSetEntryMode');
-        if (entryModeSelect) {
-            entryModeSelect.onchange = (e) => {
-                state.settings.entryMode = e.target.value;
+        // 悬浮球入口开关；魔法棒入口固定显示
+        const showFloatBallEntryToggle = ov.querySelector('#cmSetShowFloatBallEntry');
+        if (showFloatBallEntryToggle) {
+            showFloatBallEntryToggle.onchange = (e) => {
+                state.settings.showFloatBallEntry = e.target.checked;
                 saveSettings();
                 if (typeof window.cmUpdateEntryMode === 'function') {
-                    window.cmUpdateEntryMode(e.target.value);
+                    window.cmUpdateEntryMode(e.target.checked);
                 }
             };
         }
