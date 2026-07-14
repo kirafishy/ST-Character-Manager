@@ -3109,7 +3109,7 @@ export class CharacterDetails {
             const doUpdate = await showConfirm(
                 '⚠️ 覆盖更新确认\n\n' +
                 '即将用新图片覆盖：' + this.char.name + '\n' +
-                '1. 文件名保持不变\n' +
+                '1. 若新卡名称与当前不同，文件名与画廊目录将同步迁移\n' +
                 '2. 来源链接(Source Link) 将被保留\n' +
                 '3. 其他设定将被新卡替换\n\n' +
                 '确定继续吗？'
@@ -3130,7 +3130,8 @@ export class CharacterDetails {
                     preserveSourceLink: true,
                     refreshUI: true,
                     notifySuccess: true,
-                    fullCardData: cardData
+                    fullCardData: cardData,
+                    renameOnNameChange: true
                 });
                 
                 // 更新成功后刷新详情页
@@ -3231,7 +3232,7 @@ export class CharacterDetails {
             const doUpdate = await showConfirm(
                 '⚠️ 覆盖更新确认\n\n' +
                 '即将更新角色：' + charName + '\n' +
-                '1. 文件名保持不变\n' +
+                '1. 若新卡名称与当前不同，文件名与画廊目录将同步迁移\n' +
                 '2. 来源链接(Source Link) 将被保留\n' +
                 '3. 其他设定将被新卡替换\n\n' +
                 '确定继续吗？'
@@ -3245,7 +3246,8 @@ export class CharacterDetails {
                 preserveSourceLink: true,
                 refreshUI: true,
                 notifySuccess: true,
-                fullCardData: cardData
+                fullCardData: cardData,
+                renameOnNameChange: true
             });
 
             // 更新成功后刷新详情页

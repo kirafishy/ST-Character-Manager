@@ -1196,18 +1196,22 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
     // 使用串行队列防止同一文件的并发写操作互相覆盖
     const { wait, done } = enqueueFileWrite(fileName);
     await wait;
+    // 标记 done 是否已被主动调用，避免 finally 里重复释放
+    let doneCalled = false;
     
     const {
         cleanOldWorldInfo = true,
         preserveSourceLink = true,
         refreshUI = true,
         notifySuccess = true,
-        fullCardData = null
+        fullCardData = null,
+        renameOnNameChange = false
     } = options;
 
     const char = state.characters.find(c => c.fileName === fileName);
     if (!char) {
         done();
+        doneCalled = true;
         throw new Error('未找到目标角色: ' + fileName);
     }
 
@@ -1384,11 +1388,46 @@ export async function updateCharacter(fileName, newCharData, imageBlob = null, o
         
         // 持久化到 IndexedDB
         await persistCharacterState(true);
-        
+
+        // 12. 【方案 C】name 发生变化时，自动重命名文件 + 迁移画廊目录
+        // 避免文生图仍写入旧目录导致插件画廊读不到新图
+        if (renameOnNameChange) {
+            const oldName = char.name;
+            const nameChanged = newCharData.name && newCharData.name !== oldName;
+            if (nameChanged) {
+                try {
+                    // 释放当前 fileName 的写队列，让 renameCharacterFile 内部可以顺利执行
+                    // （renameCharacterFile 自身不走 enqueueFileWrite，但会调用 rename API + persist，
+                    //  同时我们后面还要迁移画廊，需要在队列外执行以免长时间占用）
+                    done();
+                    doneCalled = true;
+
+                    console.log(`[CharManager] 检测到 name 变化 (${oldName} → ${newCharData.name})，开始重命名文件与迁移画廊`);
+                    const renameOk = await renameCharacterFile(char, newCharData.name, { silent: true });
+
+                    if (renameOk) {
+                        // 动态导入避免与 gallery.js 之间的循环依赖
+                        const { migrateGalleryFolder } = await import('./gallery.js');
+                        const migrateResult = await migrateGalleryFolder(oldName, char.name);
+                        if (migrateResult.total > 0) {
+                            const summary = `画廊已迁移 ${migrateResult.migrated}/${migrateResult.total} 张` +
+                                (migrateResult.failed > 0 ? `，${migrateResult.failed} 张失败` : '');
+                            notify(summary, migrateResult.failed > 0 ? 'warning' : 'info');
+                        }
+                    } else {
+                        notify('文件重命名失败，画廊未迁移', 'warning');
+                    }
+                } catch (e) {
+                    console.error('[CharManager] rename/迁移画廊异常:', e);
+                    notify('文件重命名或画廊迁移失败: ' + e.message, 'warning');
+                }
+            }
+        }
+
         if (notifySuccess) notify('角色更新成功', 'success');
         return true;
     } finally {
-        done();
+        if (!doneCalled) done();
     }
 }
 
@@ -1493,7 +1532,8 @@ export async function updateCharacterVersion(char, newVersion) {
     }
 }
 
-export async function renameCharacterFile(char, newName) {
+export async function renameCharacterFile(char, newName, options = {}) {
+    const { silent = false } = options;
     if (!newName || newName === char.name) return null;
     try {
         const r = await authFetch('/api/characters/rename', {
@@ -1506,6 +1546,7 @@ export async function renameCharacterFile(char, newName) {
         if (!r.ok) throw new Error('重命名失败');
 
         const data = await r.json();
+        // 酒馆服务端遇到文件名冲突会自动加数字后缀（getPngName），返回的 avatar 名可能是 Bob1.png / Bob2.png
         const newFileName = (data && data.avatar) ? data.avatar : (newName + '.png');
 
         const oldFileName = char.fileName;
@@ -1550,10 +1591,10 @@ export async function renameCharacterFile(char, newName) {
         // 持久化到 IndexedDB，确保重启后数据一致
         await persistCharacterState(true);
 
-        notify('重命名成功', 'success');
+        if (!silent) notify('重命名成功', 'success');
         return true;
     } catch (e) {
-        notify('重命名失败: ' + e.message, 'error');
+        if (!silent) notify('重命名失败: ' + e.message, 'error');
         return false;
     }
 }

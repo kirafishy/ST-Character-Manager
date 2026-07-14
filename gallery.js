@@ -81,6 +81,104 @@ export async function deleteGalleryImage(imagePath) {
     }
 }
 
+/**
+ * 迁移画廊目录（旧角色名 → 新角色名）
+ * 使用场景：更新角色卡后 name 发生变化，需要把 user/images/{oldName}/ 下的所有图片
+ * 搬到 user/images/{newName}/，避免文生图新老目录错位
+ *
+ * 迁移策略：
+ * 1. 列出旧目录所有图片
+ * 2. 逐张下载 → 上传到新目录 → 删除旧图
+ * 3. 单张失败不中断整体流程，末尾汇总日志
+ *
+ * @param {string} oldName - 旧角色名
+ * @param {string} newName - 新角色名
+ * @returns {Promise<{ total: number, migrated: number, failed: number }>}
+ */
+export async function migrateGalleryFolder(oldName, newName) {
+    const result = { total: 0, migrated: 0, failed: 0 };
+    if (!oldName || !newName || oldName === newName) return result;
+
+    try {
+        const items = await getGalleryItems(oldName);
+        result.total = items.length;
+        if (items.length === 0) {
+            console.log(`[CharManager] 画廊迁移：${oldName} 目录为空，跳过`);
+            return result;
+        }
+
+        console.log(`[CharManager] 画廊迁移开始：${oldName} → ${newName}，共 ${items.length} 张图片`);
+
+        for (const item of items) {
+            try {
+                // 下载旧图（走酒馆静态资源路径，不需要 authFetch）
+                const imgUrl = `/${item.src}`;
+                const imgRes = await authFetch(imgUrl, { method: 'GET' });
+                if (!imgRes.ok) {
+                    console.warn(`[CharManager] 画廊迁移：下载失败 ${item.name}`, imgRes.status);
+                    result.failed++;
+                    continue;
+                }
+                const buffer = await imgRes.arrayBuffer();
+                const base64 = arrayBufferToBase64(buffer);
+
+                // 拆分文件名与扩展名
+                const dotIdx = item.name.lastIndexOf('.');
+                const nameOnly = dotIdx > 0 ? item.name.substring(0, dotIdx) : item.name;
+                const ext = dotIdx > 0 ? item.name.substring(dotIdx + 1).toLowerCase() : 'png';
+
+                // 上传到新目录
+                const upRes = await authFetch('/api/images/upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image: base64,
+                        filename: nameOnly,
+                        format: ext,
+                        ch_name: newName
+                    })
+                });
+                if (!upRes.ok) {
+                    console.warn(`[CharManager] 画廊迁移：上传失败 ${item.name}`, upRes.status);
+                    result.failed++;
+                    continue;
+                }
+                await upRes.text().catch(() => {});
+
+                // 删除旧图（失败不影响整体，仅记录）
+                const delRes = await authFetch('/api/images/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: item.src })
+                });
+                if (!delRes.ok) {
+                    console.warn(`[CharManager] 画廊迁移：删除旧图失败 ${item.name}`, delRes.status);
+                }
+
+                result.migrated++;
+            } catch (e) {
+                console.error(`[CharManager] 画廊迁移：处理 ${item.name} 异常:`, e);
+                result.failed++;
+            }
+        }
+
+        // 迁移完成后，同步更新缓存
+        if (galleryCountCache[oldName] !== undefined) {
+            delete galleryCountCache[oldName];
+        }
+        if (result.migrated > 0) {
+            galleryCountCache[newName] = (galleryCountCache[newName] || 0) + result.migrated;
+        }
+        saveGalleryCountCache();
+
+        console.log(`[CharManager] 画廊迁移完成：${oldName} → ${newName}`, result);
+        return result;
+    } catch (e) {
+        console.error('[CharManager] 画廊迁移异常:', e);
+        return result;
+    }
+}
+
 // 上传画廊图片
 export async function uploadGalleryImage(charName, file) {
     try {
