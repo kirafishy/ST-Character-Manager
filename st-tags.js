@@ -416,7 +416,26 @@ export async function importTags(character, { importSetting = null, skipSave = f
 
     const avatar = character.fileName || character.avatar;
     const cm = getCmManager(character);
-    
+
+    // 【方案A】全局策略为"不导入任何标签"，且卡片首次处理（cm.tags === undefined）时，
+    // 直接短路：不写 cm_manager.tags、不 syncTagsToCard，一次 PNG 写入都不发生。
+    // 触发条件：
+    //   1) 调用方未强制指定 importSetting（即遵循全局策略）
+    //   2) 启用 cm_manager 检查
+    //   3) cm.tags 尚未存在（不覆盖已有决策）
+    //   4) 非手动导入（isManualImport=false，允许用户在详情页手动点击强制导入）
+    // 用户若之后切换到其他策略并触发扫描，需要标签导入的卡会重新进入处理流程。
+    if (
+        importSetting === null &&
+        checkCmManager &&
+        !isManualImport &&
+        cm.tags === undefined &&
+        state.settings?.importTagStrategy === 'none'
+    ) {
+        console.log(`[ST-Tags] 全局策略为 'none'，短路跳过: ${avatar}`);
+        return;
+    }
+
     // 【修复】选项B：如果手动导入，且记忆为拒绝标签(空数组)，但卡片自带标签，则忽略记忆
     let useCmManager = checkCmManager;
     if (isManualImport && useCmManager && cm.tags !== undefined && cm.tags.length === 0) {
@@ -671,7 +690,10 @@ export async function importTags(character, { importSetting = null, skipSave = f
     }
     
     // 【修复】如果开启了自动同步，在标签导入完成后同步到 data.tags
-    if (!skipApiCall && state.settings.autoSyncTags) {
+    // 【方案B】NONE 模式跳过 syncTagsToCard：
+    // 1) 避免'用户选择不导入'反过来把卡片原生 data.tags 中受插件管理的标签清空的副作用
+    // 2) 省掉一次 GET + merge-attributes 的 PNG 重写，导入速度显著提升
+    if (!skipApiCall && state.settings.autoSyncTags && setting !== tag_import_setting.NONE) {
         await syncTagsToCard(avatar);
     }
 }
@@ -684,7 +706,13 @@ export async function importTags(character, { importSetting = null, skipSave = f
 export function needsTagImport(character) {
     const cm = getCmManager(character);
     if (cm.tags !== undefined) return false;
-    
+
+    // 【方案A】全局策略为"不导入任何标签"时，永远不视为需要导入
+    // 避免 scan 中把新卡收集到 charsNeedTagImport 队列并弹窗
+    if (state.settings?.importTagStrategy === 'none') {
+        return false;
+    }
+
     // 【修复】如果 state.tagMap 已经有数据，说明用户之前已经处理过
     // 不需要再次弹窗，而是应该在 importTags 中自动恢复
     const avatar = character.fileName || character.avatar;

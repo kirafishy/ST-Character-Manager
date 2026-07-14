@@ -153,45 +153,53 @@ async function doActualImport(files, remainingInQueue) {
     }
 
     // 3. 处理标签导入
-    updateProgressBar(80, '正在处理标签...');
-    const allChars = getSTCharacters(); // 获取最新列表
-    
-    // 加载最新的标签数据（因为原生刷新可能重置了 ctx.tags/tagMap，虽然不应该）
-    loadTags();
-
-    // 【修复】记录元数据保存失败的角色，用于区分错误消息
+    // 【方案A】全局策略为"不导入任何标签"时，直接跳过标签处理循环
+    // 不写 cm_manager.tags、不迁移旧配置的 tags 部分、不触发 syncTagsToCard
+    // 每张卡节省一次 GET + 一次 merge-attributes（可能还有一次 syncTagsToCard 的写入）
+    const skipTagProcessing = state.settings?.importTagStrategy === 'none';
     const metadataFailedChars = [];
-    
-    for (const fileName of importedChars) {
-        // 查找对应的角色对象
-        // 注意：API 返回的 file_name 是带扩展名的，allChars 里的 avatar 也是带扩展名的
-        // 但为了保险，也检查一下去掉扩展名的匹配
-        let char = allChars.find(c => c.avatar === fileName);
-        if (!char) {
-             // 尝试 fuzzy match
-             const nameNoExt = fileName.replace(/\.[^/.]+$/, "");
-             char = allChars.find(c => c.avatar.startsWith(nameNoExt));
-        }
 
-        if (char) {
-            try {
-                // [Fix] 导入前清除该文件名的旧标签缓存，防止显示已删除同名卡的残留标签
-                if (state.tagMap[fileName]) {
-                    console.log('[CharManager] Clearing ghost tags for imported file:', fileName);
-                    delete state.tagMap[fileName];
-                    saveTags(); // 必须保存，否则会被后续 scan 中的 loadTags 覆盖
+    if (skipTagProcessing) {
+        updateProgressBar(80, '已跳过标签处理（全局策略：不导入任何标签）');
+        console.log('[CharManager] importTagStrategy=none，跳过导入后的标签处理循环');
+    } else {
+        updateProgressBar(80, '正在处理标签...');
+        const allChars = getSTCharacters(); // 获取最新列表
+
+        // 加载最新的标签数据（因为原生刷新可能重置了 ctx.tags/tagMap，虽然不应该）
+        loadTags();
+
+        for (const fileName of importedChars) {
+            // 查找对应的角色对象
+            // 注意：API 返回的 file_name 是带扩展名的，allChars 里的 avatar 也是带扩展名的
+            // 但为了保险，也检查一下去掉扩展名的匹配
+            let char = allChars.find(c => c.avatar === fileName);
+            if (!char) {
+                 // 尝试 fuzzy match
+                 const nameNoExt = fileName.replace(/\.[^/.]+$/, "");
+                 char = allChars.find(c => c.avatar.startsWith(nameNoExt));
+            }
+
+            if (char) {
+                try {
+                    // [Fix] 导入前清除该文件名的旧标签缓存，防止显示已删除同名卡的残留标签
+                    if (state.tagMap[fileName]) {
+                        console.log('[CharManager] Clearing ghost tags for imported file:', fileName);
+                        delete state.tagMap[fileName];
+                        saveTags(); // 必须保存，否则会被后续 scan 中的 loadTags 覆盖
+                    }
+
+                    // 迁移旧配置并导入标签
+                    await migrateAndSaveCmManager(char);
+                    await importTags(char, { skipSave: false, checkCmManager: true, isManualImport: true });
+
+                    // 强制保存一次标签状态，确保新导入的标签被持久化
+                    saveTags();
+                } catch (e) {
+                    console.warn('标签导入失败:', fileName, e);
+                    // 记录元数据保存失败的角色（角色卡已导入，但标签等元数据保存失败）
+                    metadataFailedChars.push(fileName);
                 }
-
-                // 迁移旧配置并导入标签
-                await migrateAndSaveCmManager(char);
-                await importTags(char, { skipSave: false, checkCmManager: true, isManualImport: true });
-                
-                // 强制保存一次标签状态，确保新导入的标签被持久化
-                saveTags();
-            } catch (e) {
-                console.warn('标签导入失败:', fileName, e);
-                // 记录元数据保存失败的角色（角色卡已导入，但标签等元数据保存失败）
-                metadataFailedChars.push(fileName);
             }
         }
     }
